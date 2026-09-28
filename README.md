@@ -118,8 +118,8 @@ Once installed, Jev exposes the following specialized tools to your MCP client (
     {
       "state": "Customer Email: Hello, I noticed a charge of $14.99 on my account yesterday but I canceled my subscription last month...",
       "questions": [
-        {"key": "is_refund_request", "prompt": "Is the user requesting a refund?"},
-        {"key": "is_angry", "prompt": "Is the user angry or upset?"}
+        {"type": "noul", "key": "is_refund_request", "prompt": "Is the user requesting a refund?"},
+        {"type": "noul", "key": "is_angry", "prompt": "Is the user angry or upset?"}
       ]
     }
     
