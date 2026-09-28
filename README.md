@@ -134,10 +134,18 @@ Once installed, Jev exposes the following specialized tools to your MCP client (
 
 #### `jev_optimize_prompt`
 *   **What it does:** If your prompt is failing calibration (getting False Positives), this tool generates 5 recursive variations of your prompt. It runs the logit math against all 5 and mathematically determines the absolute best phrasing to use in production.
-*   **Example Workflow:**
-    *   *Original Prompt (ROC AUC 0.72):* "Does the user want a refund?"
-    *   *Jev explores 5 mathematical variations...*
-    *   *Optimized Prompt (ROC AUC 0.98):* "Carefully analyze the user's intent. Are they explicitly requesting a refund or chargeback for a previous transaction? Answer True or False."
+*   **How to use & Example:** Pass a sample context `state` and your underperforming `question`. It will return a text report with the new mathematically optimal prompt.
+
+    **Example Output:**
+    ```text
+    Optimization Complete: 5 variations mathematically tested.
+    
+    Original Prompt (ROC AUC 0.72): 
+    "Does the user want a refund?"
+    
+    Winning Prompt (ROC AUC 0.98): 
+    "Carefully analyze the user's intent. Are they explicitly requesting a refund or chargeback for a previous transaction?"
+    ```
 
 #### `jev_explain_decision`
 *   **What it does:** Since Jev uses pure math to classify, it doesn't generate a text rationale by default. If a user needs an explanation for an audit log, this tool extracts the exact verbatim sentence from the context state that triggered the classification.
