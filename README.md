@@ -62,24 +62,83 @@ Once installed, Jev exposes the following specialized tools to your MCP client (
 
 #### `jev_generate_synthetic_dataset`
 *   **What it does:** Automatically generates a Golden Edge-Case Dataset to test your classification prompts. It uses "Smart Auto-Tiering". If you have the `7B` model active, it generates the dataset locally for free. If you have the `0.5B` model active, it gracefully falls back and engineers a prompt for your frontier model (like GPT-4o or Claude 3.5 Sonnet) to generate the data.
-*   **How to use:** Call the tool with a question prompt (e.g., *"Is the user requesting a refund?"*) and specify `num_cases` (e.g., `50`).
+*   **How to use & Example:** Call the tool with a question prompt (e.g., *"Is the user requesting a refund?"*) and specify `num_cases` (e.g., `50`).
+    
+    **Output Example (JSON Dataset):**
+    ```json
+    [
+      {
+        "state": "The app crashed and I lost my data! I want my money back immediately.",
+        "expected": "True",
+        "rationale": "Clear explicit request for money back."
+      },
+      {
+        "state": "How do I update my billing credit card?",
+        "expected": "False",
+        "rationale": "Asking about billing, but not a refund."
+      },
+      {
+        "state": "I bought this by mistake but I kinda like it.",
+        "expected": "False",
+        "rationale": "Ambiguous edge-case, user likes the product so no refund requested."
+      }
+    ]
+    ```
 
 #### `jev_calibrate_threshold`
 *   **What it does:** The core feature of Jev. It takes your dataset and evaluates every single case against the local daemon by extracting direct `get_logprobs` mathematical arrays. It subtracts statistical bias and returns a beautiful Markdown Confusion Matrix, showing exactly what Probability Threshold (`>0.95`) you need to achieve 100% Precision.
-*   **How to use:** Pass it a synthetic JSON dataset. It will rapidly output your ROC AUC metrics.
+*   **How to use & Example:** Pass it a synthetic JSON dataset. It will rapidly output your ROC AUC metrics and a calibration table.
+
+    **Example Output (Calibration Markdown Table):**
+    
+    | Threshold | Automation Rate | Precision | Recall | False Positives | Recommendation |
+    | :--- | :--- | :--- | :--- | :--- | :--- |
+    | `> 0.50` | 100% | 75.0% | 100% | ❌ 12 cases | Unsafe |
+    | `> 0.75` | 85% | 92.3% | 85% | ❌ 3 cases | Needs tuning |
+    | `> 0.90` | 70% | 100.0% | 70% | ✅ 0 cases | **Recommended** |
+    | `> 0.99` | 40% | 100.0% | 40% | ✅ 0 cases | Too strict |
+    
+    *(In this visual example, setting your production code to `if score > 0.90:` guarantees zero false positives while automating 70% of the workload!)*
 
 #### `jev_evaluate_batch`
-*   **What it does:** The production evaluation endpoint. It takes a massive block of text (the "state") and evaluates a batch of questions against it. 
+*   **What it does:** The production evaluation endpoint. It takes a massive block of text (the "state") and evaluates a batch of questions against it in a single pass.
 *   **Special capabilities:** 
     1. **Strict Linter:** It rejects badly formatted questions (e.g., questions lacking an 'Unknown' fallback).
     2. **Auto-Fixer:** Automatically repairs broken questions and returns the fixed JSON.
     3. **QFE Compression Middleware:** If your state exceeds the context window limits (e.g., 10,000 tokens), it dynamically intercepts the payload and losslessly compresses it down to ~1,000 tokens before running the math.
+    
+    **Example Input & Output:**
+    ```json
+    // Input
+    {
+      "state": "Customer Email: Hello, I noticed a charge of $14.99 on my account yesterday but I canceled my subscription last month...",
+      "questions": [
+        {"key": "is_refund_request", "prompt": "Is the user requesting a refund?"},
+        {"key": "is_angry", "prompt": "Is the user angry or upset?"}
+      ]
+    }
+    
+    // Output
+    {
+      "results": {
+        "is_refund_request": {"score": 0.98, "selected_token": "True"},
+        "is_angry": {"score": 0.12, "selected_token": "False"}
+      }
+    }
+    ```
 
 #### `jev_optimize_prompt`
 *   **What it does:** If your prompt is failing calibration (getting False Positives), this tool generates 5 recursive variations of your prompt. It runs the logit math against all 5 and mathematically determines the absolute best phrasing to use in production.
+*   **Example Workflow:**
+    *   *Original Prompt (ROC AUC 0.72):* "Does the user want a refund?"
+    *   *Jev explores 5 mathematical variations...*
+    *   *Optimized Prompt (ROC AUC 0.98):* "Carefully analyze the user's intent. Are they explicitly requesting a refund or chargeback for a previous transaction? Answer True or False."
 
 #### `jev_explain_decision`
 *   **What it does:** Since Jev uses pure math to classify, it doesn't generate a text rationale by default. If a user needs an explanation for an audit log, this tool extracts the exact verbatim sentence from the context state that triggered the classification.
+*   **Example:**
+    *   *Classification:* `is_refund_request = True` (Score: 0.98)
+    *   *Audit Log Extraction (Output):* `"I want my money back immediately."`
 
 ---
 
