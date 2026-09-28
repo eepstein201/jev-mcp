@@ -251,9 +251,27 @@ flowchart TD
     Success --> Return
     Return([Return to Client])
 ```
-
 ---
 
+## 🛡️ Security & Prompt Injection Defenses
+
+Because Jev MCP is designed to evaluate raw, untrusted user data (such as emails, audit logs, or web scrapes), it employs a multi-layered security middleware to protect the local background daemon from context breakout attacks, recursive WAF evasion, and prompt injection.
+
+### 1. The Core Sanitization Pipeline (Always Active)
+Every single byte of data passed to Jev MCP is aggressively filtered by `security.py` before it ever reaches the Apple Silicon hardware:
+*   **Stringify-Then-Sanitize Ordering:** Forces complex JSON objects into strings *before* sanitization to ensure malicious actors cannot hide payload instructions inside nested dict keys.
+*   **NFKC Homoglyph Normalization:** Automatically converts mathematically equivalent Unicode characters to their standard ascii counterparts, neutralizing homoglyph masking attacks (where attackers swap a standard 'a' with a Cyrillic 'а' to bypass basic regex filters).
+*   **Anti-Recursive Control Token Stripping:** Jev strips dangerous chat-template tokens (like `<|im_start|>`, `[INST]`, `<|eot_id|>`) that attackers use to "break out" of the system prompt. Crucially, Jev replaces these tokens with a **space** rather than an empty string, neutralizing recursive collapse attacks (e.g., an attacker submitting `[IN[INST]ST]` which would otherwise collapse into a valid `[INST]` token).
+
+### 2. Generative Pipeline Defenses (7B Profile Only)
+When utilizing the intelligent 7B generative model for synthetic data creation or Auto-Fixing, Jev activates additional security layers:
+*   **XML Sandboxing:** Generative prompts are wrapped in a strict, impenetrable XML sandbox. This creates a hard boundary between the system instructions and the untrusted context state, making it exceptionally difficult for prompt-injection payloads to alter the LLM's goal. *(Note: This is disabled on the 0.5B model, which relies entirely on flat prompts due to its high sensitivity to token overflow).*
+*   **JSON Extractor Middleware:** Because local models lack native strict `xgrammar`, Jev forces generative outputs through a strict regex-slicing middleware. This renders your downstream applications completely immune to executing hallucinated conversational boilerplate or malicious markdown wrappers, returning only the mathematically verifiable JSON structures.
+
+### 3. Engine-Level Security
+*   **PID-Bound Cache Protection:** When you hot-swap models (e.g., from `7B` down to `0.5B`), the MLX backend restarts. To prevent cross-model cache poisoning or leaked mathematical priors, Jev MCP binds its high-speed in-memory cache directly to the OS-level Process ID (`PID`) of the running daemon. If the daemon restarts, the cache is instantly invalidated to guarantee mathematical purity.
+
+---
 ## ⌨️ Command Line Interface (CLI) Reference
 
 Jev MCP provides multiple layers of command-line tools for users, advanced developers, and IDE integrations.
