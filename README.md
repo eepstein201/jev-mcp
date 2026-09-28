@@ -46,7 +46,18 @@ Jev MCP employs a **Dynamic Dual-Profile Architecture**. You can instantly swap 
 ./jev_mac_manager.sh switch 0.5b
 ```
 
-### 3. Using the MCP Features
+### 3. Developer Workflow (Makefile)
+Jev MCP includes a convenient `Makefile` that wraps the core management script and provides commands for formatting and testing.
+
+- **`make install`**: Installs the environment and starts the default model (0.5b). Use `make install MODEL=7b` to specify a model.
+- **`make switch`**: Switches the active model. Use `make switch MODEL=7b` or `make switch MODEL=0.5b`.
+- **`make update`**: Pulls the latest code, updates dependencies, and restarts the daemon.
+- **`make format`**: Formats the Python codebase rapidly using `ruff`.
+- **`make lint`**: Runs rigorous static type checking using `mypy`.
+- **`make test`**: Runs the mathematical verification test suite using `pytest`.
+- **`make clean`**: Completely uninstalls all Jev MCP artifacts, virtual environments, and launchd daemons.
+
+### 4. Using the MCP Features
 Once installed, Jev exposes the following specialized tools to your MCP client (e.g., Claude, Antigravity, or any agent framework):
 
 #### `jev_generate_synthetic_dataset`
