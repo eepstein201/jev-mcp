@@ -505,6 +505,8 @@ def jev_optimize_prompt(
             conf = res["confidence"]
         elif "noul" in res:
             conf = max(res["noul"], 1.0 - res["noul"])
+        elif "probabilities" in res:
+            conf = max(res["probabilities"].values())
 
         if i == 0:
             original_conf = conf
