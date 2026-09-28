@@ -1,0 +1,51 @@
+[
+  {
+    "id": "q1_orig",
+    "group_id": "subscription_cancel",
+    "state": "The user called support to complain about the price, and explicitly requested to cancel their Pro subscription effective immediately.",
+    "expected": true
+  },
+  {
+    "id": "q1_reverse",
+    "group_id": "subscription_cancel",
+    "state": "The user called support to complain about the price, and explicitly requested to cancel their Pro subscription effective immediately.",
+    "expected": false,
+    "question_override": "Does the user want to upgrade to an annual plan?"
+  },
+  {
+    "id": "q1_counter",
+    "group_id": "subscription_cancel",
+    "state": "The user called support to complain about the price, but ultimately decided to keep their Pro subscription after receiving a discount.",
+    "expected": false
+  },
+  {
+    "id": "q1_distractor",
+    "group_id": "subscription_cancel",
+    "state": "The user called support to ask why their coworker's account was canceled last week, but requested to renew their own license today.",
+    "expected": false
+  },
+  {
+    "id": "q2_orig",
+    "group_id": "delivery_status",
+    "state": "Carrier tracking indicates the package was signed for at the front desk at 10:45 AM.",
+    "expected": true
+  },
+  {
+    "id": "q2_negation",
+    "group_id": "delivery_status",
+    "state": "Carrier tracking explicitly states the package was returned to sender and never delivered to the front desk.",
+    "expected": false
+  },
+  {
+    "id": "q2_intent",
+    "group_id": "delivery_status",
+    "state": "The delivery driver intended to drop off the package at 10:45 AM but could not access the building.",
+    "expected": false
+  },
+  {
+    "id": "q2_implicit",
+    "group_id": "delivery_status",
+    "state": "The customer is holding the item in their hands and sent a photo of it unboxed in their living room.",
+    "expected": true
+  }
+]

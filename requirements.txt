@@ -1,0 +1,15 @@
+# Core MLX dependencies (Pinned for Apple Silicon reproducibility)
+mlx==0.32.2
+mlx-lm==0.31.3
+
+# MCP API & Validation
+mcp==2.2.0
+pydantic==2.13.5
+
+# Environment variables
+python-dotenv==1.0.1
+
+# Dev tools
+ruff
+mypy
+pytest
