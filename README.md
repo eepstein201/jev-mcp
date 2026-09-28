@@ -103,7 +103,12 @@ Once installed, Jev exposes the following specialized tools to your MCP client (
 #### `jev_evaluate_batch`
 *   **What it does:** The production evaluation endpoint. It takes a massive block of text (the "state") and evaluates a batch of questions against it in a single pass.
 *   **Special capabilities:** 
-    1. **Strict Linter:** It rejects badly formatted questions (e.g., questions lacking an 'Unknown' fallback).
+    1. **Strict Linter:** It rejects badly formatted questions that break mathematical calibration. Examples of rejected questions:
+       - **Generative Intent:** *"Summarize the customer's issue"* or *"Extract all dates"* (Jev is a classification engine, not a generative tool).
+       - **Compound Questions:** *"Is the user angry and requesting a refund?"* (Must be split into two atomic questions).
+       - **Conversational Boilerplate:** *"Act as an expert customer service agent and think step-by-step..."* (Distorts attention weighting).
+       - **Arithmetic/Chronological Intent:** *"Count the number of items"* or *"Did this happen after Tuesday?"* (LLMs struggle with math and time).
+       - **Missing Fallback:** Multiple choice questions lacking an *"Unknown"*, *"Other"*, or *"N/A"* fallback option (which forces the model to hallucinate if the answer isn't in the text).
     2. **Auto-Fixer:** Automatically repairs broken questions and returns the fixed JSON.
     3. **QFE Compression Middleware:** If your state exceeds the context window limits (e.g., 10,000 tokens), it dynamically intercepts the payload and losslessly compresses it down to ~1,000 tokens before running the math.
     
