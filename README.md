@@ -145,6 +145,40 @@ Once installed, Jev exposes the following specialized tools to your MCP client (
     *   *Classification:* `is_refund_request = True` (Score: 0.98)
     *   *Audit Log Extraction (Output):* `"I want my money back immediately."`
 
+### 5. First-Class Response Types (Question Schemas)
+Jev MCP strongly enforces structured response types to guarantee deterministic mathematics. When defining questions for `jev_evaluate_batch`, you must use one of the following three first-class schemas:
+
+#### 1. Noul (`noul`)
+The standard boolean classification. Noul (a portmanteau of "No/Null/True/False") is used for binary claims. By default, Jev evaluates the mathematical probability of `True` versus `False`.
+*   **Format:** `{"type": "noul", "key": "is_refund", "prompt": "Is this a refund request?"}`
+*   **Best for:** Simple yes/no logic gates, routing, and anomaly detection.
+
+#### 2. Multiple Choice (`choice`)
+Used when a state must be classified into one of several mutually exclusive categories. You explicitly provide the list of textual options. (Note: Ensure you include a fallback option like "Unknown"!).
+*   **Format:** 
+    ```json
+    {
+      "type": "choice", 
+      "key": "department", 
+      "prompt": "Route to which department?",
+      "options": ["Billing", "Technical Support", "Sales", "Unknown"]
+    }
+    ```
+*   **Best for:** Categorization, triage, and multi-class routing.
+
+#### 3. Likert Scale (`score`)
+Used for behavioral anchored rating scales (BARS) or objective magnitude scoring. Labels must be single-character tokens (e.g., `["1", "2", "3", "4", "5"]` or `["A", "B", "C", "D"]`) arranged monotonically.
+*   **Format:** 
+    ```json
+    {
+      "type": "score", 
+      "key": "urgency_level", 
+      "prompt": "Rate the urgency of the user's issue.",
+      "labels": ["1", "2", "3", "4", "5"]
+    }
+    ```
+*   **Best for:** Sentiment analysis, severity scoring, and quality assurance grading.
+
 ---
 
 ## 🧪 Architectural Breakthroughs
