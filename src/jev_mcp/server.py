@@ -603,9 +603,22 @@ def jev_calibrate_threshold(
                     tn += 1
             else:
                 # For choice/score, simple confidence thresholding
-                conf = res.get("confidence", 0.0)
-                pred_val = res.get("choice", "")
-                is_positive = str(expected).lower() == str(pred_val).lower()
+                probs = res.get("probabilities", {})
+                if probs:
+                    pred_val = max(probs.items(), key=lambda x: x[1])[0]
+                    conf = probs[pred_val]
+                else:
+                    pred_val = ""
+                    conf = 0.0
+                
+                expected_str = str(expected).lower()
+                if isinstance(q_obj, ChoiceQuestion):
+                    for opt_idx, opt_str in enumerate(q_obj.options):
+                        if str(opt_str).lower() == expected_str:
+                            expected_str = chr(97 + opt_idx)
+                            break
+                            
+                is_positive = expected_str == str(pred_val).lower()
 
                 if conf > t:
                     automated += 1
