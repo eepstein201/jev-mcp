@@ -17,22 +17,22 @@ git clone https://github.com/your-username/jev-mcp.git
 cd jev-mcp
 
 # Install and launch the 0.5B model (Insanely fast, great for logit math)
-./jev_mac_manager.sh install 0.5b
+make install MODEL=0.5b
 
 # OR install and launch the 7B model (Highly intelligent, supports generative tools natively)
-./jev_mac_manager.sh install 7b
+make install MODEL=7b
 ```
 
 **To update your codebase and restart the daemon:**
 ```bash
 # Pulls latest code, reinstalls dependencies, and safely restarts the active model
-./jev_mac_manager.sh update 0.5b
+make update MODEL=0.5b
 ```
 
 **To uninstall Jev MCP cleanly:**
 ```bash
 # Unloads the daemon, kills hanging processes, and deletes the virtual environment
-./jev_mac_manager.sh uninstall
+make clean
 ```
 
 ### 2. Hot-Swapping Models
@@ -40,24 +40,13 @@ Jev MCP employs a **Dynamic Dual-Profile Architecture**. You can instantly swap 
 
 ```bash
 # Need advanced reasoning for synthetic data generation or QFE compression?
-./jev_mac_manager.sh switch 7b
+make switch MODEL=7b
 
 # Finished generating data and want to run 1,000 logit math evaluations at 100ms each?
-./jev_mac_manager.sh switch 0.5b
+make switch MODEL=0.5b
 ```
 
-### 3. Developer Workflow (Makefile)
-Jev MCP includes a convenient `Makefile` that wraps the core management script and provides commands for formatting and testing.
-
-- **`make install`**: Installs the environment and starts the default model (0.5b). Use `make install MODEL=7b` to specify a model.
-- **`make switch`**: Switches the active model. Use `make switch MODEL=7b` or `make switch MODEL=0.5b`.
-- **`make update`**: Pulls the latest code, updates dependencies, and restarts the daemon.
-- **`make format`**: Formats the Python codebase rapidly using `ruff`.
-- **`make lint`**: Runs rigorous static type checking using `mypy`.
-- **`make test`**: Runs the mathematical verification test suite using `pytest`.
-- **`make clean`**: Completely uninstalls all Jev MCP artifacts, virtual environments, and launchd daemons.
-
-### 4. Using the MCP Features
+### 3. Using the MCP Features
 Once installed, Jev exposes the following specialized tools to your MCP client (e.g., Claude, Antigravity, or any agent framework):
 
 #### `jev_generate_synthetic_dataset`
@@ -153,7 +142,7 @@ Once installed, Jev exposes the following specialized tools to your MCP client (
     *   *Classification:* `is_refund_request = True` (Score: 0.98)
     *   *Audit Log Extraction (Output):* `"I want my money back immediately."`
 
-### 5. First-Class Response Types (Question Schemas)
+### 4. First-Class Response Types (Question Schemas)
 Jev MCP strongly enforces structured response types to guarantee deterministic mathematics. When defining questions for `jev_evaluate_batch`, you must use one of the following three first-class schemas:
 
 #### 1. Noul (`noul`)
@@ -189,19 +178,6 @@ Used for behavioral anchored rating scales (BARS) or objective magnitude scoring
 
 ---
 
-## 🧪 Architectural Breakthroughs
-
-Under the hood, Jev MCP employs several highly specialized mathematical and systems-engineering techniques to achieve its performance:
-
-*   **Empty-Payload Bias Extraction**: LLMs suffer from severe "Recency Bias" (preferring the last option shown) and "Vocabulary Bias" (preferring the token "A" over "B"). Jev MCP evaluates your prompt twice: once normally, and once with an *empty payload*. By measuring the baseline probabilities of the empty payload, we extract the model's pure statistical bias.
-*   **DCPMI Subtraction**: We use Domain Conditional Pointwise Mutual Information (DCPMI) to mathematically subtract the extracted bias from the active evaluation. This isolates the model's *true conditional intent*, pushing models that natively perform at 0.66 ROC AUC up to a perfect 1.0 ROC AUC.
-*   **Laplace Horizon Smoothing**: Apple's MLX C++ API natively truncates logprobs at a hard horizon of `top_logprobs=11`. If a target option falls out of the top 11, it yields zero probability, which ordinarily causes catastrophic $log(0)$ math explosions. We implemented a $+1/K$ Laplace smoothing factor (pseudo-counts) to gracefully absorb probability mass beyond the hardware truncation limit.
-*   **Log-Sum-Exp Token Aggregation**: LLM tokenizers fragment answers unexpectedly. The concept of "True" might be split across the tokens `"True"`, `" True"`, `" T"`, and `"T"`. Jev MCP aggregates these fragmented probability masses using rigorous `Log-Sum-Exp` mathematics to ensure no confidence is lost.
-*   **Absolute Confidence Gating**: If the total sum of all target token probabilities is $< 5\%$, Jev MCP instantly recognizes that the model is confused or hallucinating due to out-of-distribution context, and forces a `0.0` confidence score.
-*   **PID-Bound Cache Protection**: When hot-swapping between the `0.5b` and `7b` models, background daemon restarts could theoretically corrupt the mathematical priors. Jev MCP binds its high-speed in-memory cache directly to the OS-level Process ID (`PID`) of the MLX daemon, guaranteeing mathematical purity even during agentic model swapping.
-
----
-
 ## 📊 Performance Benchmarks
 
 Jev MCP fundamentally changes the speed and reliability of local AI decision-making. By moving away from slow autoregressive text generation and instead calculating direct probabilities, we achieve massive performance gains.
@@ -214,6 +190,19 @@ Jev MCP fundamentally changes the speed and reliability of local AI decision-mak
 | **Jev MCP (`7B` Intel Profile)** | ~800ms | **1.00 (Perfect)** | Neutralized (DCPMI) | Free |
 
 *(Benchmarks run on an Apple Silicon M-series unified memory architecture against the Golden Edge-Case Dataset).*
+
+---
+
+## 🧪 Architectural Breakthroughs
+
+Under the hood, Jev MCP employs several highly specialized mathematical and systems-engineering techniques to achieve its performance:
+
+*   **Empty-Payload Bias Extraction**: LLMs suffer from severe "Recency Bias" (preferring the last option shown) and "Vocabulary Bias" (preferring the token "A" over "B"). Jev MCP evaluates your prompt twice: once normally, and once with an *empty payload*. By measuring the baseline probabilities of the empty payload, we extract the model's pure statistical bias.
+*   **DCPMI Subtraction**: We use Domain Conditional Pointwise Mutual Information (DCPMI) to mathematically subtract the extracted bias from the active evaluation. This isolates the model's *true conditional intent*, pushing models that natively perform at 0.66 ROC AUC up to a perfect 1.0 ROC AUC.
+*   **Laplace Horizon Smoothing**: Apple's MLX C++ API natively truncates logprobs at a hard horizon of `top_logprobs=11`. If a target option falls out of the top 11, it yields zero probability, which ordinarily causes catastrophic $log(0)$ math explosions. We implemented a $+1/K$ Laplace smoothing factor (pseudo-counts) to gracefully absorb probability mass beyond the hardware truncation limit.
+*   **Log-Sum-Exp Token Aggregation**: LLM tokenizers fragment answers unexpectedly. The concept of "True" might be split across the tokens `"True"`, `" True"`, `" T"`, and `"T"`. Jev MCP aggregates these fragmented probability masses using rigorous `Log-Sum-Exp` mathematics to ensure no confidence is lost.
+*   **Absolute Confidence Gating**: If the total sum of all target token probabilities is $< 5\%$, Jev MCP instantly recognizes that the model is confused or hallucinating due to out-of-distribution context, and forces a `0.0` confidence score.
+*   **PID-Bound Cache Protection**: When hot-swapping between the `0.5b` and `7b` models, background daemon restarts could theoretically corrupt the mathematical priors. Jev MCP binds its high-speed in-memory cache directly to the OS-level Process ID (`PID`) of the MLX daemon, guaranteeing mathematical purity even during agentic model swapping.
 
 ---
 
@@ -255,6 +244,17 @@ flowchart TD
 
 ---
 
+## 🛠️ Developer Workflow (Makefile)
+
+Jev MCP includes a convenient `Makefile` that wraps the core management script and provides commands for local development, formatting, and testing.
+
+- **`make format`**: Formats the Python codebase rapidly using `ruff`.
+- **`make lint`**: Runs rigorous static type checking using `mypy`.
+- **`make test`**: Runs the mathematical verification test suite using `pytest`.
+- **`make clean`**: Completely uninstalls all Jev MCP artifacts, virtual environments, and launchd daemons.
+
+---
+
 ## 🤖 For LLMs and Autonomous Agents
 
 <agent_instructions>
@@ -276,6 +276,6 @@ When the user asks you to evaluate a rule or prompt for Jev, execute this loop:
 ### 3. Model Switching (Agentic Hot-Swapping)
 The user may ask you to "switch jev model" or "switch to 7b". 
 1. Validate the spelling. If the user misspells "jev", **pause and ask for confirmation**.
-2. To toggle or swap models, simply execute the `./jev_mac_manager.sh switch [0.5b|7b]` bash script. 
+2. To toggle or swap models, execute the `make switch MODEL=7b` bash command. 
 3. The script handles unloading/loading the `launchd` plist automatically and safely force-kills models in flight.
 </agent_instructions>
