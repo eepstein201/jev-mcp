@@ -251,14 +251,35 @@ flowchart TD
 
 ---
 
-## 🛠️ Developer Workflow (Makefile)
+## ⌨️ Command Line Interface (CLI) Reference
 
-Jev MCP includes a convenient `Makefile` that wraps the core management script and provides commands for local development, formatting, and testing.
+Jev MCP provides multiple layers of command-line tools for users, advanced developers, and IDE integrations.
 
-- **`make format`**: Formats the Python codebase rapidly using `ruff`.
-- **`make lint`**: Runs rigorous static type checking using `mypy`.
-- **`make test`**: Runs the mathematical verification test suite using `pytest`.
-- **`make clean`**: Completely uninstalls all Jev MCP artifacts, virtual environments, and launchd daemons.
+### 1. The Developer Wrapper (`Makefile`)
+The easiest way to interact with Jev MCP locally. It wraps the core bash script.
+*   **`make install [MODEL=0.5b|7b]`**: Installs the environment and boots the daemon (Defaults to `0.5b`).
+*   **`make switch [MODEL=0.5b|7b]`**: Instantly hot-swaps the background engine.
+*   **`make update [MODEL=0.5b|7b]`**: Re-pulls code, updates packages, and restarts.
+*   **`make clean`**: Completely uninstalls artifacts and tears down the daemon.
+*   **`make format` / `make lint` / `make test`**: Runs Ruff, MyPy, and PyTest respectively.
+
+### 2. The Core Engine Manager (`jev_mac_manager.sh`)
+The underlying bash script that handles hardware memory, virtual environments, and macOS `launchd` plist generation.
+*   **Commands:** `install`, `switch`, `update`, `uninstall`
+*   **Flags:** 
+    *   `--headless` (or `-h`): Automatically bypasses interactive `[y/N]` safety prompts. Essential for CI/CD pipelines, automated scripts, or LLM agents executing destructive commands (e.g., `./jev_mac_manager.sh uninstall --headless`).
+
+### 3. Standalone IDE Linter (`cli_linter.py`)
+A hidden Python CLI utility that allows code editors and CI pipelines to statically lint JSON question schemas without booting up the full server. It outputs in standard compiler format (`file:line: SEVERITY: CODE - Message`).
+*   **Usage:** `python -m jev_mcp.cli_linter <path/to/questions.json>`
+*   **What it catches:** Structural errors (e.g., generative intent, missing fallback options, or conversational boilerplate).
+
+### 4. Hidden Daemon Flags (`mlx_lm.server`)
+When `jev_mac_manager.sh` boots the background macOS Daemon, it automatically injects a hardcoded set of Apple Silicon performance flags into the C++ MLX backend. 
+*   `--model`: Resolves to the HuggingFace repo path.
+*   `--port`: Driven by `JEV_DAEMON_PORT` in your `.env` (defaults to `8080`).
+*   `--prompt-cache-size 20` & `--prompt-cache-bytes 12G`: Hardware memory tuning.
+*   `--prefill-step-size 2048`: Controls attention block chunks to prevent M-series chip overheating.
 
 ---
 
