@@ -25,8 +25,11 @@ make install MODEL=7b
 
 **To update your codebase and restart the daemon:**
 ```bash
-# Pulls latest code, reinstalls dependencies, and safely restarts the active model
+# Pulls latest code, reinstalls dependencies, and restarts the 0.5B model
 make update MODEL=0.5b
+
+# OR pulls latest code, reinstalls dependencies, and restarts the 7B model
+make update MODEL=7b
 ```
 
 **To uninstall Jev MCP cleanly:**
