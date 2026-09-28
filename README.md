@@ -147,7 +147,14 @@ Jev MCP strongly enforces structured response types to guarantee deterministic m
 
 #### 1. Noul (`noul`)
 The standard boolean classification. Noul (a portmanteau of "No/Null/True/False") is used for binary claims. By default, Jev evaluates the mathematical probability of `True` versus `False`.
-*   **Format:** `{"type": "noul", "key": "is_refund", "prompt": "Is this a refund request?"}`
+*   **Format:** 
+    ```json
+    {
+      "type": "noul", 
+      "key": "is_refund", 
+      "prompt": "Is this a refund request?"
+    }
+    ```
 *   **Best for:** Simple yes/no logic gates, routing, and anomaly detection.
 
 #### 2. Multiple Choice (`choice`)
