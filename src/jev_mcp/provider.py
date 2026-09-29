@@ -40,7 +40,7 @@ QuestionType = Union[NoulQuestion, ChoiceQuestion, ScoreQuestion]
 class JevProvider(Protocol):
     """
     Protocol defining the required interface for a Jev engine backend.
-    This allows us to seamlessly swap between a local `open-jev` toy model,
+    This allows us to seamlessly swap between a local `jev-mcp` toy model,
     a production PyTorch model, or a remote API without changing the MCP server.
     """
 
