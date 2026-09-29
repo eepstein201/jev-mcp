@@ -354,6 +354,34 @@ When `jev_mac_manager.sh` boots the background macOS Daemon, it automatically in
 
 ---
 
+---
+
+## 🔌 Connecting Jev to Your AI Client
+
+Because Jev implements the open Model Context Protocol (MCP) over standard input/output (`stdio`), you can instantly attach it to almost any modern AI agent framework. 
+
+All you need to do is add the following JSON block to your client's specific configuration file:
+
+```json
+{
+  "mcpServers": {
+    "jev": {
+      "command": "jev-mcp",
+      "args": []
+    }
+  }
+}
+```
+*(Note: If your client's environment doesn't have the `jev-mcp` command in its PATH, you can explicitly point it to the python module: `"command": "python", "args": ["-m", "jev_mcp.server"]` inside your virtual environment).*
+
+### Where to put this JSON block:
+
+*   **Antigravity CLI & IDE:** Add it to your global config at `~/.gemini/config/mcp_config.json`.
+*   **Claude Desktop:** Add it to your config at `~/Library/Application Support/Claude/claude_desktop_config.json`.
+*   **Opencode / Custom Frameworks:** Insert the block into your standard workspace `.mcp` or `mcp_servers.json` configuration file, depending on your runner's specific documentation.
+
+Once saved, restart your client. It will automatically perform an MCP handshake, discover all of Jev's tools (like `jev_evaluate_batch`), and inject them directly into your LLM's context!
+
 ## 🤖 For LLMs and Autonomous Agents
 
 <agent_instructions>
