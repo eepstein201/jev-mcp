@@ -342,10 +342,39 @@ The underlying bash script that handles hardware memory, virtual environments, a
 *   **Flags:** 
     *   `--headless` (or `-h`): Automatically bypasses interactive `[y/N]` safety prompts. Essential for CI/CD pipelines, automated scripts, or LLM agents executing destructive commands (e.g., `./jev_mac_manager.sh uninstall --headless`).
 
-### 3. Standalone IDE Linter (`cli_linter.py`)
-A hidden Python CLI utility that allows code editors and CI pipelines to statically lint JSON question schemas without booting up the full server. It outputs in standard compiler format (`file:line: SEVERITY: CODE - Message`).
-*   **Usage:** `python -m jev_mcp.cli_linter <path/to/questions.json>`
-*   **What it catches:** Structural errors (e.g., generative intent, missing fallback options, or conversational boilerplate).
+### 3. Real-Time Prompt Linting (`jev-lint`)
+
+Jev MCP includes a static analysis linter that acts exactly like a traditional code compiler (like ESLint or Ruff), but it specifically analyzes your prompt schemas. It catches phrasing mistakes, logic traps, and non-deterministic framing *before* you even run any ML code.
+
+**Installation**
+If you ran `make install`, the linter is already installed inside your local virtual environment! Alternatively, if you want it globally available on your machine, simply run `pip install -e .` from the project root.
+
+**Usage**
+Save your Jev questions into a standard JSON file (e.g., `questions.json`):
+```json
+[
+  {
+    "key": "support_intent",
+    "type": "noul",
+    "prompt": "Summarize the customer's issue."
+  }
+]
+```
+
+Run the linter against the file:
+```bash
+# If using the local virtual environment:
+./.venv/bin/jev-lint questions.json
+
+# If installed globally:
+jev-lint questions.json
+```
+
+**IDE & CI/CD Integration**
+The tool outputs warnings and errors using the standard compiler format (`file:line: SEVERITY: CODE - Message`). This means it integrates flawlessly into standard IDE error consoles (like the VSCode "Problems" tab) and will break CI/CD pipelines automatically if a prompt is malformed:
+```text
+questions.json:0: ERROR: GENERATIVE_INTENT_DETECTED - Question asks the model to generate content. (Suggestion: Rewrite as a classification. E.g. replace 'Summarize the user's tone' with 'Is the user angry?')
+```
 
 ### 4. Hidden Daemon Flags (`mlx_lm.server`)
 When `jev_mac_manager.sh` boots the background macOS Daemon, it automatically injects a hardcoded set of Apple Silicon performance flags into the C++ MLX backend. 
