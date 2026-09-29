@@ -1,4 +1,4 @@
-.PHONY: install switch test lint clean format update
+.PHONY: install switch test lint clean format update start stop
 
 # Set the default model for installation
 MODEL ?= 0.5b
@@ -14,6 +14,14 @@ switch:
 update:
 	@echo "Updating Jev MCP Environment..."
 	./jev_mac_manager.sh update
+
+start:
+	@echo "Starting Jev MCP Daemon..."
+	./jev_mac_manager.sh start
+
+stop:
+	@echo "Stopping Jev MCP Daemon..."
+	./jev_mac_manager.sh stop
 
 format:
 	@echo "Formatting code with Ruff..."

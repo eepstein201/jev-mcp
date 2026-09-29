@@ -234,6 +234,17 @@ case "$COMMAND" in
         fi
         ;;
 
+    start)
+        echo -e "${GREEN}Starting Jev MCP Daemon...${NC}"
+        manage_daemon start
+        ;;
+
+    stop)
+        echo -e "${YELLOW}Stopping Jev MCP Daemon...${NC}"
+        manage_daemon stop
+        echo -e "${GREEN}Daemon stopped.${NC}"
+        ;;
+
     uninstall)
         echo -e "${YELLOW}====================================================${NC}"
         echo -e "${YELLOW}  Uninstalling Jev MCP Environment Artifacts        ${NC}"
@@ -267,6 +278,8 @@ case "$COMMAND" in
         echo "  ./jev_mac_manager.sh install [0.5b|7b]"
         echo "  ./jev_mac_manager.sh switch [0.5b|7b]"
         echo "  ./jev_mac_manager.sh update [0.5b|7b]"
+        echo "  ./jev_mac_manager.sh start"
+        echo "  ./jev_mac_manager.sh stop"
         echo "  ./jev_mac_manager.sh uninstall"
         exit 1
         ;;

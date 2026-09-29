@@ -331,12 +331,13 @@ The easiest way to interact with Jev MCP locally. It wraps the core bash script.
 *   **`make install [MODEL=0.5b|7b]`**: Installs the environment and boots the daemon (Defaults to `0.5b`).
 *   **`make switch [MODEL=0.5b|7b]`**: Instantly hot-swaps the background engine.
 *   **`make update [MODEL=0.5b|7b]`**: Re-pulls code, updates packages, and restarts.
+*   **`make start` / `make stop`**: Manually boots or halts the daemon without destroying your installation.
 *   **`make clean`**: Completely uninstalls artifacts and tears down the daemon.
 *   **`make format` / `make lint` / `make test`**: Runs Ruff, MyPy, and PyTest respectively.
 
 ### 2. The Core Engine Manager (`jev_mac_manager.sh`)
 The underlying bash script that handles hardware memory, virtual environments, and macOS `launchd` plist generation.
-*   **Commands:** `install`, `switch`, `update`, `uninstall`
+*   **Commands:** `install`, `switch`, `update`, `start`, `stop`, `uninstall`
 *   **Flags:** 
     *   `--headless` (or `-h`): Automatically bypasses interactive `[y/N]` safety prompts. Essential for CI/CD pipelines, automated scripts, or LLM agents executing destructive commands (e.g., `./jev_mac_manager.sh uninstall --headless`).
 
