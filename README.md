@@ -240,7 +240,7 @@ Used for behavioral anchored rating scales (BARS) or objective magnitude scoring
 
 ## 📊 Performance Benchmarks
 
-Jev MCP fundamentally changes the speed and reliability of local AI decision-making. By moving away from slow autoregressive text generation and instead calculating direct probabilities, we achieve massive performance gains.
+Jev MCP fundamentally changes the speed and reliability of local AI decision-making. By moving away from slow autoregressive text generation and instead calculating direct probabilities, achieves massive performance gains.
 
 | Evaluation Engine | Average Latency | Calibration (ROC AUC) | Bias Vulnerability | Cost |
 | :--- | :--- | :--- | :--- | :--- |
@@ -258,8 +258,8 @@ Jev MCP fundamentally changes the speed and reliability of local AI decision-mak
 Under the hood, Jev MCP employs several highly specialized mathematical and systems-engineering techniques to achieve its performance:
 
 *   **Empty-Payload Bias Extraction**: LLMs suffer from severe "Recency Bias" (preferring the last option shown) and "Vocabulary Bias" (preferring the token "A" over "B"). Jev MCP evaluates your prompt twice: once normally, and once with an *empty payload*. By measuring the baseline probabilities of the empty payload, we extract the model's pure statistical bias.
-*   **DCPMI Subtraction**: We use Domain Conditional Pointwise Mutual Information (DCPMI) to mathematically subtract the extracted bias from the active evaluation. This isolates the model's *true conditional intent*, pushing models that natively perform at 0.66 ROC AUC up to a perfect 1.0 ROC AUC.
-*   **Laplace Horizon Smoothing**: Apple's MLX C++ API natively truncates logprobs at a hard horizon of `top_logprobs=11`. If a target option falls out of the top 11, it yields zero probability, which ordinarily causes catastrophic $log(0)$ math explosions. We implemented a $+1/K$ Laplace smoothing factor (pseudo-counts) to gracefully absorb probability mass beyond the hardware truncation limit.
+*   **DCPMI Subtraction**: Uses Domain Conditional Pointwise Mutual Information (DCPMI) to mathematically subtract the extracted bias from the active evaluation. This isolates the model's *true conditional intent*, pushing models that natively perform at 0.66 ROC AUC up to a perfect 1.0 ROC AUC.
+*   **Laplace Horizon Smoothing**: Apple's MLX C++ API natively truncates logprobs at a hard horizon of `top_logprobs=11`. If a target option falls out of the top 11, it yields zero probability, which ordinarily causes catastrophic $log(0)$ math explosions. Implemented a $+1/K$ Laplace smoothing factor (pseudo-counts) to gracefully absorb probability mass beyond the hardware truncation limit.
 *   **Log-Sum-Exp Token Aggregation**: LLM tokenizers fragment answers unexpectedly. The concept of "True" might be split across the tokens `"True"`, `" True"`, `" T"`, and `"T"`. Jev MCP aggregates these fragmented probability masses using rigorous `Log-Sum-Exp` mathematics to ensure no confidence is lost.
 *   **Absolute Confidence Gating**: If the total sum of all target token probabilities is $< 5\%$, Jev MCP instantly recognizes that the model is confused or hallucinating due to out-of-distribution context, and forces a `0.0` confidence score.
 *   **PID-Bound Cache Protection**: When hot-swapping between the `0.5b` and `7b` models, background daemon restarts could theoretically corrupt the mathematical priors. Jev MCP binds its high-speed in-memory cache directly to the OS-level Process ID (`PID`) of the MLX daemon, guaranteeing mathematical purity even during agentic model swapping.
