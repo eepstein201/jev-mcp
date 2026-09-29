@@ -331,7 +331,8 @@ The easiest way to interact with Jev MCP locally. It wraps the core bash script.
 *   **`make install [MODEL=0.5b|7b]`**: Installs the environment and boots the daemon (Defaults to `0.5b`).
 *   **`make switch [MODEL=0.5b|7b]`**: Instantly hot-swaps the background engine.
 *   **`make update [MODEL=0.5b|7b]`**: Re-pulls code, updates packages, and restarts.
-*   **`make start` / `make stop`**: Manually boots or halts the daemon without destroying your installation.
+*   **`make start [MODEL=0.5b|7b]`**: Manually boots the daemon (and dynamically fetches new model weights if they haven't been downloaded yet).
+*   **`make stop`**: Gracefully halts the background daemon and clears models from memory without destroying your installation.
 *   **`make clean`**: Completely uninstalls artifacts and tears down the daemon.
 *   **`make format` / `make lint` / `make test`**: Runs Ruff, MyPy, and PyTest respectively.
 
