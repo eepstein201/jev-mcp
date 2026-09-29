@@ -235,6 +235,15 @@ case "$COMMAND" in
         ;;
 
     start)
+        if [ ! -d ".venv" ]; then
+            log_error "The Python virtual environment is missing."
+            log_error "Please install the system first by running: make install MODEL=$TARGET_MODEL_ALIAS"
+            exit 1
+        fi
+        SELECTED_MODEL=$(resolve_model "$TARGET_MODEL_ALIAS")
+        log_info "Configuring daemon for model: $TARGET_MODEL_ALIAS ($SELECTED_MODEL)"
+        manage_daemon stop
+        setup_launchd_plist "$SELECTED_MODEL"
         echo -e "${GREEN}Starting Jev MCP Daemon...${NC}"
         manage_daemon start
         ;;
@@ -278,7 +287,7 @@ case "$COMMAND" in
         echo "  ./jev_mac_manager.sh install [0.5b|7b]"
         echo "  ./jev_mac_manager.sh switch [0.5b|7b]"
         echo "  ./jev_mac_manager.sh update [0.5b|7b]"
-        echo "  ./jev_mac_manager.sh start"
+        echo "  ./jev_mac_manager.sh start [0.5b|7b]"
         echo "  ./jev_mac_manager.sh stop"
         echo "  ./jev_mac_manager.sh uninstall"
         exit 1

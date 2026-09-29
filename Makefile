@@ -17,7 +17,7 @@ update:
 
 start:
 	@echo "Starting Jev MCP Daemon..."
-	./jev_mac_manager.sh start
+	./jev_mac_manager.sh start $(MODEL)
 
 stop:
 	@echo "Stopping Jev MCP Daemon..."
