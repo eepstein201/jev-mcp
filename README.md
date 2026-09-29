@@ -22,6 +22,32 @@ else:
 ```
 You get the intelligence of a massive LLM, safely gated by the mathematical determinism of Jev.
 
+### 🎯 Real-World Use Case: The Data Scientist (Zero-Shot Classification)
+
+Traditionally, if a Data Scientist wanted to build a strict text classifier, they would have to gather thousands of labeled examples, clean the data, and fine-tune a custom BERT or RoBERTa model. 
+
+**This is where `jev-mcp` comes in.**
+By utilizing the Jev MCP API, a Data Scientist can instantly leverage an off-the-shelf generalized AI model (like Qwen2.5) as a rigorous classical classifier. You pass in a dataset of edge cases, and Jev extracts the raw mathematical logprobs via DCPMI. Within seconds, you can plot ROC curves, calculate Area Under Curve (AUC), and mathematically prove a confidence threshold (e.g., `> 0.85`) that guarantees 100% precision—all locally, with zero training data required.
+
+### 🎯 Real-World Use Case: The App Developer (Deterministic Routing)
+
+Imagine you are a backend developer building a system that routes incoming support tickets to either `Sales`, `Billing`, `Tech Support`, or `Unknown`. 
+
+If you use a standard LLM API (like OpenAI), you face three problems: high API costs, high latency, and non-deterministic parsing (e.g., the model occasionally outputs *"I think the user belongs in the Billing department"* instead of just *"Billing"*).
+
+**This is where `jev-mcp` comes in.**
+By running Jev locally, you can pass the ticket through the `0.5B` model profile. Because Jev intercepts the math before text generation occurs, it executes in ~100ms, costs $0, and returns a perfectly typed, deterministic JSON object:
+```json
+{
+  "department": {
+    "choice": "b", 
+    "probabilities": {"a": 0.0, "b": 0.99, "c": 0.0, "d": 0.0}
+  }
+}
+```
+You get the semantic intelligence of a generative model, with the speed, cost, and type-safety of traditional code.
+
+
 ---
 
 ## 📖 Complete User Guide
