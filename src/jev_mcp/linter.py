@@ -34,7 +34,8 @@ class DecisionPreflightLinter:
             re.IGNORECASE,
         )
         self.compound_patterns = re.compile(
-            r"\b(and also|as well as)\b|\b(and|or)\b.*\?", re.IGNORECASE
+            r"\b(and also|as well as|along with|in addition to|not to mention)\b|(?:\b(and|or)\b|\s+(&|&&|\|\||\+)\s+).*\?",
+            re.IGNORECASE,
         )
         self.chronological_patterns = re.compile(
             r"\b(happened before|happened after|occurred before|occurred after|older than|newer than|younger than|earlier than|later than|chronological|chronologically|prior to|subsequent to)\b",
