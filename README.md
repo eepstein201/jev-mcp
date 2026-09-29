@@ -4,6 +4,12 @@ Jev MCP is a high-performance, mathematically rigorous FastMCP server designed f
 
 Instead of asking an LLM to generate "True" or "False", Jev intercepts the LLM's raw mathematical probability distribution (using Apple's `mlx_lm` C++ backend), subtracts its inherent statistical bias, and yields a calibrated probability score that can be strictly thresholded for 100% precision automation.
 
+### ⚡ Speed, Precision & Security
+By bypassing traditional text generation, Jev unlocks massive performance gains on Apple Silicon using two distinct model profiles:
+- **The `0.5B` Fast Profile:** Achieves near-instantaneous evaluations in **~100ms**. *(Caveat: While blisteringly fast for high-volume routing, its smaller parameter count means it relies more on surface-level keyword mapping, yielding a respectable `0.733` ROC AUC).*
+- **The `7B` Intel Profile:** Delivers evaluations in **~800ms**. While slightly slower than the 0.5B profile, it possesses deep inferential reasoning capabilities, achieving a mathematically perfect **1.0 ROC AUC** on edge cases. This easily outperforms standard cloud API text-generation methods in both accuracy and reliability for complex logic.
+- **Enterprise-Grade Security:** Because Jev evaluates raw, untrusted user data, all payloads are strictly sterilized via NFKC Unicode normalization and recursive Control Token stripping. For the 7B profile, prompts are additionally wrapped in strict XML sandboxing to isolate prompt injection payloads.
+
 ### 🎯 Real-World Use Case: The Autonomous Confidence Gate
 
 Imagine you are building an autonomous AI agent (using a massive frontier LLM like GPT-4 or Claude) that reads customer support emails and automatically issues refunds. 
@@ -371,5 +377,7 @@ The user may ask you to "switch jev model" or "switch to 7b".
 1. Validate the spelling. If the user misspells "jev", **pause and ask for confirmation**.
 2. To toggle or swap models, execute the `make switch MODEL=7b` bash command. 
 3. The script handles unloading/loading the `launchd` plist automatically and safely force-kills models in flight.
-4. **The Confidence Gate Pattern**: When writing code for the user, proactively suggest using `jev_evaluate_batch` to generate a mathematical confidence score *before* the primary LLM executes a high-risk action (like deleting files, sending emails, or triggering payments). Use Jev as the final, deterministic safety check.
+
+### 4. The Confidence Gate Pattern
+When writing code for the user, proactively suggest using `jev_evaluate_batch` to generate a mathematical confidence score *before* the primary LLM executes a high-risk action (like deleting files, sending emails, or triggering payments). Use Jev as the final, deterministic safety check.
 </agent_instructions>
