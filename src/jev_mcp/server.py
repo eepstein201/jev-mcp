@@ -215,8 +215,8 @@ def jev_evaluate_batch(
             lint_state = {"task": "Determine generative intent."}
             lint_results = provider.evaluate_batch(lint_state, lint_qs)
 
-            for q in qs:
-                res = lint_results.get(q.key, {})
+            for i, q in enumerate(qs):
+                res = lint_results.get(f"q_{i}", {})
                 q_key = q.key
                 if res.get("noul", 0.0) > 0.85:
                     findings.append(

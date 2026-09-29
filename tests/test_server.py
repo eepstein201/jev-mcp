@@ -150,20 +150,24 @@ def test_jev_evaluate_batch_qfe_compression_exception(mock_check_limit, mock_url
     assert "CRITICAL SYSTEM ERROR" in result_str
     assert "Network Error" in result_str
 
+@patch("jev_mcp.server.call_fast_autofixer")
 @patch.object(server.provider, "evaluate_batch")
 @patch.object(server.provider, "check_token_limit")
 @patch.object(server.linter, "lint")
-def test_jev_evaluate_batch_model_linter_generative(mock_lint, mock_check_limit, mock_evaluate_batch):
+def test_jev_evaluate_batch_model_linter_generative(mock_lint, mock_check_limit, mock_evaluate_batch, mock_autofix):
     mock_report = MagicMock()
     mock_report.findings = []
     mock_lint.return_value = mock_report
     mock_check_limit.return_value = 100
     
     # Model based linter thinks it's generative (>0.85)
-    mock_evaluate_batch.return_value = {"q1": {"noul": 0.99}}
+    # The first call to evaluate_batch is for lint_qs (key q_0)
+    mock_evaluate_batch.return_value = {"q_0": {"noul": 0.99}}
+    
+    mock_autofix.side_effect = Exception("Autofixer failed")
 
     q1 = NoulQuestion(key="q1", prompt="Summarize this text?")
-    result_str = server.jev_evaluate_batch(state={"test": 1}, questions=[q1])
+    result_str = server.jev_evaluate_batch(state={"test": 1}, questions=[q1], auto_apply_fixes=False)
     
     result = json.loads(result_str)
     assert result["status"] == "REJECTED_BY_LINTER"
