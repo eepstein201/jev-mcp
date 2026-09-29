@@ -30,7 +30,8 @@ class DecisionPreflightLinter:
             re.IGNORECASE,
         )
         self.arithmetic_patterns = re.compile(
-            r"\b(how many|calculate|count the number of|total sum of|compute the average)\b",
+            r"\b(how many|how much|calculate|compute|count the|sum of|total number of|what percentage|what fraction|multiplied by|divided by|subtracted from|plus|minus)\b"
+            r"|(?:\d+\s*[\+\*]\s*\d+)|(?:\d+\s+[\-\/]\s+\d+)",
             re.IGNORECASE,
         )
         self.compound_patterns = re.compile(
