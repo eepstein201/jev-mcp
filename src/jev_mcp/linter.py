@@ -37,7 +37,7 @@ class DecisionPreflightLinter:
             r"\b(and also|as well as)\b|\b(and|or)\b.*\?", re.IGNORECASE
         )
         self.chronological_patterns = re.compile(
-            r"\b(happened before|occurred after|older than|newer than|chronological)\b",
+            r"\b(happened before|happened after|occurred before|occurred after|older than|newer than|younger than|earlier than|later than|chronological|chronologically|prior to|subsequent to)\b",
             re.IGNORECASE,
         )
         self.boilerplate_patterns = re.compile(
