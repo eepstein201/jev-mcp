@@ -378,6 +378,7 @@ All you need to do is add the following JSON block to your client's specific con
 
 *   **Antigravity CLI & IDE:** Add it to your global config at `~/.gemini/config/mcp_config.json`.
 *   **Claude Desktop:** Add it to your config at `~/Library/Application Support/Claude/claude_desktop_config.json`.
+*   **Claude Code CLI:** Simply run the terminal command: `claude mcp add jev -- jev-mcp`
 *   **Opencode / Custom Frameworks:** Insert the block into your standard workspace `.mcp` or `mcp_servers.json` configuration file, depending on your runner's specific documentation.
 
 Once saved, restart your client. It will automatically perform an MCP handshake, discover all of Jev's tools (like `jev_evaluate_batch`), and inject them directly into your LLM's context!
