@@ -10,7 +10,7 @@ except ImportError:
 import json
 import logging
 import urllib.request
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Literal
 from pydantic import Field
 
 # Must immediately hijack stdout to prevent ANY random library (like torch)
@@ -544,6 +544,10 @@ def jev_calibrate_threshold(
         description="Array of dicts: [{'state': {...}, 'expected': True/False/String}]"
     ),
     question: QuestionType = Field(description="The question to calibrate."),
+    apply_platt_scaling: Literal["auto", "always", "never"] = Field(
+        default="auto",
+        description="Whether to apply Platt Scaling (Logistic Calibration) to mathematically fix overconfident >99% logits."
+    )
 ) -> str:
     logger.info(f"Starting Threshold Calibration for {len(dataset)} rows...")
 
@@ -554,108 +558,173 @@ def jev_calibrate_threshold(
         q_obj = ChoiceQuestion(
             key=question.key, prompt=question.prompt, options=question.options
         )  # type: ignore
-    # type: ignore
     elif isinstance(question, ScoreQuestion):
         q_obj = ScoreQuestion(
             key=question.key, prompt=question.prompt, labels=question.labels
         )  # type: ignore
-    # type: ignore
 
     try:
         results = provider.evaluate_dataset(dataset, q_obj)
     except Exception as e:
         return f"Calibration Failed: {str(e)}"
 
-    thresholds = [0.50, 0.60, 0.70, 0.80, 0.85, 0.90, 0.95, 0.99]
-    table = "| Threshold | Automation Rate | Precision | Recall | False Positives | Recommendation |\n"
-    table += "| :--- | :--- | :--- | :--- | :--- | :--- |\n"
+    def evaluate_thresholds(current_results):
+        thresholds = [0.50, 0.60, 0.70, 0.80, 0.85, 0.90, 0.95, 0.99]
+        table = "| Threshold | Automation Rate | Precision | Recall | False Positives | Recommendation |\n"
+        table += "| :--- | :--- | :--- | :--- | :--- | :--- |\n"
+        
+        auto_rate_at_99 = 0.0
 
-    for t in thresholds:
-        tp = 0
-        fp = 0
-        fn = 0
-        tn = 0
-        automated = 0
+        for t in thresholds:
+            tp = fp = fn = tn = automated = 0
 
-        for i, res in enumerate(results):
-            expected = (
-                dataset[i].get("expected") if isinstance(dataset[i], dict) else None
-            )
+            for i, res in enumerate(current_results):
+                expected = dataset[i].get("expected") if isinstance(dataset[i], dict) else None
 
-            if isinstance(q_obj, NoulQuestion):
-                # For Noul, expected is boolean. Model confidence is noul probability.
-                is_positive = expected is True or str(expected).lower() == "true"
-                pred_prob = res.get(
-                    "noul", res.get("probabilities", {}).get("true", 0.0)
-                )
-                pred_positive = pred_prob > t
+                if isinstance(q_obj, NoulQuestion):
+                    is_positive = expected is True or str(expected).lower() == "true"
+                    pred_prob = res.get("noul", res.get("probabilities", {}).get("true", 0.0))
+                    pred_positive = pred_prob > t
 
-                if pred_prob > t or (1.0 - pred_prob) > t:
-                    automated += 1
+                    if pred_prob > t or (1.0 - pred_prob) > t:
+                        automated += 1
 
-                if is_positive and pred_positive:
-                    tp += 1
-                elif not is_positive and pred_positive:
-                    fp += 1
-                elif is_positive and not pred_positive:
-                    fn += 1
-                elif not is_positive and not pred_positive:
-                    tn += 1
-            else:
-                # For choice/score, simple confidence thresholding
-                probs = res.get("probabilities", {})
-                if probs:
-                    pred_val = max(probs.items(), key=lambda x: x[1])[0]
-                    conf = probs[pred_val]
+                    if is_positive and pred_positive: tp += 1
+                    elif not is_positive and pred_positive: fp += 1
+                    elif is_positive and not pred_positive: fn += 1
+                    elif not is_positive and not pred_positive: tn += 1
                 else:
-                    pred_val = ""
-                    conf = 0.0
+                    probs = res.get("probabilities", {})
+                    if probs:
+                        pred_val = max(probs.items(), key=lambda x: x[1])[0]
+                        conf = probs[pred_val]
+                    else:
+                        pred_val = ""
+                        conf = 0.0
+                    
+                    expected_str = str(expected).lower()
+                    if isinstance(q_obj, ChoiceQuestion):
+                        for opt_idx, opt_str in enumerate(q_obj.options):
+                            if str(opt_str).lower() == expected_str:
+                                expected_str = chr(97 + opt_idx)
+                                break
+                                
+                    is_positive = expected_str == str(pred_val).lower()
+
+                    if conf > t:
+                        automated += 1
+                        if is_positive: tp += 1
+                        else: fp += 1
+                    else:
+                        if is_positive: fn += 1
+                        else: tn += 1
+
+            total = len(dataset)
+            auto_rate = automated / total if total > 0 else 0
+            precision = tp / (tp + fp) if (tp + fp) > 0 else 1.0
+            recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+
+            rec = "⚠️ Risky"
+            if precision > 0.98 and auto_rate > 0.4:
+                rec = "✅ Optimal"
+            elif precision == 1.0:
+                rec = "✅ Safe (Low Volume)"
+            elif auto_rate < 0.1:
+                rec = "❌ Unusable"
+
+            table += f"| > {t:.2f} | {auto_rate * 100:.1f}% | {precision * 100:.1f}% | {recall * 100:.1f}% | {fp} | {rec} |\n"
+            
+            if t == 0.99:
+                auto_rate_at_99 = auto_rate
                 
-                expected_str = str(expected).lower()
-                if isinstance(q_obj, ChoiceQuestion):
-                    for opt_idx, opt_str in enumerate(q_obj.options):
-                        if str(opt_str).lower() == expected_str:
-                            expected_str = chr(97 + opt_idx)
-                            break
-                            
-                is_positive = expected_str == str(pred_val).lower()
+        return table, auto_rate_at_99
 
-                if conf > t:
-                    automated += 1
-                    if is_positive:
-                        tp += 1
-                    else:
-                        fp += 1
-                else:
-                    if is_positive:
-                        fn += 1
-                    else:
-                        tn += 1
-
-        total = len(dataset)
-        auto_rate = automated / total if total > 0 else 0
-        precision = tp / (tp + fp) if (tp + fp) > 0 else 1.0
-        recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
-
-        rec = "⚠️ Risky"
-        if precision > 0.98 and auto_rate > 0.4:
-            rec = "✅ Optimal"
-        elif precision == 1.0:
-            rec = "✅ Safe (Low Volume)"
-        elif auto_rate < 0.1:
-            rec = "❌ Unusable"
-
-        table += f"| > {t:.2f} | {auto_rate * 100:.1f}% | {precision * 100:.1f}% | {recall * 100:.1f}% | {fp} | {rec} |\n"
+    # Initial evaluation
+    initial_table, auto_rate_99 = evaluate_thresholds(results)
+    
+    platt_applied = False
+    final_table = initial_table
+    
+    if apply_platt_scaling == "always" or (apply_platt_scaling == "auto" and auto_rate_99 > 0.5):
+        try:
+            from sklearn.linear_model import LogisticRegression
+            import numpy as np
+            import math
+            
+            logger.info("High overconfidence detected. Applying Platt Scaling...")
+            
+            X_raw = []
+            y_true = []
+            valid_indices = []
+            
+            for i, res in enumerate(results):
+                expected = dataset[i].get("expected") if isinstance(dataset[i], dict) else None
+                probs = res.get("probabilities", {})
+                
+                # Currently only implemented for 2-choice questions
+                if len(probs) == 2:
+                    keys = list(probs.keys())
+                    p_a = max(min(probs[keys[0]], 0.999999), 0.000001)
+                    p_b = max(min(probs[keys[1]], 0.999999), 0.000001)
+                    
+                    log_odds = math.log(p_a) - math.log(p_b)
+                    
+                    expected_str = str(expected).lower()
+                    if isinstance(q_obj, ChoiceQuestion):
+                        for opt_idx, opt_str in enumerate(q_obj.options):
+                            if str(opt_str).lower() == expected_str:
+                                expected_str = chr(97 + opt_idx)
+                                break
+                    
+                    # 1 if expected matches keys[0], 0 otherwise
+                    is_positive = 1 if expected_str == keys[0] else 0
+                    
+                    X_raw.append([log_odds])
+                    y_true.append(is_positive)
+                    valid_indices.append(i)
+            
+            if len(X_raw) > 1 and len(set(y_true)) > 1:
+                clf = LogisticRegression(penalty=None, solver='lbfgs')
+                clf.fit(np.array(X_raw), np.array(y_true))
+                calibrated_probs = clf.predict_proba(np.array(X_raw))
+                
+                # Update the results inline
+                for j, idx in enumerate(valid_indices):
+                    keys = list(results[idx]["probabilities"].keys())
+                    # LogisticRegression predicts prob of class 0 and class 1
+                    # We assigned y=1 if expected matches keys[0], so class 1 is keys[0]
+                    idx_1 = list(clf.classes_).index(1)
+                    idx_0 = list(clf.classes_).index(0)
+                    
+                    results[idx]["probabilities"][keys[0]] = calibrated_probs[j][idx_1]
+                    results[idx]["probabilities"][keys[1]] = calibrated_probs[j][idx_0]
+                
+                platt_applied = True
+                final_table, _ = evaluate_thresholds(results)
+                
+        except ImportError:
+            logger.warning("scikit-learn is required for Platt Scaling. Skipping calibration.")
+            final_table += "\n### 🚨 Logit Overconfidence Detected\n"
+            final_table += "The model exhibits extreme epistemic certainty (>99% confidence), rendering standard thresholding unsafe.\n"
+            final_table += "**Run `pip install scikit-learn` to enable automatic Platt Scaling (Logistic Calibration) which will mathematically fix this.**"
+            
+    if not platt_applied and auto_rate_99 > 0.5:
+        final_table += "\n### 🚨 Logit Overconfidence Detected\n"
+        final_table += "The model exhibits extreme epistemic certainty (>99% confidence), rendering standard thresholding unsafe.\n"
+        final_table += "To fix this automatically, set `apply_platt_scaling='auto'` to mathematically scale the probabilities down to their true fractional uncertainty."
+        
+    if platt_applied:
+        final_table += "\n### 🛠️ Platt Scaling Applied\n"
+        final_table += "Logit overconfidence was detected. A Logistic Regression model was automatically fit against the raw log-odds of the dataset to squish the >99% confidence scores back down to objective reality. The table above reflects the calibrated thresholds."
 
     return json.dumps(
         {
             "status": "CALIBRATION_COMPLETE",
             "dataset_size": len(dataset),
-            "markdown_report": table,
+            "markdown_report": final_table,
         },
         indent=2,
     )
-
 
 @mcp.tool(
     name="jev_explain_decision",

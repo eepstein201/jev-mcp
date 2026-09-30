@@ -142,6 +142,36 @@ Once installed, Jev exposes the following specialized tools to your MCP client (
     
     *(In this visual example, setting your production code to `if score > 0.90:` guarantees zero false positives while automating 70% of the workload!)*
 
+##### 🚨 Dealing with Overconfidence: Automated Platt Scaling
+Occasionally, larger RLHF-tuned models (like 7B) exhibit "Mode Collapse" or "Logit Sharpening." Because they are trained to be highly decisive assistants, they may assign >99% epistemic certainty to the argmax token, causing all standard thresholds to fail.
+
+`jev_calibrate_threshold` features native **Automated Platt Scaling (Logistic Calibration)**. 
+By default (`apply_platt_scaling="auto"`), Jev actively monitors for extreme overconfidence. If triggered, it automatically extracts the raw log-odds (`log(P_A) - log(P_B)`) and uses `scikit-learn` to fit a Logistic Regression model against your expected dataset outcomes—mathematically squishing the >99% confidence scores back down to their true fractional uncertainty.
+
+*Note: You only need to configure the `apply_platt_scaling` parameter if you want to explicitly disable this feature (`"never"`) or force it to execute regardless of the trigger conditions (`"always"`).*
+
+**Real-World Example:**
+Imagine an unfair coin weighted to land Heads 75% of the time. When asked to predict 100 flips without context, the 7B model accurately deduces that Heads is the optimal guess, but erroneously assigns >99% confidence to *every single guess*.
+
+
+**Before Platt Scaling (Raw RLHF Math):**
+Because the model is >99% confident, it blindly bypasses the `> 0.99` threshold, triggering 25 False Positives when the universe inevitably rolls Tails.
+| Threshold | Automation Rate | Precision | Recall | False Positives | Recommendation |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| > 0.70 | 100.0% | 75.0% | 100.0% | 25 | ⚠️ Risky |
+| > 0.80 | 100.0% | 75.0% | 100.0% | 25 | ⚠️ Risky |
+| > 0.90 | 100.0% | 75.0% | 100.0% | 25 | ⚠️ Risky |
+| > 0.99 | 100.0% | 75.0% | 100.0% | 25 | ⚠️ Risky |
+
+**After Automated Platt Scaling:**
+Jev detects the anomaly, mathematically suppresses the log-odds down to exactly `0.75`, and repairs the matrix. The threshold gate accurately blocks the automation at safe levels, saving your pipeline from 25 hallucinations!
+| Threshold | Automation Rate | Precision | Recall | False Positives | Recommendation |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| > 0.70 | 100.0% | 75.0% | 100.0% | 25 | ⚠️ Risky |
+| > 0.80 | 0.0% | 100.0% | 0.0% | 0 | ✅ Safe (Low Volume) |
+| > 0.90 | 0.0% | 100.0% | 0.0% | 0 | ✅ Safe (Low Volume) |
+| > 0.99 | 0.0% | 100.0% | 0.0% | 0 | ✅ Safe (Low Volume) |
+
 #### `jev_evaluate_batch`
 *   **What it does:** The production evaluation endpoint. It takes a massive block of text (the "state") and evaluates a batch of questions against it in a single pass.
 *   **Special capabilities:** 

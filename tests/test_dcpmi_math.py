@@ -64,3 +64,14 @@ def test_log_sum_exp_token_aggregation():
 
     assert result["true"] > -2.0
     assert result["false"] == -4.0
+
+def test_unreachable_max_lp():
+    from unittest.mock import patch
+    provider = DaemonProvider()
+    raw_logprobs = {"true": -1.0}
+    prior_logprobs = {"true": -1.0}
+    with patch("builtins.max", return_value=-9999.0):
+        normalized = provider._normalize_logprobs(
+            raw_logprobs, ["true"], prior_logprobs
+        )
+        assert normalized == {"true": 0.0}

@@ -529,3 +529,71 @@ def test_jev_generate_synthetic_dataset_no_local(mock_check_output):
     
     assert "INSTRUCTION TO PRIMARY LLM:" in res
     assert "one of the choice options" in res
+
+@patch.object(server.provider, "evaluate_dataset")
+def test_jev_calibrate_threshold_platt_auto_triggered(mock_eval_dataset):
+    # Simulate overconfident model: 10 items, all >0.99 logprobs
+    # 7 heads, 3 tails expected
+    mock_eval_dataset.return_value = [
+        {"probabilities": {"a": 0.999, "b": 0.001}} for _ in range(10)
+    ]
+    dataset = [{"expected": "A"} for _ in range(7)] + [{"expected": "B"} for _ in range(3)]
+    
+    q = ChoiceQuestion(key="coin", prompt="?", options=["A", "B"])
+    res_str = server.jev_calibrate_threshold(dataset, q, apply_platt_scaling="auto")
+    res = json.loads(res_str)
+    
+    assert res["status"] == "CALIBRATION_COMPLETE"
+    # Should say Platt Scaling Applied
+    assert "Platt Scaling Applied" in res["markdown_report"]
+    # The >0.99 threshold should now have 0 automation rate because probabilities were squished
+    assert "| > 0.99 | 0.0% |" in res["markdown_report"]
+
+@patch.object(server.provider, "evaluate_dataset")
+def test_jev_calibrate_threshold_platt_always(mock_eval_dataset):
+    # Not inherently overconfident (only 2 items)
+    mock_eval_dataset.return_value = [
+        {"probabilities": {"a": 0.6, "b": 0.4}},
+        {"probabilities": {"a": 0.4, "b": 0.6}},
+    ]
+    dataset = [{"expected": "A"}, {"expected": "B"}]
+    
+    q = ChoiceQuestion(key="coin", prompt="?", options=["A", "B"])
+    # Force apply_platt_scaling
+    res_str = server.jev_calibrate_threshold(dataset, q, apply_platt_scaling="always")
+    res = json.loads(res_str)
+    
+    assert "Platt Scaling Applied" in res["markdown_report"]
+
+@patch.object(server.provider, "evaluate_dataset")
+def test_jev_calibrate_threshold_platt_never(mock_eval_dataset):
+    # Overconfident
+    mock_eval_dataset.return_value = [
+        {"probabilities": {"a": 0.999, "b": 0.001}} for _ in range(10)
+    ]
+    dataset = [{"expected": "A"} for _ in range(7)] + [{"expected": "B"} for _ in range(3)]
+    
+    q = ChoiceQuestion(key="coin", prompt="?", options=["A", "B"])
+    res_str = server.jev_calibrate_threshold(dataset, q, apply_platt_scaling="never")
+    res = json.loads(res_str)
+    
+    # Should detect it but suggest the user turn it on
+    assert "To fix this automatically, set `apply_platt_scaling='auto'`" in res["markdown_report"]
+    assert "Platt Scaling Applied" not in res["markdown_report"]
+
+@patch.object(server.provider, "evaluate_dataset")
+def test_jev_calibrate_threshold_platt_missing_sklearn(mock_eval_dataset):
+    # Overconfident
+    mock_eval_dataset.return_value = [
+        {"probabilities": {"a": 0.999, "b": 0.001}} for _ in range(10)
+    ]
+    dataset = [{"expected": "A"} for _ in range(7)] + [{"expected": "B"} for _ in range(3)]
+    
+    q = ChoiceQuestion(key="coin", prompt="?", options=["A", "B"])
+    
+    # Mock ImportError
+    with patch.dict('sys.modules', {'sklearn.linear_model': None}):
+        res_str = server.jev_calibrate_threshold(dataset, q, apply_platt_scaling="auto")
+        res = json.loads(res_str)
+        
+        assert "scikit-learn" in res["markdown_report"]
