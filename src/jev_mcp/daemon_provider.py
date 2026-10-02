@@ -39,15 +39,18 @@ class DaemonProvider(JevProvider):
 
     def _get_daemon_pid(self) -> str:
         try:
-            out = (
-                subprocess.check_output(["pgrep", "-f", "mlx_lm.server"])
-                .decode()
-                .strip()
-                .split("\n")[0]
-            )
-            return out
+            # Match the specific port being targeted by this provider
+            import re
+            port_match = re.search(r':(\d+)/', self.base_url)
+            port = port_match.group(1) if port_match else "8080"
+            out = subprocess.check_output(["pgrep", "-f", f"mlx_lm.server.*--port {port}"])
+            return out.decode().strip().split("\n")[0]
         except Exception:
-            return "unknown_pid"
+            # Fallback for single model runs
+            try:
+                return subprocess.check_output(["pgrep", "-f", "mlx_lm.server"]).decode().strip().split("\n")[0]
+            except:
+                return "unknown_pid"
 
     def get_logprobs(
         self, user_prompt: str, target_tokens: List[str]

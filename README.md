@@ -471,3 +471,23 @@ The user may ask you to "switch jev model" or "switch to 7b".
 ### 4. The Confidence Gate Pattern
 When writing code for the user, proactively suggest using `jev_evaluate_batch` to generate a mathematical confidence score *before* the primary LLM executes a high-risk action (like deleting files, sending emails, or triggering payments). Use Jev as the final, deterministic safety check.
 </agent_instructions>
+
+### 5. Dynamic Agentic Model Routing (`jev_determine_best_model`)
+If your client (like Claude Code CLI, Antigravity CLI, or OpenCode) supports changing models mid-flight, Jev provides an interactive MCP tool that mathematically recommends the optimal model based on the complexity of the current task.
+
+- **Context-Aware Routing**: It analyzes `estimated_tokens`. If a task touches a massive context (e.g., >100k tokens), it actively warns the client to ensure large-context flags are set and recommends 1M+ token models to prevent context collapse.
+- **Evidence-Based Hybrid Evaluation**: Jev evaluates prompt complexity using a dynamic cascade. It doesn't blindly trust the 0.5B model; if the fast model shows <85% confidence on complexity heuristics, it seamlessly escalates the evaluation to the 7B model.
+- **Interactive Configuration (`jev_manage_router_config`)**: Because most CLIs don't natively expose their internal model lists to external scripts, Jev maintains a persistent `~/.jev/router_config.json`. You can interact with this config entirely via your LLM. Simply type in chat: *"Route tasks touching > 10 files to Opus,"* and the LLM will use this tool to persist the exception rule natively in Jev!
+
+### Standardized MCP Prompts
+Jev MCP exposes native **MCP Prompts** which act as universal slash commands inside clients like Claude Desktop and Claude Code CLI.
+
+* **`/jev-mcp:calibrate`**: Calibrates the exact logit threshold for a custom dataset using the `jev_calibrate_threshold` tool.
+* **`/jev-mcp:compact`**: Instantly instructs the LLM to compress its working memory via the 0.5B Logit Confidence Gater to save tokens and prevent hallucinations.
+* **`/jev-mcp:evaluate`**: Interactively evaluates your current context/codebase against a custom set of mathematical criteria using the `jev_evaluate_batch` tool.
+* **`/jev-mcp:explain-decision`**: Asks Jev to extract the exact reasoning behind a specific mathematical score using the `jev_explain_decision` tool.
+* **`/jev-mcp:generate-data`**: Spins up a local synthetic dataset generation loop using the `jev_generate_synthetic_dataset` tool.
+* **`/jev-mcp:model-router`**: Instructs the LLM to calculate the complexity of your current goal and recommend the mathematically optimal model.
+* **`/jev-mcp:model-router-config`**: Opens an interactive session with the LLM to view or modify your dynamic model routing configuration rules.
+* **`/jev-mcp:optimize-prompt`**: Triggers Jev to mathematically optimize a prompt for maximum LLM adherence using the `jev_optimize_prompt` tool.
+

@@ -34,7 +34,6 @@ logging.basicConfig(
 
 logger = logging.getLogger("jev-mcp")
 
-
 def _clean_json(text: str) -> str:
     text = text.strip()
     if text.startswith("```json"):
@@ -64,14 +63,12 @@ def _clean_json(text: str) -> str:
 
     return text.strip()
 
-
 # Initialize MCP and Provider
 mcp = MCPServer("jev-mcp")
 from jev_mcp.daemon_provider import DaemonProvider
 
 provider = DaemonProvider()
 linter = DecisionPreflightLinter()
-
 
 def call_fast_autofixer(state, questions, errors):
     """Hits the persistent local mlx_lm.server to fix prompts in <300ms using Constrained Decoding."""
@@ -100,7 +97,7 @@ def call_fast_autofixer(state, questions, errors):
     }
 
     req = urllib.request.Request(
-        f"http://127.0.0.1:{os.getenv('JEV_DAEMON_PORT', '8080')}/v1/chat/completions",
+        f"http://127.0.0.1:{os.getenv('JEV_FAST_PORT', '8080')}/v1/chat/completions",
         data=json.dumps(payload).encode("utf-8"),
         headers={"Content-Type": "application/json"},
     )
@@ -113,7 +110,6 @@ def call_fast_autofixer(state, questions, errors):
     # Constrained Decoding guarantees JSON; no regex needed.
     data = json.loads(_clean_json(content))
     return data.get("fixed_questions", [])
-
 
 @mcp.tool(
     name="jev_evaluate_batch",
@@ -168,7 +164,7 @@ def jev_evaluate_batch(
             }
 
             req = urllib.request.Request(
-                f"http://127.0.0.1:{os.getenv('JEV_DAEMON_PORT', '8080')}/v1/chat/completions",
+                f"http://127.0.0.1:{os.getenv('JEV_SMART_PORT', '8080')}/v1/chat/completions",
                 data=json.dumps(payload).encode("utf-8"),
                 headers={"Content-Type": "application/json"},
             )
@@ -392,7 +388,6 @@ def jev_evaluate_batch(
         logger.error(f"Engine failure: {str(e)}")
         return f"INTERNAL ENGINE ERROR: {str(e)}"
 
-
 @mcp.tool(
     name="jev_optimize_prompt",
     description="Automated Prompt Engineer: Generates semantic variations of a prompt, evaluates them all via Shared-State, and returns the most mathematically confident phrasing.",
@@ -446,7 +441,7 @@ def jev_optimize_prompt(
     }
     try:
         req = urllib.request.Request(
-            f"http://127.0.0.1:{os.getenv('JEV_DAEMON_PORT', '8080')}/v1/chat/completions",
+            f"http://127.0.0.1:{os.getenv('JEV_SMART_PORT', '8080')}/v1/chat/completions",
             data=json.dumps(payload).encode("utf-8"),
             headers={"Content-Type": "application/json"},
         )
@@ -533,7 +528,6 @@ def jev_optimize_prompt(
         },
         indent=2,
     )
-
 
 @mcp.tool(
     name="jev_calibrate_threshold",
@@ -784,7 +778,7 @@ def jev_explain_decision(
 
     try:
         req = urllib.request.Request(
-            f"http://127.0.0.1:{os.getenv('JEV_DAEMON_PORT', '8080')}/v1/chat/completions",
+            f"http://127.0.0.1:{os.getenv('JEV_SMART_PORT', '8080')}/v1/chat/completions",
             data=json.dumps(payload).encode("utf-8"),
             headers={"Content-Type": "application/json"},
         )
@@ -813,7 +807,6 @@ def jev_explain_decision(
         )
     except Exception as e:
         return f"Evidence Extraction Failed: {str(e)}"
-
 
 @mcp.tool(
     name="jev_generate_synthetic_dataset",
@@ -920,7 +913,7 @@ Once you have generated this JSON array, you must immediately pass it into the `
                 }
 
                 req = urllib.request.Request(
-                    f"http://127.0.0.1:{os.getenv('JEV_DAEMON_PORT', '8080')}/v1/chat/completions",
+                    f"http://127.0.0.1:{os.getenv('JEV_SMART_PORT', '8080')}/v1/chat/completions",
                     data=json.dumps(payload).encode("utf-8"),
                     headers={"Content-Type": "application/json"},
                 )
@@ -970,6 +963,200 @@ Once you have generated this JSON array, you must immediately pass it into the `
 
     return prompt_to_primary_llm
 
+import os
+from pathlib import Path
+
+ROUTER_CONFIG_PATH = os.path.expanduser("~/.jev/router_config.json")
+
+def load_router_config():
+    if not os.path.exists(ROUTER_CONFIG_PATH):
+        return {
+            "buckets": {
+                "b1": "claude-3-5-haiku",
+                "b2": "claude-3-5-sonnet",
+                "b3": "claude-3-opus",
+                "b4": "claude-fable"
+            },
+            "rules": []
+        }
+    with open(ROUTER_CONFIG_PATH, "r") as f:
+        return json.load(f)
+
+def save_router_config(config):
+    os.makedirs(os.path.dirname(ROUTER_CONFIG_PATH), exist_ok=True)
+    with open(ROUTER_CONFIG_PATH, "w") as f:
+        json.dump(config, f, indent=2)
+
+@mcp.tool(
+    name="jev_manage_router_config",
+    description="Interactive configuration manager for Jev's Model Router. Use this to view, add, or remove custom bucket models and exception rules.",
+)
+def jev_manage_router_config(
+    action: Literal["view_all", "add_rule", "remove_rule", "set_bucket"] = Field(description="The action to perform."),
+    bucket_id: Optional[str] = Field(default=None, description="The bucket (b1, b2, b3, b4) to modify."),
+    model_name: Optional[str] = Field(default=None, description="The model name to assign to the bucket."),
+    condition: Optional[str] = Field(default=None, description="The natural language condition for the rule (e.g., 'Touches > 10 files')."),
+    target: Optional[str] = Field(default=None, description="The target bucket or model if the condition is met."),
+    rule_id: Optional[int] = Field(default=None, description="The index of the rule to remove.")
+) -> str:
+    config = load_router_config()
+    
+    if action == "view_all":
+        return json.dumps(config, indent=2)
+        
+    if action == "set_bucket":
+        if not bucket_id or not model_name:
+            return "Error: bucket_id and model_name required."
+        config["buckets"][bucket_id] = model_name
+        save_router_config(config)
+        return f"Bucket {bucket_id} successfully mapped to {model_name}."
+        
+    if action == "add_rule":
+        if not condition or not target:
+            return "Error: condition and target required."
+        config["rules"].append({"condition": condition, "target": target})
+        save_router_config(config)
+        return f"Rule added. If '{condition}', route to '{target}'."
+        
+    if action == "remove_rule":
+        if rule_id is None or rule_id < 0 or rule_id >= len(config["rules"]):
+            return "Error: Valid rule_id required."
+        removed = config["rules"].pop(rule_id)
+        save_router_config(config)
+        return f"Rule removed: {removed}"
+
+@mcp.tool(
+    name="jev_determine_best_model",
+    description="Complexity Index Router: Analyzes a task description using the Hybrid local engine and custom rules to determine the mathematically optimal LLM model to use.",
+)
+def jev_determine_best_model(
+    task_description: str = Field(description="The prompt or goal the CLI is about to execute."),
+    estimated_tokens: Optional[int] = Field(default=0, description="The estimated token count of the context payload.")
+) -> str:
+    config = load_router_config()
+    
+    # 1. Context Window Check
+    if estimated_tokens and estimated_tokens > 100000:
+        return json.dumps({
+            "status": "MASSIVE_CONTEXT_DETECTED",
+            "warning": "Massive context detected (>100k tokens). Please ensure your client enables extra token context flags or select a specialized 1M+ context model. Provide the custom model name if you wish to override.",
+            "recommended_tier": "b3",
+            "recommended_model": config["buckets"].get("b3", "claude-3-opus")
+        }, indent=2)
+        
+    # 2. Evaluate Custom Rules (Hybrid Evidence-Based)
+    state = {"task": task_description}
+    for rule in config["rules"]:
+        condition = rule["condition"]
+        q = NoulQuestion(key="rule", prompt=f"Does the following task meet this condition: '{condition}'?")
+        try:
+            res = provider.evaluate_batch(state, [q])
+            if res.get("rule", {}).get("noul", 0.0) > 0.85:
+                return json.dumps({
+                    "status": "RULE_TRIGGERED",
+                    "triggered_rule": condition,
+                    "recommended_target": rule["target"],
+                    "model": config["buckets"].get(rule["target"], rule["target"])
+                }, indent=2)
+        except Exception as e:
+            logger.warning(f"Rule evaluation failed: {e}")
+            
+    # 3. Complexity Index (Hybrid Evidence-Based)
+    qs = [
+        NoulQuestion(key="logic", prompt="Does this task require complex logical reasoning, deep architecture design, or multi-step deduction?"),
+        NoulQuestion(key="code", prompt="Does this task require generating a large amount of code or significantly refactoring an entire codebase?"),
+        NoulQuestion(key="ambiguity", prompt="Is this task highly ambiguous, requiring the AI to make significant assumptions?"),
+        NoulQuestion(key="agentic", prompt="Is this a multi-day, specialized, or high-stakes problem that requires autonomous agentic persistence?")
+    ]
+    
+    try:
+        res = provider.evaluate_batch(state, qs)
+        logic_score = res.get("logic", {}).get("noul", 0.0) * 0.40
+        code_score = res.get("code", {}).get("noul", 0.0) * 0.30
+        ambig_score = res.get("ambiguity", {}).get("noul", 0.0) * 0.20
+        agent_score = res.get("agentic", {}).get("noul", 0.0) * 0.10
+        
+        index = logic_score + code_score + ambig_score + agent_score
+        
+        if index < 0.3:
+            bucket = "b1"
+        elif index < 0.6:
+            bucket = "b2"
+        elif index < 0.85:
+            bucket = "b3"
+        else:
+            bucket = "b4"
+            
+        return json.dumps({
+            "status": "COMPLEXITY_EVALUATED",
+            "complexity_index": round(index, 3),
+            "breakdown": {
+                "logic": round(logic_score, 3),
+                "code": round(code_score, 3),
+                "ambiguity": round(ambig_score, 3),
+                "agentic": round(agent_score, 3)
+            },
+            "recommended_bucket": bucket,
+            "recommended_model": config["buckets"].get(bucket, bucket)
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"status": "ERROR", "message": str(e)})
+
+@mcp.prompt(
+    name="jev-mcp:calibrate",
+    description="Calibrate the exact logit probability threshold needed for a specific dataset."
+)
+def calibrate_prompt() -> str:
+    return "I want to calibrate a Jev logit threshold. Please ask me for the ground truth dataset and the questions I am calibrating. Then use the `jev_calibrate_threshold` tool to find the statistically optimal probability cutoff, and report the results to me."
+
+@mcp.prompt(
+    name="jev-mcp:compact",
+    description="Compress your current context and codebase state to save tokens and eliminate hallucination risk, using Jev's logit confidence gating."
+)
+def compact_jev_prompt() -> str:
+    return "Gather all your current conversation history, scratchpads, and the contents of any relevant codebase files you currently have open or in your working memory. Immediately execute the `jev_compact_context` MCP tool, passing this massive payload as the `state` argument, and your current goal as the `goal` argument. Do not generate a summary yourself; wait for the Jev tool to return the mathematically compressed payload, and then silently update your working memory with the results to proceed."
+
+@mcp.prompt(
+    name="jev-mcp:evaluate",
+    description="Ask Jev to mathematically evaluate your current codebase or context against a specific set of questions."
+)
+def evaluate_prompt() -> str:
+    return "I want to mathematically evaluate my current context. Please ask me what questions or criteria I want to evaluate. Once I provide them, gather my relevant codebase state and use the `jev_evaluate_batch` tool to get the mathematical logit probabilities for each question, then present the results."
+
+@mcp.prompt(
+    name="jev-mcp:explain-decision",
+    description="Ask Jev to extract the exact reasoning behind a specific mathematical score or decision."
+)
+def explain_decision_prompt() -> str:
+    return "I want to understand why Jev gave a specific mathematical score. Please ask me which evaluation or task I want explained. Then use the `jev_explain_decision` tool to extract the generative reasoning behind the logit probability, and present it to me."
+
+@mcp.prompt(
+    name="jev-mcp:generate-data",
+    description="Use the local Jev engine to quickly spin up massive synthetic test datasets."
+)
+def generate_data_prompt() -> str:
+    return "I want to generate a synthetic dataset locally. Ask me what kind of data I need and the exact schema. Then use the `jev_generate_synthetic_dataset` tool to generate it, and present a sample or save it to my workspace."
+
+@mcp.prompt(
+    name="jev-mcp:model-router",
+    description="Ask Jev to calculate the Complexity Index of your current goal and recommend the optimal LLM model to use."
+)
+def model_router_prompt() -> str:
+    return "Please take my current primary task/goal and execute the `jev_determine_best_model` tool to calculate its mathematical Complexity Index. Once Jev returns the recommended model and complexity breakdown, present the results to me. If Jev warns about massive context, or recommends a more powerful model than I am currently using, please proactively ask me if I want to switch models before we proceed."
+
+@mcp.prompt(
+    name="jev-mcp:model-router-config",
+    description="View or modify your dynamic LLM routing configuration (buckets and exception rules) using natural language."
+)
+def router_config_prompt() -> str:
+    return "I would like to configure my Jev model routing settings. Please use the `jev_manage_router_config` tool with the `view_all` action to retrieve my current settings. Present my current buckets and exception rules to me in a clean, readable format. Then, ask me what I would like to change (e.g., adding a rule, removing a rule, or reassigning a bucket model)."
+
+@mcp.prompt(
+    name="jev-mcp:optimize-prompt",
+    description="Mathematically optimize a prompt for maximum LLM adherence."
+)
+def optimize_prompt() -> str:
+    return "I want to mathematically optimize a prompt. Ask me what prompt I want to optimize and what my goals are. Then use the `jev_optimize_prompt` tool to generate and validate the optimal version of the prompt using logit extraction, and present the final optimized prompt to me."
 
 def main():
     sys.stdout = _mcp_stdout
@@ -978,6 +1165,87 @@ def main():
     warnings.filterwarnings("ignore")
     mcp.run(transport="stdio")
 
-
 if __name__ == "__main__":
     main()
+
+@mcp.tool(
+    name="jev_compact_context",
+    description="Context Compressor: Slices massive state contexts into chunks and uses Confidence-Gated Logits to keep only the verbatim chunks strictly relevant to the user's goal. Eliminates hallucination risk of generative summarization.",
+)
+def jev_compact_context(
+    state: Dict[str, Any] = Field(
+        description="The massive JSON state or text to compress."
+    ),
+    goal: str = Field(
+        description="The user's current goal or the objective the context is needed for."
+    ),
+    confidence_threshold: float = Field(
+        default=0.85,
+        description="The logit probability threshold required to keep a chunk."
+    )
+) -> str:
+    import json
+    import textwrap
+    logger.info("Starting Confidence-Gated Context Compaction...")
+
+    state_str = state.get("text", "") if isinstance(state, dict) and "text" in state else json.dumps(state)
+    if not state_str.strip():
+        return json.dumps({"status": "ERROR", "message": "State is empty."})
+        
+    # Semantic chunking (simple paragraph/block chunking for now)
+    # Using double newline or single newline if too long
+    raw_chunks = [c.strip() for c in state_str.split("\n\n") if c.strip()]
+    if not raw_chunks:
+        raw_chunks = [c.strip() for c in state_str.split("\n") if c.strip()]
+        
+    chunks = []
+    for c in raw_chunks:
+        if len(c) > 2000:
+            chunks.extend(textwrap.wrap(c, 2000))
+        else:
+            chunks.append(c)
+
+    kept_chunks = []
+    total_chunks = len(chunks)
+    dropped_chunks = 0
+    
+    # We will evaluate these in batches if needed, but for now sequentially 
+    # to avoid context overflow on the provider.
+    for i, chunk in enumerate(chunks):
+        q = NoulQuestion(
+            key=f"chunk_{i}",
+            prompt=f"Does this text snippet contain information strictly relevant to achieving the goal: '{goal}'?"
+        )
+        
+        try:
+            # We force the fast provider directly to save time and prevent escalation
+            # Since we just want a fast filter
+            if hasattr(provider, "fast_provider"):
+                res = provider.fast_provider.evaluate_batch({"text": chunk}, [q])
+            else:
+                res = provider.evaluate_batch({"text": chunk}, [q])
+                
+            chunk_res = res.get(q.key, {})
+            score = chunk_res.get("noul", 0.0)
+            
+            if score >= confidence_threshold:
+                kept_chunks.append(chunk)
+            else:
+                dropped_chunks += 1
+                
+        except Exception as e:
+            logger.warning(f"Failed to evaluate chunk {i}: {e}. Keeping chunk by default.")
+            kept_chunks.append(chunk)
+
+    compacted_text = "\n\n".join(kept_chunks)
+    compression_ratio = (1.0 - (len(kept_chunks) / total_chunks)) * 100 if total_chunks > 0 else 0
+    
+    return json.dumps({
+        "status": "COMPACTION_COMPLETE",
+        "original_chunks": total_chunks,
+        "kept_chunks": len(kept_chunks),
+        "dropped_chunks": dropped_chunks,
+        "compression_ratio": f"{compression_ratio:.1f}%",
+        "compacted_state": compacted_text
+    }, indent=2)
+

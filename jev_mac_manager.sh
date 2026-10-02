@@ -33,12 +33,17 @@ done
 if [ -f "$PWD/.env" ]; then
     source "$PWD/.env"
 fi
-JEV_DAEMON_PORT=${JEV_DAEMON_PORT:-8080}
+JEV_FAST_PORT=${JEV_FAST_PORT:-8080}
+JEV_SMART_PORT=${JEV_SMART_PORT:-8081}
 
 PLIST_NAME="com.jev.mlx_server"
 PLIST_PATH="$HOME/Library/LaunchAgents/${PLIST_NAME}.plist"
+PLIST_FAST_PATH="$HOME/Library/LaunchAgents/${PLIST_NAME}_fast.plist"
+PLIST_SMART_PATH="$HOME/Library/LaunchAgents/${PLIST_NAME}_smart.plist"
 LOG_DIR="$HOME/.jev"
 LOG_FILE="$LOG_DIR/mlx_server.log"
+LOG_FILE_FAST="$LOG_DIR/mlx_server_fast.log"
+LOG_FILE_SMART="$LOG_DIR/mlx_server_smart.log"
 
 MODEL_05B="mlx-community/Qwen2.5-0.5B-Instruct-4bit"
 MODEL_7B="mlx-community/Qwen2.5-7B-Instruct-4bit"
@@ -65,12 +70,60 @@ check_architecture() {
     fi
 }
 
+
+link_mcp_configs() {
+    log_info "Linking MCP configurations to local absolute path..."
+    $PWD/.venv/bin/python3 -c "
+import json
+import os
+
+def link_mcp(path, root_key):
+    path = os.path.expanduser(path)
+    if not os.path.exists(path):
+        return
+    try:
+        with open(path, 'r') as f:
+            data = json.load(f)
+    except Exception:
+        data = {}
+        
+    if root_key not in data:
+        data[root_key] = {}
+        
+    abs_python = os.path.abspath('.venv/bin/python3')
+    abs_dir = os.path.abspath('.')
+    
+    data[root_key]['jev-mcp'] = {
+        'command': abs_python,
+        'args': ['-m', 'jev_mcp.server'],
+        'env': {'PYTHONPATH': abs_dir + '/src'}
+    }
+    
+    if 'opencode' in path.lower():
+        data[root_key]['jev-mcp']['type'] = 'local'
+        data[root_key]['jev-mcp']['enabled'] = True
+        
+    with open(path, 'w') as f:
+        json.dump(data, f, indent=2)
+    print(f'Successfully patched {path}')
+
+link_mcp('~/.gemini/config/mcp_config.json', 'mcpServers')
+link_mcp('~/.config/opencode/opencode.json', 'mcp')
+link_mcp('~/Library/Application Support/Claude/claude_desktop_config.json', 'mcpServers')
+link_mcp('~/.claude.json', 'mcpServers')
+"
+}
+
 setup_launchd_plist() {
     local model_path="$1"
+    local port="$2"
+    local target_plist="$3"
+    local target_log="$4"
+    local label=$(basename "$target_plist" .plist)
     local venv_python="$PWD/.venv/bin/python3"
-    local tmp_plist="${PLIST_PATH}.tmp"
+    local tmp_plist="${target_plist}.tmp"
     
-    log_info "Generating native macOS launchd agent for $model_path on port $JEV_DAEMON_PORT..."
+    log_info "Generating native macOS launchd agent for $model_path on port $port..."
     mkdir -p "$LOG_DIR"
     
     cat << PLIST_EOF > "$tmp_plist"
@@ -79,7 +132,7 @@ setup_launchd_plist() {
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>$PLIST_NAME</string>
+    <string>$label</string>
     <key>ProgramArguments</key>
     <array>
         <string>$venv_python</string>
@@ -88,7 +141,7 @@ setup_launchd_plist() {
         <string>--model</string>
         <string>$model_path</string>
         <string>--port</string>
-        <string>$JEV_DAEMON_PORT</string>
+        <string>$port</string>
         <!-- MLX Apple Silicon Performance Flags -->
         <string>--prompt-cache-size</string>
         <string>20</string>
@@ -104,36 +157,35 @@ setup_launchd_plist() {
     <key>KeepAlive</key>
     <true/>
     <key>StandardOutPath</key>
-    <string>$LOG_FILE</string>
+    <string>$target_log</string>
     <key>StandardErrorPath</key>
-    <string>$LOG_FILE</string>
+    <string>$target_log</string>
     <key>WorkingDirectory</key>
     <string>$PWD</string>
 </dict>
 </plist>
 PLIST_EOF
-    mv "$tmp_plist" "$PLIST_PATH"
-    log_success "Generated $PLIST_PATH"
+    mv "$tmp_plist" "$target_plist"
+    log_success "Generated $target_plist"
 }
 
 manage_daemon() {
     local action=$1
+    local target_plist=${2:-$PLIST_PATH}
     if [[ "$action" == "stop" || "$action" == "restart" ]]; then
         log_info "Unloading launchd daemon..."
-        launchctl bootout gui/$(id -u) "$PLIST_PATH" 2>/dev/null || launchctl unload "$PLIST_PATH" 2>/dev/null || true
+        launchctl bootout gui/$(id -u) "$target_plist" 2>/dev/null || launchctl unload "$target_plist" 2>/dev/null || true
         # Force kill to handle models in flight
         pkill -9 -f "mlx_lm.server" 2>/dev/null || true
         sleep 1
     fi
     if [[ "$action" == "start" || "$action" == "restart" ]]; then
-        if [ -f "$PLIST_PATH" ]; then
+        if [ -f "$target_plist" ]; then
             log_info "Loading launchd daemon..."
-            if ! launchctl bootstrap gui/$(id -u) "$PLIST_PATH" 2>/dev/null && ! launchctl load "$PLIST_PATH"; then
+            if ! launchctl bootstrap gui/$(id -u) "$target_plist" 2>/dev/null && ! launchctl load "$target_plist"; then
                 log_warn "Failed to bootstrap launchd daemon. Ensure your Terminal has 'Full Disk Access' in System Settings."
-                log_warn "If this persists, try running the server manually with: .venv/bin/python3 -m mlx_lm.server --model $SELECTED_MODEL --port $JEV_DAEMON_PORT"
             else
                 log_success "Daemon is running in the background!"
-                log_info "Logs are streaming to: $LOG_FILE"
             fi
         fi
     fi
@@ -173,8 +225,8 @@ case "$COMMAND" in
         fi
 
         manage_daemon stop
-        setup_launchd_plist "$SELECTED_MODEL"
-        manage_daemon start
+        setup_launchd_plist "$SELECTED_MODEL" "$JEV_FAST_PORT" "$PLIST_PATH" "$LOG_FILE"
+        manage_daemon start "$PLIST_PATH"
         
         echo -e "${GREEN}Installation Complete! Your native macOS daemon is running the $TARGET_MODEL_ALIAS model.${NC}"
         ;;
@@ -188,8 +240,27 @@ case "$COMMAND" in
         log_info "Switching background engine to: $TARGET_MODEL_ALIAS ($SELECTED_MODEL)"
         
         manage_daemon stop
-        setup_launchd_plist "$SELECTED_MODEL"
-        manage_daemon start
+        setup_launchd_plist "$SELECTED_MODEL" "$JEV_FAST_PORT" "$PLIST_PATH" "$LOG_FILE"
+        manage_daemon start "$PLIST_PATH"
+        ;;
+
+
+    hybrid)
+        echo -e "${BLUE}====================================================${NC}"
+        echo -e "${BLUE}  Starting Hybrid Complexity Router Mode            ${NC}"
+        echo -e "${BLUE}====================================================${NC}"
+        
+        log_info "Configuring dual-daemon setup (0.5B on $JEV_FAST_PORT, 7B on $JEV_SMART_PORT)..."
+        manage_daemon stop "$PLIST_PATH"
+        manage_daemon stop "$PLIST_FAST_PATH"
+        manage_daemon stop "$PLIST_SMART_PATH"
+        setup_launchd_plist "$MODEL_05B" "$JEV_FAST_PORT" "$PLIST_FAST_PATH" "$LOG_FILE_FAST"
+        setup_launchd_plist "$MODEL_7B" "$JEV_SMART_PORT" "$PLIST_SMART_PATH" "$LOG_FILE_SMART"
+        
+        manage_daemon start "$PLIST_FAST_PATH"
+        manage_daemon start "$PLIST_SMART_PATH"
+        
+        echo -e "${GREEN}Hybrid Mode Active! Jev MCP will now intelligently route requests.${NC}"
         ;;
 
     update)
@@ -250,7 +321,9 @@ case "$COMMAND" in
 
     stop)
         echo -e "${YELLOW}Stopping Jev MCP Daemon...${NC}"
-        manage_daemon stop
+        manage_daemon stop "$PLIST_PATH"
+        manage_daemon stop "$PLIST_FAST_PATH"
+        manage_daemon stop "$PLIST_SMART_PATH"
         echo -e "${GREEN}Daemon stopped.${NC}"
         ;;
 
@@ -271,6 +344,8 @@ case "$COMMAND" in
         
         log_info "Removing launchd plist..."
         rm -f "$PLIST_PATH"
+        rm -f "$PLIST_FAST_PATH"
+        rm -f "$PLIST_SMART_PATH"
         
         log_info "Removing virtual environment..."
         rm -rf .venv
@@ -286,6 +361,7 @@ case "$COMMAND" in
         echo "Usage:"
         echo "  ./jev_mac_manager.sh install [0.5b|7b]"
         echo "  ./jev_mac_manager.sh switch [0.5b|7b]"
+        echo "  ./jev_mac_manager.sh hybrid"
         echo "  ./jev_mac_manager.sh update [0.5b|7b]"
         echo "  ./jev_mac_manager.sh start [0.5b|7b]"
         echo "  ./jev_mac_manager.sh stop"
