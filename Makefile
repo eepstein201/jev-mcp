@@ -1,4 +1,4 @@
-.PHONY: install switch test lint clean format update start stop
+.PHONY: install test lint clean format update start stop
 
 # Set the default model for installation
 MODEL ?= 0.5b
@@ -7,10 +7,6 @@ install:
 	@echo "Installing Jev MCP Environment..."
 	./jev_mac_manager.sh install $(MODEL)
 	./jev_mac_manager.sh hybrid
-
-switch:
-	@echo "Switching Model..."
-	./jev_mac_manager.sh switch $(MODEL)
 
 update:
 	@echo "Updating Jev MCP Environment..."

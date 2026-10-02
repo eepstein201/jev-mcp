@@ -273,18 +273,6 @@ case "$COMMAND" in
         echo -e "${GREEN}Installation Complete! Your native macOS daemon is running the $TARGET_MODEL_ALIAS model.${NC}"
         ;;
 
-    switch)
-        echo -e "${YELLOW}====================================================${NC}"
-        echo -e "${YELLOW}  Switching Local AI Model                          ${NC}"
-        echo -e "${YELLOW}====================================================${NC}"
-        
-        SELECTED_MODEL=$(resolve_model "$TARGET_MODEL_ALIAS")
-        log_info "Switching background engine to: $TARGET_MODEL_ALIAS ($SELECTED_MODEL)"
-        
-        manage_daemon stop
-        setup_launchd_plist "$SELECTED_MODEL" "$JEV_FAST_PORT" "$PLIST_PATH" "$LOG_FILE"
-        manage_daemon start "$PLIST_PATH"
-        ;;
 
 
     hybrid)
@@ -402,7 +390,6 @@ case "$COMMAND" in
         echo -e "${RED}Invalid command.${NC}"
         echo "Usage:"
         echo "  ./jev_mac_manager.sh install [0.5b|7b]"
-        echo "  ./jev_mac_manager.sh switch [0.5b|7b]"
         echo "  ./jev_mac_manager.sh hybrid"
         echo "  ./jev_mac_manager.sh update [0.5b|7b]"
         echo "  ./jev_mac_manager.sh start [0.5b|7b]"
