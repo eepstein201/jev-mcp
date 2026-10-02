@@ -75,11 +75,8 @@ make install MODEL=7b
 
 **To update your codebase and restart the daemon:**
 ```bash
-# Pulls latest code, reinstalls dependencies, and restarts the 0.5B model
-make update MODEL=0.5b
-
-# OR pulls latest code, reinstalls dependencies, and restarts the 7B model
-make update MODEL=7b
+# Pulls latest code, reinstalls dependencies, and restarts the Hybrid models
+make update
 ```
 
 **To uninstall Jev MCP cleanly:**
@@ -88,16 +85,6 @@ make update MODEL=7b
 make clean
 ```
 
-### 2. Hot-Swapping Models
-Jev MCP employs a **Dynamic Dual-Profile Architecture**. You can instantly swap between models based on your current task without manually managing ports or `kill` commands:
-
-```bash
-# Need advanced reasoning for synthetic data generation or QFE compression?
-make switch MODEL=7b
-
-# Finished generating data and want to run 1,000 logit math evaluations at 100ms each?
-make switch MODEL=0.5b
-```
 
 ### 3. Using the MCP Features
 Once installed, Jev exposes the following specialized tools to your MCP client (e.g., Claude, Antigravity, or any agent framework):
@@ -372,7 +359,14 @@ The underlying bash script that handles hardware memory, virtual environments, a
 *   **Flags:** 
     *   `--headless` (or `-h`): Automatically bypasses interactive `[y/N]` safety prompts. Essential for CI/CD pipelines, automated scripts, or LLM agents executing destructive commands (e.g., `./jev_mac_manager.sh uninstall --headless`).
 
-### 3. Real-Time Prompt Linting (`jev-lint`)
+### 3. Live Integration Testing
+To verify the Dual-Engine backend is responding perfectly across all MCP tools natively (without mock data), you can run the integration suite:
+```bash
+python3 integration_test.py
+```
+This script fires payloads at both Kev (Port 8080) and Qwen (Port 8081) and guarantees the complete pipeline (Linter -> Auto-Calibration -> Multiclass Routing -> Handoff) is working live.
+
+### 4. Real-Time Prompt Linting (`jev-lint`)
 
 Jev MCP includes a static analysis linter that acts exactly like a traditional code compiler (like ESLint or Ruff), but it specifically analyzes your prompt schemas. It catches phrasing mistakes, logic traps, and non-deterministic framing *before* you even run any ML code.
 
@@ -462,17 +456,12 @@ When the user asks you to evaluate a rule or prompt for Jev, execute this loop:
 2. **Calibrate**: Feed the dataset into `jev_calibrate_threshold`. Analyze the Confusion Matrix.
 3. **Optimize**: If False Positives exist below a reasonable threshold, call `jev_optimize_prompt` to rewrite the prompt constraints. Repeat until perfect.
 
-### 3. Model Switching (Agentic Hot-Swapping)
-The user may ask you to "switch jev model" or "switch to 7b". 
-1. Validate the spelling. If the user misspells "jev", **pause and ask for confirmation**.
-2. To toggle or swap models, execute the `make switch MODEL=7b` bash command. 
-3. The script handles unloading/loading the `launchd` plist automatically and safely force-kills models in flight.
 
-### 4. The Confidence Gate Pattern
+### 3. The Confidence Gate Pattern
 When writing code for the user, proactively suggest using `jev_evaluate_batch` to generate a mathematical confidence score *before* the primary LLM executes a high-risk action (like deleting files, sending emails, or triggering payments). Use Jev as the final, deterministic safety check.
 </agent_instructions>
 
-### 5. Dynamic Agentic Model Routing (`jev_determine_best_model`)
+### 4. Dynamic Agentic Model Routing (`jev_determine_best_model`)
 If your client (like Claude Code CLI, Antigravity CLI, or OpenCode) supports changing models mid-flight, Jev provides an interactive MCP tool that mathematically recommends the optimal model based on the complexity of the current task.
 
 - **Context-Aware Routing**: It analyzes `estimated_tokens`. If a task touches a massive context (e.g., >100k tokens), it actively warns the client to ensure large-context flags are set and recommends 1M+ token models to prevent context collapse.
