@@ -24,10 +24,10 @@ class DaemonProvider(JevProvider):
 
     def __init__(self, base_url: str | None = None) -> None:
         import os
+        import json
 
         try:
             from dotenv import load_dotenv
-
             load_dotenv()
         except ImportError:
             pass
@@ -36,6 +36,16 @@ class DaemonProvider(JevProvider):
         self.max_tokens = 8192
         self._prior_cache: dict[str, dict[str, float]] = {}
         self.current_model_id = "unknown_model"
+        
+        self.fitted_temperature = 1.0
+        try:
+            config_path = os.path.expanduser("~/.jev/router_config.json")
+            if os.path.exists(config_path):
+                with open(config_path, "r") as f:
+                    cfg = json.load(f)
+                    self.fitted_temperature = cfg.get("fitted_temperature", 1.0)
+        except Exception:
+            pass
 
     def _get_daemon_pid(self) -> str:
         try:
@@ -145,13 +155,19 @@ class DaemonProvider(JevProvider):
         for k in expected_keys:
             dcpmi_lps[k] = raw_lps[k] - smoothed_prior[k]
 
-        # 4. Conditional Softmax
-        max_lp = max(dcpmi_lps.values())
-        if max_lp == -9999.0:
+        # 4. Apply Fitted Temperature and Conditional Softmax
+        # (This scales the debiased logits before applying the final softmax boundary)
+        T = self.fitted_temperature
+        if T <= 0.0: T = 1.0
+        
+        scaled_lps = {k: (lp / T) for k, lp in dcpmi_lps.items()}
+        
+        max_lp = max(scaled_lps.values())
+        if max_lp == -9999.0 or max_lp == float('-inf'):
             return {k: 0.0 for k in expected_keys}
 
-        sum_exp = sum(math.exp(lp - max_lp) for lp in dcpmi_lps.values())
-        return {k: math.exp(lp - max_lp) / sum_exp for k, lp in dcpmi_lps.items()}
+        sum_exp = sum(math.exp(lp - max_lp) for lp in scaled_lps.values())
+        return {k: math.exp(lp - max_lp) / sum_exp for k, lp in scaled_lps.items()}
 
     def evaluate_batch(
         self, state: Any, questions: List[Any]
