@@ -118,7 +118,7 @@ class DaemonProvider(JevProvider):
 
             return result, model_id
         except Exception as e:
-            logger.error(f"Daemon API call failed: {e}")
+            logger.error(f"Daemon API call failed: {e}\nPLEASE ENSURE THE DAEMON IS RUNNING! Run: ./jev_mac_manager.sh hybrid")
             return {}, "unknown_model"
 
     def _normalize_logprobs(

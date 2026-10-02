@@ -61,7 +61,7 @@ class KevProvider(JevProvider):
                 res = json.loads(response.read().decode())
                 
         except Exception as e:
-            logger.error(f"Kev API call failed: {e}")
+            logger.error(f"Kev API call failed: {e}\nPLEASE ENSURE THE KEV DAEMON IS RUNNING! Run: ./jev_mac_manager.sh hybrid")
             return {}
             
         final_results = {}

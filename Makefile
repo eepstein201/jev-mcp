@@ -6,6 +6,7 @@ MODEL ?= 0.5b
 install:
 	@echo "Installing Jev MCP Environment..."
 	./jev_mac_manager.sh install $(MODEL)
+	./jev_mac_manager.sh hybrid
 
 switch:
 	@echo "Switching Model..."
@@ -17,7 +18,7 @@ update:
 
 start:
 	@echo "Starting Jev MCP Daemon..."
-	./jev_mac_manager.sh start $(MODEL)
+	./jev_mac_manager.sh hybrid
 
 stop:
 	@echo "Stopping Jev MCP Daemon..."
@@ -38,3 +39,7 @@ test:
 clean:
 	@echo "Completely uninstalling Jev MCP artifacts..."
 	./jev_mac_manager.sh uninstall --headless
+
+hybrid:
+	@echo "Starting Dual-Engine Hybrid Mode (Kev 0.8B + Qwen 7B)..."
+	./jev_mac_manager.sh hybrid
