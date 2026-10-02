@@ -51,6 +51,24 @@ By running Jev locally, you can pass the ticket through the `0.8B` Kev routing e
   }
 }
 ```
+
+### 🎯 Real-World Use Case: The Multi-Agent Orchestrator (Dynamic Agent Handoff)
+Imagine you are building a complex AI team (Swarm architecture) with specialized subagents (e.g., a "Postgres Database Expert", a "React UI Specialist", and a "DevOps Engineer"). When a generic user request comes in, you need to instantly route the task to the correct expert without waiting for a slow generative LLM. 
+
+**This is where `jev-mcp` comes in.**
+By using the `/jev-mcp:handoff` slash command, your primary orchestrator agent passes the user's task and a dictionary of the available subagent profiles to Jev. The local Kev Logit Engine mathematically evaluates the profiles and returns the highest probability specialist in ~120ms. The orchestrator can seamlessly hand off the task, enabling massive autonomous swarms that don't get bottlenecked by slow, expensive generative routing calls.
+
+### 🎯 Real-World Use Case: The Cost Optimizer (Dynamic LLM Tiering)
+Imagine you are a startup scaling an AI coding assistant. You want to use a massive frontier model (like Claude 3.5 Sonnet or GPT-4o) for everything, but at scale, sending simple tasks (like fixing a typo) to a top-tier model burns through your API credits. You want to route simple tasks to cheap/fast models, and complex reasoning tasks to expensive models.
+
+**This is where `jev-mcp` comes in.**
+Using the `/jev-mcp:model-router` feature, you can define complexity buckets in Jev's local `router_config.json`. Before calling the cloud API, your system passes the prompt to Jev locally. Jev mathematically calculates a `Complexity Index` and instantly recommends the cheapest model capable of solving the task. If a task touches a massive codebase (100k+ tokens), Jev dynamically catches it and escalates it to a specialized 1M+ context model, saving you thousands of dollars while preventing API context collapse.
+
+### 🎯 Real-World Use Case: The Context Compressor (Anti-Hallucination)
+Imagine you are writing code in a massive monorepo. You ask your AI assistant to "Fix the database schema", and the AI aggressively reads 50 different files, bloating its context window with 150,000 tokens of completely irrelevant UI components. When the AI tries to write the SQL fix, it hallucinates because its attention mechanism is diluted by the noise.
+
+**This is where `jev-mcp` comes in.**
+Using the `/jev-mcp:compact` slash command, the AI assistant passes its massive, bloated state into Jev. Jev slices the context into chunks, tests each chunk against the specific goal ("Fix the database schema"), and uses Confidence-Gated Logits to ruthlessly filter out the noise. It returns a surgically compressed payload containing only the exact verbatim code blocks required, completely eliminating hallucination risk and speeding up the upstream LLM generation.
 You get the semantic intelligence of a generative model, with the speed, cost, and type-safety of traditional code.
 
 
