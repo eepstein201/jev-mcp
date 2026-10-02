@@ -609,7 +609,7 @@ def test_jev_determine_best_model(mock_provider_class):
         }
     }
     
-    res_str = server.jev_determine_best_model("Implement a distributed queue.")
+    res_str = server.jev_determine_best_model("Implement a distributed queue.", estimated_tokens=0)
     res = json.loads(res_str)
     assert res["status"] == "EVALUATED"
     assert res["complexity_score"] == 3
@@ -646,7 +646,7 @@ def test_jev_manage_router_config(mock_save, mock_load):
     # View
     res_str = server.jev_manage_router_config("view_all")
     res = json.loads(res_str)
-    assert "custom_rules" in res["config"]
+    assert "custom_rules" in res
     
     # Update
     server.jev_manage_router_config("update", {"custom_rules": [{"test": 1}]})
@@ -689,13 +689,13 @@ def test_system_notice_injection(mock_provider_class, mock_load):
     }
     
     # First call should inject notice
-    res_str = server.jev_determine_best_model("task")
+    res_str = server.jev_determine_best_model("task", estimated_tokens=0)
     res = json.loads(res_str)
     assert "_system_notice" in res
     assert "1.34" in res["_system_notice"]
     
     # Second call should NOT inject notice (flag is True)
-    res_str2 = server.jev_determine_best_model("task2")
+    res_str2 = server.jev_determine_best_model("task2", estimated_tokens=0)
     res2 = json.loads(res_str2)
     assert "_system_notice" not in res2
 

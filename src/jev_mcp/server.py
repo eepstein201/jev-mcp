@@ -1181,7 +1181,7 @@ def jev_agent_handoff(task_description: str, available_agents: Dict[str, str]) -
     
     q = ChoiceQuestion(
         key="best_agent",
-        instructions=instructions,
+        prompt=instructions,
         options=list(available_agents.keys())
     )
     res = provider.evaluate_batch(task_description, [q])
