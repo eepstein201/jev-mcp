@@ -91,7 +91,8 @@ make clean
 Jev MCP exposes native **MCP Prompts** (user-facing slash commands) and **MCP Tools** (agent-facing functions). When using a client like Claude Desktop or Claude Code, you can trigger these workflows instantly using the slash commands below. The LLM will then orchestrate the underlying tool calls automatically.
 Once installed, Jev exposes the following specialized tools to your MCP client (e.g., Claude, Antigravity, or any agent framework):
 
-#### ⚡ `/jev-mcp:generate-data`
+#### ⚡ Generate Data
+*   **Command:** `/jev-mcp:generate-data`
 *   **Underlying Tool:** `jev_generate_synthetic_dataset`
 *   **Natural Language Triggers:** *"Can you generate a synthetic dataset?"*, *"Help me create edge cases for..."*
 *   **What it does:** Automatically generates a Golden Edge-Case Dataset to test your classification prompts. It uses "Smart Auto-Tiering". If you have the `7B` model active, it generates the dataset locally for free. If the dual engine is heavily loaded, it gracefully falls back and engineers a prompt for your frontier model (like GPT-4o or Claude 3.5 Sonnet) to generate the data.
@@ -121,7 +122,8 @@ Once installed, Jev exposes the following specialized tools to your MCP client (
     ]
     ```
 
-#### ⚡ `/jev-mcp:calibrate`
+#### ⚡ Calibrate Threshold
+*   **Command:** `/jev-mcp:calibrate`
 *   **Underlying Tool:** `jev_calibrate_threshold`
 *   **Natural Language Triggers:** *"Can you calibrate my dataset?"*, *"Help me fit the threshold for..."*
 *   **What it does:** The core feature of Jev. It takes your dataset and evaluates every single case against the local daemon by extracting direct `get_logprobs` mathematical arrays. It subtracts statistical bias and returns a beautiful Markdown Confusion Matrix, showing exactly what Probability Threshold (`>0.95`) you need to achieve 100% Precision.
@@ -172,7 +174,8 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
 | > 0.90 | 0.0% | 100.0% | 0.0% | 0 | ✅ Safe (Low Volume) |
 | > 0.99 | 0.0% | 100.0% | 0.0% | 0 | ✅ Safe (Low Volume) |
 
-#### ⚡ `/jev-mcp:evaluate`
+#### ⚡ Evaluate Batch
+*   **Command:** `/jev-mcp:evaluate`
 *   **Underlying Tool:** `jev_evaluate_batch`
 *   **Natural Language Triggers:** *"Can you evaluate my codebase?"*, *"Run the batch evaluation..."*
 *   **What it does:** The production evaluation endpoint. It takes a massive block of text (the "state") and evaluates a batch of questions against it in a single pass.
@@ -210,7 +213,8 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
     }
     ```
 
-#### ⚡ `/jev-mcp:optimize-prompt`
+#### ⚡ Optimize Prompt
+*   **Command:** `/jev-mcp:optimize-prompt`
 *   **Underlying Tool:** `jev_optimize_prompt`
 *   **Natural Language Triggers:** *"Optimize this prompt,"*, *"Help me fix my false positives..."*
 *   **What it does:** If your prompt is failing calibration (getting False Positives), this tool generates 5 recursive variations of your prompt. It runs the logit math against all 5 and mathematically determines the absolute best phrasing to use in production.
@@ -230,7 +234,8 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
     "Carefully analyze the user's intent. Are they explicitly requesting a refund or chargeback for a previous transaction?"
     ```
 
-#### ⚡ `/jev-mcp:explain-decision`
+#### ⚡ Explain Decision
+*   **Command:** `/jev-mcp:explain-decision`
 *   **Underlying Tool:** `jev_explain_decision`
 *   **Natural Language Triggers:** *"Why did Jev score this true?"*, *"Explain the decision for..."*
 *   **What it does:** Since Jev uses pure math to classify, it doesn't generate a text rationale by default. If a user needs an explanation for an audit log, this tool extracts the exact verbatim sentence from the context state that triggered the classification.
@@ -243,7 +248,8 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
     *   *Audit Log Extraction (Output):* `"I want my money back immediately."`
 
 
-#### ⚡ `/jev-mcp:model-router`
+#### ⚡ Model Router
+*   **Command:** `/jev-mcp:model-router`
 *   **Underlying Tool:** `jev_determine_best_model`
 *   **Natural Language Triggers:** *"What model should I use for this?"*, *"Calculate the complexity index..."*
 *   **What it does:** Complexity Index Router. Analyzes a task description using the Kev Logit Engine and custom configuration rules to mathematically determine the optimal upstream LLM model (e.g., Sonnet vs Haiku).
@@ -251,7 +257,8 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
     *   `task_description` *(string)*: The prompt or goal the CLI is about to execute.
     *   `estimated_tokens` *(integer, default: 0)*: The estimated token count of the context payload.
 
-#### ⚡ `/jev-mcp:handoff`
+#### ⚡ Agent Handoff
+*   **Command:** `/jev-mcp:handoff`
 *   **Underlying Tool:** `jev_agent_handoff`
 *   **Natural Language Triggers:** *"Which agent should handle this?"*, *"Route this task to the best specialist..."*
 *   **What it does:** Uses multi-class logit routing to mathematically determine which specialized agent should take over the current task based on their full descriptions.
@@ -259,7 +266,8 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
     *   `task_description` *(string)*: The task to route.
     *   `available_agents` *(object)*: Dictionary mapping agent names to their descriptions (e.g., `{"UI_Agent": "Builds React components"}`).
 
-#### ⚡ `/jev-mcp:model-router-config`
+#### ⚡ Router Configuration
+*   **Command:** `/jev-mcp:model-router-config`
 *   **Underlying Tool:** `jev_manage_router_config`
 *   **Natural Language Triggers:** *"Show me my router rules,"*, *"Route tasks mentioning SQL to Opus..."*
 *   **What it does:** View, add, or remove custom rule overrides for the Multi-Class Logit Router.
@@ -269,7 +277,8 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
     *   `target` *(string, default: "")*: The model tier bucket (e.g., `"b3"`).
     *   `rule_id` *(integer, optional)*: The index of the rule to remove.
 
-#### ⚡ `/jev-mcp:compact`
+#### ⚡ Compact Context
+*   **Command:** `/jev-mcp:compact`
 *   **Underlying Tool:** `jev_compact_context`
 *   **Natural Language Triggers:** *"Compress my context,"*, *"Slice my state down to only the relevant parts..."*
 *   **What it does:** Context Compressor. Slices massive state contexts into chunks and uses Confidence-Gated Logits to keep only the verbatim chunks strictly relevant to the user's goal. Eliminates hallucination risk of generative summarization.
@@ -278,7 +287,8 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
     *   `goal` *(string)*: The user's current goal or the objective the context is needed for.
     *   `confidence_threshold` *(float, default: 0.85)*: The logit probability threshold required to keep a chunk.
 
-#### ⚡ `/jev-mcp:train`
+#### ⚡ Train LoRA
+*   **Command:** `/jev-mcp:train`
 *   **Underlying Tool:** `jev_train_lora`
 *   **Natural Language Triggers:** *"Train a custom adapter on this data,"*, *"Fine-tune a local model..."*
 *   **What it does:** Instantly trains a local MLX LoRA adapter on your Apple Silicon GPU using your optimized dataset.
@@ -286,7 +296,8 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
     *   `dataset_path` *(string)*: Absolute path to the `.jsonl` dataset.
     *   `model_name` *(string, default: "mlx-community/Qwen2.5-7B-Instruct-4bit")*: The base model to fine-tune.
 
-#### ⚡ `/jev-mcp:temperature`
+#### ⚡ Manage Temperature
+*   **Command:** `/jev-mcp:temperature`
 *   **Underlying Tool:** `jev_manage_temperature`
 *   **Natural Language Triggers:** *"Change the global calibration temperature,"*, *"What is the current temperature?"*
 *   **What it does:** View, set, or reset the global MLX calibration temperature for Jev, which globally affects all logit evaluations.
