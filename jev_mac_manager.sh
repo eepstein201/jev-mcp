@@ -389,10 +389,10 @@ case "$COMMAND" in
     *)
         echo -e "${RED}Invalid command.${NC}"
         echo "Usage:"
-        echo "  ./jev_mac_manager.sh install [0.5b|7b]"
+        echo "  ./jev_mac_manager.sh install "
         echo "  ./jev_mac_manager.sh hybrid"
-        echo "  ./jev_mac_manager.sh update [0.5b|7b]"
-        echo "  ./jev_mac_manager.sh start [0.5b|7b]"
+        echo "  ./jev_mac_manager.sh update "
+        echo "  ./jev_mac_manager.sh start "
         echo "  ./jev_mac_manager.sh stop"
         echo "  ./jev_mac_manager.sh uninstall"
         exit 1

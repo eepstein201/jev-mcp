@@ -75,7 +75,7 @@ class KevProvider(JevProvider):
             if isinstance(q, NoulQuestion):
                 final_results[q.key] = {
                     "noul": ans.get("noul", 0.0),
-                    "probabilities": {"1": ans.get("noul", 0.0), "0": 1.0 - ans.get("noul", 0.0)}
+                    "probabilities": {"true": ans.get("noul", 0.0), "false": 1.0 - ans.get("noul", 0.0)}
                 }
             elif isinstance(q, ChoiceQuestion):
                 final_results[q.key] = {

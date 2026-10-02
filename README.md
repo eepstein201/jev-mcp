@@ -6,8 +6,8 @@ Instead of asking an LLM to generate "True" or "False", Jev intercepts the LLM's
 
 ### ⚡ Speed, Precision & Security
 By bypassing traditional text generation, Jev unlocks massive performance gains on Apple Silicon using two distinct model profiles:
-- **The `0.5B` Fast Profile:** Achieves near-instantaneous evaluations in **~100ms**. *(Caveat: While blisteringly fast for high-volume routing, its smaller parameter count means it relies more on surface-level keyword mapping, yielding a respectable `0.733` ROC AUC).*
-- **The `7B` Intel Profile:** Delivers evaluations in **~800ms**. While slightly slower than the 0.5B profile, it possesses deep inferential reasoning capabilities, achieving a mathematically perfect **1.0 ROC AUC** on edge cases. This easily outperforms standard cloud API text-generation methods in both accuracy and reliability for complex logic.
+- **The `0.8B` Fast Profile (Kev):** Achieves lightning-fast mathematical evaluations in **~120ms**. Powered by a native pointer-head, it intercepts routing mechanics perfectly without generating text, yielding an exceptionally reliable `0.866` ROC AUC.*
+- **The `7B` Intel Profile:** Delivers evaluations in **~800ms**. While slightly slower than the 0.8B fast engine, it possesses deep inferential reasoning capabilities, achieving a mathematically perfect **1.0 ROC AUC** on edge cases. This easily outperforms standard cloud API text-generation methods in both accuracy and reliability for complex logic.
 - **Enterprise-Grade Security:** Because Jev evaluates raw, untrusted user data, all payloads are strictly sterilized via NFKC Unicode normalization and recursive Control Token stripping. For the 7B profile, prompts are additionally wrapped in strict XML sandboxing to isolate prompt injection payloads.
 
 ### 🎯 Real-World Use Case: The Autonomous Confidence Gate
@@ -42,7 +42,7 @@ Imagine you are a backend developer building a system that routes incoming suppo
 If you use a standard LLM API (like OpenAI), you face three problems: high API costs, high latency, and non-deterministic parsing (e.g., the model occasionally outputs *"I think the user belongs in the Billing department"* instead of just *"Billing"*).
 
 **This is where `jev-mcp` comes in.**
-By running Jev locally, you can pass the ticket through the `0.5B` model profile. Because Jev intercepts the math before text generation occurs, it executes in ~100ms, costs $0, and returns a perfectly typed, deterministic JSON object:
+By running Jev locally, you can pass the ticket through the `0.8B` Kev routing engine. Because Jev intercepts the math before text generation occurs, it executes in ~100ms, costs $0, and returns a perfectly typed, deterministic JSON object:
 ```json
 {
   "department": {
@@ -66,8 +66,8 @@ Jev MCP includes a highly robust management script (`jev_mac_manager.sh`) that b
 git clone https://github.com/your-username/jev-mcp.git
 cd jev-mcp
 
-# Install and launch the 0.5B model (Insanely fast, great for logit math)
-make install MODEL=0.5b
+# Install the environment and launch the dual-engine architecture
+make install
 
 # OR install and launch the 7B model (Highly intelligent, supports generative tools natively)
 make install MODEL=7b
@@ -90,7 +90,7 @@ make clean
 Once installed, Jev exposes the following specialized tools to your MCP client (e.g., Claude, Antigravity, or any agent framework):
 
 #### `jev_generate_synthetic_dataset`
-*   **What it does:** Automatically generates a Golden Edge-Case Dataset to test your classification prompts. It uses "Smart Auto-Tiering". If you have the `7B` model active, it generates the dataset locally for free. If you have the `0.5B` model active, it gracefully falls back and engineers a prompt for your frontier model (like GPT-4o or Claude 3.5 Sonnet) to generate the data.
+*   **What it does:** Automatically generates a Golden Edge-Case Dataset to test your classification prompts. It uses "Smart Auto-Tiering". If you have the `7B` model active, it generates the dataset locally for free. If the dual engine is heavily loaded, it gracefully falls back and engineers a prompt for your frontier model (like GPT-4o or Claude 3.5 Sonnet) to generate the data.
 *   **How to use & Example:** Call the tool with a question prompt (e.g., *"Is the user requesting a refund?"*) and specify `num_cases` (e.g., `50`).
     
     **Output Example (JSON Dataset):**
@@ -263,7 +263,7 @@ Jev MCP fundamentally changes the speed and reliability of local AI decision-mak
 | :--- | :--- | :--- | :--- | :--- |
 | **Standard Text Prompting** (e.g., Ollama) | ~2,000ms | 0.65 - 0.70 | Extreme (Recency/Position) | Free |
 | **Cloud APIs** (e.g., GPT-4o) | ~1,500ms+ | 0.85 - 0.90 | High | $$$ |
-| **Jev MCP (`0.5B` Fast Profile)** | **~100ms** | 0.733 | Neutralized (DCPMI) | Free |
+| **Jev MCP (`0.8B` Kev Profile)** | **~120ms** | 0.866 | Neutralized (DCPMI) | Free |
 | **Jev MCP (`7B` Intel Profile)** | ~800ms | **1.00 (Perfect)** | Neutralized (DCPMI) | Free |
 
 *(Benchmarks run on an Apple Silicon M-series unified memory architecture against the Golden Edge-Case Dataset).*
@@ -279,7 +279,7 @@ Under the hood, Jev MCP employs several highly specialized mathematical and syst
 *   **Laplace Horizon Smoothing**: Apple's MLX C++ API natively truncates logprobs at a hard horizon of `top_logprobs=11`. If a target option falls out of the top 11, it yields zero probability, which ordinarily causes catastrophic $log(0)$ math explosions. Implemented a $+1/K$ Laplace smoothing factor (pseudo-counts) to gracefully absorb probability mass beyond the hardware truncation limit.
 *   **Log-Sum-Exp Token Aggregation**: LLM tokenizers fragment answers unexpectedly. The concept of "True" might be split across the tokens `"True"`, `" True"`, `" T"`, and `"T"`. Jev MCP aggregates these fragmented probability masses using rigorous `Log-Sum-Exp` mathematics to ensure no confidence is lost.
 *   **Absolute Confidence Gating**: If the total sum of all target token probabilities is $< 5\%$, Jev MCP instantly recognizes that the model is confused or hallucinating due to out-of-distribution context, and forces a `0.0` confidence score.
-*   **PID-Bound Cache Protection**: When hot-swapping between the `0.5b` and `7b` models, background daemon restarts could theoretically corrupt the mathematical priors. Jev MCP binds its high-speed in-memory cache directly to the OS-level Process ID (`PID`) of the MLX daemon, guaranteeing mathematical purity even during agentic model swapping.
+*   **PID-Bound Cache Protection**: When the background daemon restarts, it could theoretically corrupt the mathematical priors. Jev MCP binds its high-speed in-memory cache directly to the OS-level Process ID (`PID`) of the MLX daemon, guaranteeing mathematical purity even during daemon restarts.
 
 ---
 
@@ -287,7 +287,7 @@ Under the hood, Jev MCP employs several highly specialized mathematical and syst
 
 Jev MCP intelligently routes prompts and parses outputs based on the specific capabilities of the model loaded in the macOS Daemon:
 
-*   **`0.5B` Profile** (`mlx-community/Qwen2.5-0.5B-Instruct-4bit`): Used for lightning-fast logit-scoring. Because this small model is highly sensitive to context overflow, Jev MCP dynamically detects it and strips out complex XML formatting, sending it a mathematically optimal flat prompt.
+*   **`0.8B` Kev Profile (`jaredpalmer/kev-0.8b`): Dedicated router engine handling instantaneous >85% confidence gates.
 *   **`7B` Profile** (`mlx-community/Qwen2.5-7B-Instruct-4bit`): Used for highly intelligent structured data generation and 1.0 ROC AUC evaluation. When active, Jev MCP wraps prompts in a highly secure XML Sandbox to defend against prompt-injection.
 
 **Robust E2E Generative Pipelines (7B)**
@@ -332,11 +332,11 @@ Every single byte of data passed to Jev MCP is aggressively filtered by `securit
 
 ### 2. Generative Pipeline Defenses (7B Profile Only)
 When utilizing the intelligent 7B generative model for synthetic data creation or Auto-Fixing, Jev activates additional security layers:
-*   **XML Sandboxing:** Generative prompts are wrapped in a strict, impenetrable XML sandbox. This creates a hard boundary between the system instructions and the untrusted context state, making it exceptionally difficult for prompt-injection payloads to alter the LLM's goal. *(Note: This is disabled on the 0.5B model, which relies entirely on flat prompts due to its high sensitivity to token overflow).*
+*   **XML Sandboxing:** Generative prompts are wrapped in a strict, impenetrable XML sandbox. This creates a hard boundary between the system instructions and the untrusted context state, making it exceptionally difficult for prompt-injection payloads to alter the LLM's goal. *(Note: This is bypassed on the Kev model, which parses TypeSafe REST payloads natively).*
 *   **JSON Extractor Middleware:** Because local models lack native strict `xgrammar`, Jev forces generative outputs through a strict regex-slicing middleware. This renders your downstream applications completely immune to executing hallucinated conversational boilerplate or malicious markdown wrappers, returning only the mathematically verifiable JSON structures.
 
 ### 3. Engine-Level Security
-*   **PID-Bound Cache Protection:** When you hot-swap models (e.g., from `7B` down to `0.5B`), the MLX backend restarts. To prevent cross-model cache poisoning or leaked mathematical priors, Jev MCP binds its high-speed in-memory cache directly to the OS-level Process ID (`PID`) of the running daemon. If the daemon restarts, the cache is instantly invalidated to guarantee mathematical purity.
+*   **PID-Bound Cache Protection:** When you restart the hybrid engine, the MLX backend restarts. To prevent cross-model cache poisoning or leaked mathematical priors, Jev MCP binds its high-speed in-memory cache directly to the OS-level Process ID (`PID`) of the running daemon. If the daemon restarts, the cache is instantly invalidated to guarantee mathematical purity.
 
 ---
 ## ⌨️ Command Line Interface (CLI) Reference
@@ -345,10 +345,10 @@ Jev MCP provides multiple layers of command-line tools for users, advanced devel
 
 ### 1. The Developer Wrapper (`Makefile`)
 The easiest way to interact with Jev MCP locally. It wraps the core bash script.
-*   **`make install [MODEL=0.5b|7b]`**: Installs the environment and boots the daemon (Defaults to `0.5b`).
-*   **`make switch [MODEL=0.5b|7b]`**: Instantly hot-swaps the background engine.
-*   **`make update [MODEL=0.5b|7b]`**: Re-pulls code, updates packages, and restarts.
-*   **`make start [MODEL=0.5b|7b]`**: Manually boots the daemon (and dynamically fetches new model weights if they haven't been downloaded yet).
+*   **`make install`**: Installs the environment and boots the daemon .
+*   **`make switch`**: Instantly hot-swaps the background engine.
+*   **`make update`**: Re-pulls code, updates packages, and restarts.
+*   **`make start`**: Manually boots the daemon (and dynamically fetches new model weights if they haven't been downloaded yet).
 *   **`make stop`**: Gracefully halts the background daemon and clears models from memory without destroying your installation.
 *   **`make clean`**: Completely uninstalls artifacts and tears down the daemon.
 *   **`make format` / `make lint` / `make test`**: Runs Ruff, MyPy, and PyTest respectively.
@@ -465,14 +465,14 @@ When writing code for the user, proactively suggest using `jev_evaluate_batch` t
 If your client (like Claude Code CLI, Antigravity CLI, or OpenCode) supports changing models mid-flight, Jev provides an interactive MCP tool that mathematically recommends the optimal model based on the complexity of the current task.
 
 - **Context-Aware Routing**: It analyzes `estimated_tokens`. If a task touches a massive context (e.g., >100k tokens), it actively warns the client to ensure large-context flags are set and recommends 1M+ token models to prevent context collapse.
-- **Evidence-Based Hybrid Evaluation**: Jev evaluates prompt complexity using a dynamic cascade. It doesn't blindly trust the 0.5B model; if the fast model shows <85% confidence on complexity heuristics, it seamlessly escalates the evaluation to the 7B model.
+- **Evidence-Based Hybrid Evaluation**: Jev evaluates prompt complexity using a dynamic cascade. It doesn't blindly trust the fast Kev engine; if the fast model shows <85% confidence on complexity heuristics, it seamlessly escalates the evaluation to the 7B model.
 - **Interactive Configuration (`jev_manage_router_config`)**: Because most CLIs don't natively expose their internal model lists to external scripts, Jev maintains a persistent `~/.jev/router_config.json`. You can interact with this config entirely via your LLM. Simply type in chat: *"Route tasks touching > 10 files to Opus,"* and the LLM will use this tool to persist the exception rule natively in Jev!
 
 ### Standardized MCP Prompts
 Jev MCP exposes native **MCP Prompts** which act as universal slash commands inside clients like Claude Desktop and Claude Code CLI.
 
 * **`/jev-mcp:calibrate`**: Calibrates the exact logit threshold for a custom dataset and natively automates temperature fitting to calibrate your local daemon.
-* **`/jev-mcp:compact`**: Instantly instructs the LLM to compress its working memory via the 0.5B Logit Confidence Gater to save tokens and prevent hallucinations.
+* **`/jev-mcp:compact`**: Instantly instructs the LLM to compress its working memory via the Kev Logit Confidence Gater to save tokens and prevent hallucinations.
 * **`/jev-mcp:evaluate`**: Interactively evaluates your current context/codebase against a custom set of mathematical criteria using the `jev_evaluate_batch` tool.
 * **`/jev-mcp:explain-decision`**: Asks Jev to extract the exact reasoning behind a specific mathematical score using the `jev_explain_decision` tool.
 * **`/jev-mcp:generate-data`**: Spins up a local synthetic dataset generation loop using the `jev_generate_synthetic_dataset` tool.

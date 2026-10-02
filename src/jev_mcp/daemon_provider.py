@@ -79,7 +79,7 @@ class DaemonProvider(JevProvider):
                 data=json.dumps(payload).encode("utf-8"),
                 headers={"Content-Type": "application/json"},
             )
-            with urllib.request.urlopen(req, timeout=10) as response:
+            with urllib.request.urlopen(req, timeout=60) as response:
                 res = json.loads(response.read().decode())
 
             model_id = res.get("model", "unknown_model")
