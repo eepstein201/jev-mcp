@@ -165,7 +165,7 @@ def jev_evaluate_batch(
             }
 
             req = urllib.request.Request(
-                f"http://127.0.0.1:{os.getenv('JEV_SMART_PORT', '8080')}/v1/chat/completions",
+                f"http://127.0.0.1:{os.getenv('JEV_SMART_PORT', '8081')}/v1/chat/completions",
                 data=json.dumps(payload).encode("utf-8"),
                 headers={"Content-Type": "application/json"},
             )
@@ -199,7 +199,7 @@ def jev_evaluate_batch(
         # Uses SemIf itself to detect if the user's questions are generative!
         lint_qs: List[QuestionType] = []
         for i, q in enumerate(qs):
-            q_prompt = q.prompt
+            q_prompt = q.get('prompt', '') if isinstance(q, dict) else q.prompt
             lint_qs.append(
                 NoulQuestion(
                     key=f"q_{i}",
@@ -442,7 +442,7 @@ def jev_optimize_prompt(
     }
     try:
         req = urllib.request.Request(
-            f"http://127.0.0.1:{os.getenv('JEV_SMART_PORT', '8080')}/v1/chat/completions",
+            f"http://127.0.0.1:{os.getenv('JEV_SMART_PORT', '8081')}/v1/chat/completions",
             data=json.dumps(payload).encode("utf-8"),
             headers={"Content-Type": "application/json"},
         )
@@ -779,7 +779,7 @@ def jev_explain_decision(
 
     try:
         req = urllib.request.Request(
-            f"http://127.0.0.1:{os.getenv('JEV_SMART_PORT', '8080')}/v1/chat/completions",
+            f"http://127.0.0.1:{os.getenv('JEV_SMART_PORT', '8081')}/v1/chat/completions",
             data=json.dumps(payload).encode("utf-8"),
             headers={"Content-Type": "application/json"},
         )
@@ -914,7 +914,7 @@ Once you have generated this JSON array, you must immediately pass it into the `
                 }
 
                 req = urllib.request.Request(
-                    f"http://127.0.0.1:{os.getenv('JEV_SMART_PORT', '8080')}/v1/chat/completions",
+                    f"http://127.0.0.1:{os.getenv('JEV_SMART_PORT', '8081')}/v1/chat/completions",
                     data=json.dumps(payload).encode("utf-8"),
                     headers={"Content-Type": "application/json"},
                 )
