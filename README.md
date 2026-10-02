@@ -14,47 +14,26 @@ By bypassing traditional text generation, Jev unlocks massive performance gains 
 - **The `7B` Intel Profile:** Delivers evaluations in **~800ms**. While slightly slower than the 0.8B fast engine, it possesses deep inferential reasoning capabilities, achieving a mathematically perfect **1.0 ROC AUC** on edge cases. This easily outperforms standard cloud API text-generation methods in both accuracy and reliability for complex logic.
 - **Enterprise-Grade Security:** Because Jev evaluates raw, untrusted user data, all payloads are strictly sterilized via NFKC Unicode normalization and recursive Control Token stripping. For the 7B profile, prompts are additionally wrapped in strict XML sandboxing to isolate prompt injection payloads.
 
-### 🎯 Real-World Use Case: The Autonomous Confidence Gate
+### 🎯 Real-World Use Case: The Evaluator (Autonomous Confidence Gate)
 
-Imagine you are building an autonomous AI agent (using a massive frontier LLM like GPT-4 or Claude) that reads customer support emails and automatically issues refunds. 
-
-If your LLM hallucinates and issues a refund incorrectly, it costs your company money. However, building traditional code to safely gate the LLM is nearly impossible because language is unstructured.
+Imagine you want your AI assistant to process a massive batch of customer support emails and determine if refunds should be issued. If the AI hallucinates its analysis, it costs your company money.
 
 **This is where `jev-mcp` comes in.**
-Instead of trusting the LLM blindly, you can have your LLM pass the customer's email and a boolean question (*"Did the customer explicitly demand a refund?"*) into Jev MCP. Jev will mathematically evaluate the text and return a strict, bias-free confidence score (e.g., `92.4%`). 
-
-Your application code can now use a simple `if` statement:
-```python
-if jev_confidence > 0.90:
-    issue_refund(email)
-else:
-    flag_for_human_review(email)
-```
-You get the intelligence of a massive LLM, safely gated by the mathematical determinism of Jev.
+By typing `/jev-mcp:evaluate` in your chat, you can instruct your AI to evaluate the emails against a strict mathematical boolean (*"Did the customer explicitly demand a refund?"*). The local Kev Logit Engine intercepts the math and returns a strict, bias-free confidence score (e.g. `92.4%`), safely gating the AI from making hallucinated decisions.
 
 ### 🎯 Real-World Use Case: The Data Scientist (Zero-Shot Classification)
 
-Traditionally, if a Data Scientist wanted to build a strict text classifier, they would have to gather thousands of labeled examples, clean the data, and fine-tune a custom BERT or RoBERTa model. 
+Traditionally, if you wanted to build a strict text classifier, you would have to gather thousands of labeled examples, clean the data, and write Python scripts to fine-tune a custom BERT model.
 
 **This is where `jev-mcp` comes in.**
-By utilizing the Jev MCP API, a Data Scientist can instantly leverage an off-the-shelf generalized AI model (like Qwen2.5) as a rigorous classical classifier. You pass in a dataset of edge cases, and Jev extracts the raw mathematical logprobs via DCPMI. Within seconds, you can plot ROC curves, calculate Area Under Curve (AUC), and mathematically prove a confidence threshold (e.g., `> 0.85`) that guarantees 100% precision—all locally, with zero training data required.
+You can instantly build and calibrate a classifier right in your chat window. First, type `/jev-mcp:generate-data` to have Jev's Smart Engine synthetically generate 50 edge cases. Then, type `/jev-mcp:calibrate` to run the dataset through the logit engine. Jev extracts the raw mathematical logprobs and prints a beautiful Markdown ROC Curve and Confusion Matrix, mathematically proving your precision threshold—all locally, with zero code required.
 
-### 🎯 Real-World Use Case: The App Developer (Deterministic Routing)
+### 🎯 Real-World Use Case: The Prompt Engineer (Deterministic Optimization)
 
-Imagine you are a backend developer building a system that routes incoming support tickets to either `Sales`, `Billing`, `Tech Support`, or `Unknown`. 
-
-If you use a standard LLM API (like OpenAI), you face three problems: high API costs, high latency, and non-deterministic parsing (e.g., the model occasionally outputs *"I think the user belongs in the Billing department"* instead of just *"Billing"*).
+Imagine you are trying to write a complex prompt to strictly route incoming tickets into `Sales`, `Billing`, or `Tech Support`, but your LLM keeps hallucinating weird formats or occasionally getting the categories wrong. You don't know how to phrase the prompt to enforce strict adherence.
 
 **This is where `jev-mcp` comes in.**
-By running Jev locally, you can pass the ticket through the `0.8B` Kev routing engine. Because Jev intercepts the math before text generation occurs, it executes in ~100ms, costs $0, and returns a perfectly typed, deterministic JSON object:
-```json
-{
-  "department": {
-    "choice": "b", 
-    "probabilities": {"a": 0.0, "b": 0.99, "c": 0.0, "d": 0.0}
-  }
-}
-```
+By typing `/jev-mcp:optimize-prompt` in your chat, Jev will generate 5 variations of your prompt and mathematically test all of them against the local logit engine. It will instantly return the statistically optimal phrasing that yields the highest Area Under Curve (AUC), completely eliminating prompt engineering guesswork.
 
 ### 🎯 Real-World Use Case: The Multi-Agent Orchestrator (Dynamic Agent Handoff)
 Imagine you are building a complex AI team (Swarm architecture) with specialized subagents (e.g., a "Postgres Database Expert", a "React UI Specialist", and a "DevOps Engineer"). When a generic user request comes in, you need to instantly route the task to the correct expert without waiting for a slow generative LLM. 
