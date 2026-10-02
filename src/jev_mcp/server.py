@@ -969,6 +969,25 @@ from pathlib import Path
 
 ROUTER_CONFIG_PATH = os.path.expanduser("~/.jev/router_config.json")
 
+
+_has_notified_temp = False
+
+def get_temp_notice() -> str | None:
+    global _has_notified_temp
+    if _has_notified_temp:
+        return None
+        
+    try:
+        config = load_router_config()
+        temp = config.get("fitted_temperature", 1.0)
+        if temp != 1.0:
+            _has_notified_temp = True
+            updated_at = config.get("temperature_updated_at", "an unknown time")
+            return f"NOTICE: Jev is running with a custom calibrated temperature of {temp} (set on {updated_at}). This globally affects ALL evaluations. You can ask me to reset it to default (1.0) at any time using the /jev-mcp:temperature command or jev_manage_temperature tool."
+    except Exception:
+        pass
+    return None
+
 def load_router_config():
     if not os.path.exists(ROUTER_CONFIG_PATH):
         return {
@@ -1046,6 +1065,7 @@ def jev_determine_best_model(
         }, indent=2)
         
     # 2. Evaluate Custom Rules (Hybrid Evidence-Based)
+    provider = RoutingProvider()
     state = {"task": task_description}
     for rule in config["rules"]:
         condition = rule["condition"]
@@ -1062,44 +1082,33 @@ def jev_determine_best_model(
         except Exception as e:
             logger.warning(f"Rule evaluation failed: {e}")
             
-    # 3. Complexity Index (Hybrid Evidence-Based)
-    qs = [
-        NoulQuestion(key="logic", prompt="Does this task require complex logical reasoning, deep architecture design, or multi-step deduction?"),
-        NoulQuestion(key="code", prompt="Does this task require generating a large amount of code or significantly refactoring an entire codebase?"),
-        NoulQuestion(key="ambiguity", prompt="Is this task highly ambiguous, requiring the AI to make significant assumptions?"),
-        NoulQuestion(key="agentic", prompt="Is this a multi-day, specialized, or high-stakes problem that requires autonomous agentic persistence?")
-    ]
+    # 3. Complexity Index (Multi-Class Logit Routing)
+    q = ScoreQuestion(
+        key="complexity",
+        prompt="Score the complexity of this task on a scale from 1 to 4. 1 is trivial, 4 is an agentic refactor.",
+        labels=["1", "2", "3", "4"]
+    )
     
     try:
-        res = provider.evaluate_batch(state, qs)
-        logic_score = res.get("logic", {}).get("noul", 0.0) * 0.40
-        code_score = res.get("code", {}).get("noul", 0.0) * 0.30
-        ambig_score = res.get("ambiguity", {}).get("noul", 0.0) * 0.20
-        agent_score = res.get("agentic", {}).get("noul", 0.0) * 0.10
+        res = provider.evaluate_batch(state, [q])
+        score = res.get("complexity", {}).get("score", "1")
+        probs = res.get("complexity", {}).get("probabilities", {})
         
-        index = logic_score + code_score + ambig_score + agent_score
+        bucket = f"b{score}"
+        recommended_model = config["buckets"].get(bucket, "claude-3-haiku")
         
-        if index < 0.3:
-            bucket = "b1"
-        elif index < 0.6:
-            bucket = "b2"
-        elif index < 0.85:
-            bucket = "b3"
-        else:
-            bucket = "b4"
+        res_dict = {
+            "status": "EVALUATED",
+            "recommended_model": recommended_model,
+            "complexity_score": int(score),
+            "reasoning": f"Task complexity scored {score}/4. Routed to {recommended_model}.",
+            "probabilities": probs
+        }
+        notice = get_temp_notice()
+        if notice:
+            res_dict["_system_notice"] = notice
             
-        return json.dumps({
-            "status": "COMPLEXITY_EVALUATED",
-            "complexity_index": round(index, 3),
-            "breakdown": {
-                "logic": round(logic_score, 3),
-                "code": round(code_score, 3),
-                "ambiguity": round(ambig_score, 3),
-                "agentic": round(agent_score, 3)
-            },
-            "recommended_bucket": bucket,
-            "recommended_model": config["buckets"].get(bucket, bucket)
-        }, indent=2)
+        return json.dumps(res_dict, indent=2)
     except Exception as e:
         return json.dumps({"status": "ERROR", "message": str(e)})
 
