@@ -148,9 +148,9 @@ Once installed, Jev exposes the following specialized tools to your MCP client (
 Occasionally, larger RLHF-tuned models (like 7B) exhibit "Mode Collapse" or "Logit Sharpening." Because they are trained to be highly decisive assistants, they may assign >99% epistemic certainty to the argmax token, causing all standard thresholds to fail.
 
 `jev_calibrate_threshold` features native **Automated Platt Scaling (Logistic Calibration)**. 
-By default (`apply_platt_scaling="auto"`), Jev actively monitors for extreme overconfidence. If triggered, it automatically extracts the raw log-odds (`log(P_A) - log(P_B)`) and uses `scikit-learn` to fit a Logistic Regression model against your expected dataset outcomes—mathematically squishing the >99% confidence scores back down to their true fractional uncertainty. It achieves this by automatically deriving a new Global Calibration Temperature, which it saves to your config.
+By default (`apply_platt_scaling="auto"`), Jev actively monitors for extreme overconfidence. If triggered, it automatically extracts the raw log-odds (`log(P_A) - log(P_B)`) and uses `scikit-learn` to fit a Logistic Regression model against your expected dataset outcomes—mathematically squishing the >99% confidence scores back down to their true fractional uncertainty. It achieves this by automatically deriving a new Global Calibration Temperature specifically for the **Qwen 7B Smart Engine**, which it saves to your config.
 
-*Note: You can manually inspect or reset this newly fitted temperature using the `/jev-mcp:temperature` command! Furthermore, if you want to permanently bake this calibrated statistical distribution directly into the model's weights, use the `/jev-mcp:train` command to instantly fine-tune a native LoRA adapter on the dataset you just used to calibrate.*
+*Note: You can manually inspect or reset this newly fitted temperature using the `/jev-mcp:temperature` command! Furthermore, if you want to permanently bake this calibrated statistical distribution directly into the model's weights, use the `/jev-mcp:train` command to instantly fine-tune a native LoRA adapter for the 7B model on the dataset you just used to calibrate.*
 
 **Real-World Example:**
 Imagine an unfair coin weighted to land Heads 75% of the time. When asked to predict 100 flips without context, the 7B model accurately deduces that Heads is the optimal guess, but erroneously assigns >99% confidence to *every single guess*.
@@ -178,7 +178,7 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
 *   **Command:** `/jev-mcp:temperature`
 *   **Underlying Tool:** `jev_manage_temperature`
 *   **Natural Language Triggers:** *"Change the global calibration temperature,"*, *"What is the current temperature?"*
-*   **What it does:** View, set, or reset the global MLX calibration temperature for Jev, which globally affects all logit evaluations.
+*   **What it does:** View, set, or reset the global calibration temperature for the **Qwen 7B Smart Engine**. (The Kev Fast Engine uses a native pointer-head and does not require temperature scaling).
 *   **Arguments:**
     *   `action` *(string)*: Must be `"view"`, `"set"`, or `"reset"`.
     *   `value` *(float, optional)*: The temperature value to set (required if action is `"set"`).
@@ -187,7 +187,7 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
 *   **Command:** `/jev-mcp:train`
 *   **Underlying Tool:** `jev_train_lora`
 *   **Natural Language Triggers:** *"Train a custom adapter on this data,"*, *"Fine-tune a local model..."*
-*   **What it does:** Instantly trains a local MLX LoRA adapter on your Apple Silicon GPU using your optimized dataset.
+*   **What it does:** Instantly trains a local MLX LoRA adapter for the **Qwen 7B Smart Engine** on your Apple Silicon GPU using your optimized dataset.
 *   **Arguments:**
     *   `dataset_path` *(string)*: Absolute path to the `.jsonl` dataset.
     *   `model_name` *(string, default: "mlx-community/Qwen2.5-7B-Instruct-4bit")*: The base model to fine-tune.
