@@ -21,6 +21,7 @@ sys.stdout = sys.stderr
 from mcp.server.mcpserver import MCPServer
 from jev_mcp.provider import QuestionType, NoulQuestion, ChoiceQuestion, ScoreQuestion
 from jev_mcp.linter import DecisionPreflightLinter
+from jev_mcp.routing_provider import RoutingProvider
 import re
 
 # Setup global logging to ~/.jev/jev.log

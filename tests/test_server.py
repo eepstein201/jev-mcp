@@ -644,7 +644,7 @@ def test_jev_manage_router_config(mock_save, mock_load):
     mock_load.return_value = {"custom_rules": []}
     
     # View
-    res_str = server.jev_manage_router_config("view")
+    res_str = server.jev_manage_router_config("view_all")
     res = json.loads(res_str)
     assert "custom_rules" in res["config"]
     
