@@ -4,6 +4,7 @@ from typing import Any, List, Dict
 
 from jev_mcp.provider import JevProvider, QuestionType, NoulQuestion, ScoreQuestion
 from jev_mcp.daemon_provider import DaemonProvider
+from jev_mcp.kev_provider import KevProvider
 import os
 
 logger = logging.getLogger(__name__)
@@ -19,7 +20,14 @@ class RoutingProvider(JevProvider):
         fast_port = os.getenv("JEV_FAST_PORT", "8080")
         smart_port = os.getenv("JEV_SMART_PORT", "8081")
         
-        self.fast_provider = DaemonProvider(base_url=f"http://127.0.0.1:{fast_port}/v1/chat/completions")
+        # Determine which provider to use for the fast tier
+        fast_engine = os.getenv("JEV_FAST_ENGINE", "kev") # Default to kev for backwards compatibility with our new script
+        
+        if fast_engine == "kev":
+            self.fast_provider = KevProvider(base_url=f"http://127.0.0.1:{fast_port}/v1/systemone")
+        else:
+            self.fast_provider = DaemonProvider(base_url=f"http://127.0.0.1:{fast_port}/v1/chat/completions")
+            
         self.smart_provider = DaemonProvider(base_url=f"http://127.0.0.1:{smart_port}/v1/chat/completions")
         self.max_tokens = self.fast_provider.max_tokens
         self.current_model_id = "hybrid_router"

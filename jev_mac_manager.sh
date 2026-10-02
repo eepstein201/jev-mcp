@@ -45,7 +45,7 @@ LOG_FILE="$LOG_DIR/mlx_server.log"
 LOG_FILE_FAST="$LOG_DIR/mlx_server_fast.log"
 LOG_FILE_SMART="$LOG_DIR/mlx_server_smart.log"
 
-MODEL_05B="mlx-community/Qwen2.5-0.5B-Instruct-4bit"
+MODEL_05B="jaredpalmer/kev-0.8b"
 MODEL_7B="mlx-community/Qwen2.5-7B-Instruct-4bit"
 
 resolve_model() {
@@ -123,10 +123,51 @@ setup_launchd_plist() {
     local venv_python="$PWD/.venv/bin/python3"
     local tmp_plist="${target_plist}.tmp"
     
-    log_info "Generating native macOS launchd agent for $model_path on port $port..."
+    local engine="mlx_lm.server"
+    local extra_args="<string>--prompt-cache-size</string><string>20</string><string>--prompt-cache-bytes</string><string>12G</string><string>--prefill-step-size</string><string>2048</string><string>--log-level</string><string>WARNING</string>"
+    
+    if [[ "$model_path" == *"kev"* ]]; then
+        engine="kev.serve"
+        # kev.serve takes --run instead of --model, and handles its own cache logic
+        extra_args=""
+    fi
+    
+    log_info "Generating native macOS launchd agent for $model_path on port $port using $engine..."
     mkdir -p "$LOG_DIR"
     
-    cat << PLIST_EOF > "$tmp_plist"
+    if [[ "$engine" == "kev.serve" ]]; then
+        cat << PLIST_EOF > "$tmp_plist"
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>$label</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>$venv_python</string>
+        <string>-m</string>
+        <string>kev.serve</string>
+        <string>--run</string>
+        <string>$model_path</string>
+        <string>--port</string>
+        <string>$port</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>$target_log</string>
+    <key>StandardErrorPath</key>
+    <string>$target_log</string>
+    <key>WorkingDirectory</key>
+    <string>$PWD</string>
+</dict>
+</plist>
+PLIST_EOF
+    else
+        cat << PLIST_EOF > "$tmp_plist"
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -142,7 +183,6 @@ setup_launchd_plist() {
         <string>$model_path</string>
         <string>--port</string>
         <string>$port</string>
-        <!-- MLX Apple Silicon Performance Flags -->
         <string>--prompt-cache-size</string>
         <string>20</string>
         <string>--prompt-cache-bytes</string>
@@ -165,6 +205,8 @@ setup_launchd_plist() {
 </dict>
 </plist>
 PLIST_EOF
+    fi
+
     mv "$tmp_plist" "$target_plist"
     log_success "Generated $target_plist"
 }
