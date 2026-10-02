@@ -597,3 +597,105 @@ def test_jev_calibrate_threshold_platt_missing_sklearn(mock_eval_dataset):
         res = json.loads(res_str)
         
         assert "scikit-learn" in res["markdown_report"]
+
+@patch("jev_mcp.server.RoutingProvider")
+def test_jev_determine_best_model(mock_provider_class):
+    mock_provider = MagicMock()
+    mock_provider_class.return_value = mock_provider
+    mock_provider.evaluate_batch.return_value = {
+        "complexity": {
+            "score": "3",
+            "probabilities": {"1": 0.1, "2": 0.2, "3": 0.6, "4": 0.1}
+        }
+    }
+    
+    res_str = server.jev_determine_best_model("Implement a distributed queue.")
+    res = json.loads(res_str)
+    assert res["status"] == "EVALUATED"
+    assert res["complexity_score"] == 3
+    assert res["recommended_model"] == "b3"
+
+@patch("jev_mcp.server.RoutingProvider")
+def test_jev_agent_handoff(mock_provider_class):
+    mock_provider = MagicMock()
+    mock_provider_class.return_value = mock_provider
+    mock_provider.evaluate_batch.return_value = {
+        "best_agent": {
+            "choice": "Python_Agent",
+            "probabilities": {"Python_Agent": 0.8, "DB_Agent": 0.2}
+        }
+    }
+    
+    agents = {"Python_Agent": "Writes code", "DB_Agent": "Writes SQL"}
+    res_str = server.jev_agent_handoff("Fix python bug", agents)
+    res = json.loads(res_str)
+    assert res["status"] == "HANDOFF_RECOMMENDATION"
+    assert res["recommended_agent"] == "Python_Agent"
+    
+def test_jev_train_lora():
+    res_str = server.jev_train_lora("/tmp/data.jsonl")
+    res = json.loads(res_str)
+    assert res["status"] == "TRAINING_STARTED"
+    assert "/tmp/data.jsonl" in res["dataset"]
+
+@patch("jev_mcp.server.load_router_config")
+@patch("jev_mcp.server.save_router_config")
+def test_jev_manage_router_config(mock_save, mock_load):
+    mock_load.return_value = {"custom_rules": []}
+    
+    # View
+    res_str = server.jev_manage_router_config("view")
+    res = json.loads(res_str)
+    assert "custom_rules" in res["config"]
+    
+    # Update
+    server.jev_manage_router_config("update", {"custom_rules": [{"test": 1}]})
+    mock_save.assert_called_once_with({"custom_rules": [{"test": 1}]})
+
+@patch("jev_mcp.server.load_router_config")
+@patch("jev_mcp.server.save_router_config")
+def test_jev_manage_temperature(mock_save, mock_load):
+    mock_load.return_value = {"fitted_temperature": 1.5, "temperature_updated_at": "Today"}
+    
+    # View
+    res_str = server.jev_manage_temperature("view")
+    res = json.loads(res_str)
+    assert res["current_temperature"] == 1.5
+    
+    # Set
+    server.jev_manage_temperature("set", 1.8)
+    saved_cfg = mock_save.call_args[0][0]
+    assert saved_cfg["fitted_temperature"] == 1.8
+    assert "temperature_updated_at" in saved_cfg
+    
+    # Reset
+    server.jev_manage_temperature("reset")
+    saved_cfg_reset = mock_save.call_args[0][0]
+    assert saved_cfg_reset["fitted_temperature"] == 1.0
+
+@patch("jev_mcp.server.load_router_config")
+@patch("jev_mcp.server.RoutingProvider")
+def test_system_notice_injection(mock_provider_class, mock_load):
+    # Reset global state for test
+    server._has_notified_temp = False
+    
+    # Mock config to have custom temp
+    mock_load.return_value = {"fitted_temperature": 1.34, "temperature_updated_at": "Just now"}
+    
+    mock_provider = MagicMock()
+    mock_provider_class.return_value = mock_provider
+    mock_provider.evaluate_batch.return_value = {
+        "complexity": {"score": "1", "probabilities": {}}
+    }
+    
+    # First call should inject notice
+    res_str = server.jev_determine_best_model("task")
+    res = json.loads(res_str)
+    assert "_system_notice" in res
+    assert "1.34" in res["_system_notice"]
+    
+    # Second call should NOT inject notice (flag is True)
+    res_str2 = server.jev_determine_best_model("task2")
+    res2 = json.loads(res_str2)
+    assert "_system_notice" not in res2
+
