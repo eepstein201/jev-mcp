@@ -187,7 +187,7 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
 *   **Command:** `/jev-mcp:train`
 *   **Underlying Tool:** `jev_train_lora`
 *   **Natural Language Triggers:** *"Train a custom adapter on this data,"*, *"Fine-tune a local model..."*
-*   **What it does:** Instantly trains a local MLX LoRA adapter for the **Qwen 7B Smart Engine** on your Apple Silicon GPU using your optimized dataset.
+*   **What it does:** Instantly trains a local MLX LoRA adapter for the **Qwen 7B Smart Engine** on your Apple Silicon GPU using your optimized dataset. *(Note: You can also explicitly pass `model_name="jaredpalmer/kev-0.8b"` to fine-tune the Kev Fast Engine for your specific company routing logic!)*
 *   **Arguments:**
     *   `dataset_path` *(string)*: Absolute path to the `.jsonl` dataset.
     *   `model_name` *(string, default: "mlx-community/Qwen2.5-7B-Instruct-4bit")*: The base model to fine-tune.
