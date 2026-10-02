@@ -491,5 +491,7 @@ Jev MCP exposes native **MCP Prompts** which act as universal slash commands ins
 * **`/jev-mcp:model-router`**: Instructs the LLM to calculate the complexity of your current goal and recommend the mathematically optimal model.
 * **`/jev-mcp:model-router-config`**: Opens an interactive session with the LLM to view or modify your dynamic model routing configuration rules.
 * **`/jev-mcp:optimize-prompt`**: Triggers Jev to mathematically optimize a prompt for maximum LLM adherence using the `jev_optimize_prompt` tool.
+* **`/jev-mcp:temperature`**: View or change Jev's global MLX calibration temperature (which affects all evaluations).
 * **`/jev-mcp:train`**: Instantly trains a local MLX LoRA adapter on your Apple Silicon GPU using any dataset (synthetic, logs, or human-labeled).
+
 

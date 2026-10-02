@@ -1217,11 +1217,52 @@ def jev_train_lora(dataset_path: str, model_name: str = "mlx-community/Qwen2.5-7
     }, indent=2)
 
 @mcp.prompt(
+    name="jev-mcp:temperature",
+    description="View or change Jev's global MLX calibration temperature (which affects all evaluations)."
+)
+def temperature_prompt() -> str:
+    return "I want to manage Jev's global calibration temperature. First, use `jev_manage_temperature` to view the current temperature. Then ask me if I want to keep it, manually set a new value, or reset it to the default 1.0."
+
+@mcp.prompt(
     name="jev-mcp:train",
     description="Train a local MLX LoRA adapter on your Apple Silicon GPU using any dataset format to customize Jev."
 )
 def train_prompt() -> str:
     return "I want to fine-tune Jev to my codebase. If I provide a dataset in CSV, Markdown, or another raw format, you MUST first convert it into the strict `.jsonl` schema required by Jev and save it locally. (If I don't have data, use `jev_generate_synthetic_dataset` to generate it). Once the `.jsonl` file is ready, pass its path to the `jev_train_lora` tool to instantly train a custom adapter on the GPU."
+
+@mcp.tool(
+    name="jev_manage_temperature",
+    description="View, set, or reset the global MLX calibration temperature for Jev. This temperature globally affects all Jev evaluations, handoffs, and prompts."
+)
+def jev_manage_temperature(action: Literal["view", "set", "reset"], value: Optional[float] = None) -> str:
+    """
+    Manages the global fitted_temperature in router_config.json.
+    """
+    try:
+        from datetime import datetime
+        config = load_router_config()
+        
+        if action == "view":
+            temp = config.get("fitted_temperature", 1.0)
+            updated_at = config.get("temperature_updated_at", "Never")
+            return json.dumps({"status": "SUCCESS", "current_temperature": temp, "updated_at": updated_at}, indent=2)
+            
+        elif action == "reset":
+            config["fitted_temperature"] = 1.0
+            config["temperature_updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            save_router_config(config)
+            return json.dumps({"status": "SUCCESS", "message": "Temperature successfully reset to default (1.0)."}, indent=2)
+            
+        elif action == "set":
+            if value is None:
+                return json.dumps({"status": "ERROR", "message": "You must provide a 'value' when using action='set'."})
+            config["fitted_temperature"] = round(float(value), 3)
+            config["temperature_updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            save_router_config(config)
+            return json.dumps({"status": "SUCCESS", "message": f"Temperature successfully set to {round(float(value), 3)}."}, indent=2)
+            
+    except Exception as e:
+        return json.dumps({"status": "ERROR", "message": str(e)})
 
 def main():
     sys.stdout = _mcp_stdout
