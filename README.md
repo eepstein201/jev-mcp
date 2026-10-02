@@ -148,9 +148,9 @@ Once installed, Jev exposes the following specialized tools to your MCP client (
 Occasionally, larger RLHF-tuned models (like 7B) exhibit "Mode Collapse" or "Logit Sharpening." Because they are trained to be highly decisive assistants, they may assign >99% epistemic certainty to the argmax token, causing all standard thresholds to fail.
 
 `jev_calibrate_threshold` features native **Automated Platt Scaling (Logistic Calibration)**. 
-By default (`apply_platt_scaling="auto"`), Jev actively monitors for extreme overconfidence. If triggered, it automatically extracts the raw log-odds (`log(P_A) - log(P_B)`) and uses `scikit-learn` to fit a Logistic Regression model against your expected dataset outcomes—mathematically squishing the >99% confidence scores back down to their true fractional uncertainty.
+By default (`apply_platt_scaling="auto"`), Jev actively monitors for extreme overconfidence. If triggered, it automatically extracts the raw log-odds (`log(P_A) - log(P_B)`) and uses `scikit-learn` to fit a Logistic Regression model against your expected dataset outcomes—mathematically squishing the >99% confidence scores back down to their true fractional uncertainty. It achieves this by automatically deriving a new Global Calibration Temperature, which it saves to your config.
 
-*Note: You only need to configure the `apply_platt_scaling` parameter if you want to explicitly disable this feature (`"never"`) or force it to execute regardless of the trigger conditions (`"always"`).*
+*Note: You can manually inspect or reset this newly fitted temperature using the `/jev-mcp:temperature` command! Furthermore, if you want to permanently bake this calibrated statistical distribution directly into the model's weights, use the `/jev-mcp:train` command to instantly fine-tune a native LoRA adapter on the dataset you just used to calibrate.*
 
 **Real-World Example:**
 Imagine an unfair coin weighted to land Heads 75% of the time. When asked to predict 100 flips without context, the 7B model accurately deduces that Heads is the optimal guess, but erroneously assigns >99% confidence to *every single guess*.
@@ -173,6 +173,25 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
 | > 0.80 | 0.0% | 100.0% | 0.0% | 0 | ✅ Safe (Low Volume) |
 | > 0.90 | 0.0% | 100.0% | 0.0% | 0 | ✅ Safe (Low Volume) |
 | > 0.99 | 0.0% | 100.0% | 0.0% | 0 | ✅ Safe (Low Volume) |
+
+#### ⚡ Manage Temperature
+*   **Command:** `/jev-mcp:temperature`
+*   **Underlying Tool:** `jev_manage_temperature`
+*   **Natural Language Triggers:** *"Change the global calibration temperature,"*, *"What is the current temperature?"*
+*   **What it does:** View, set, or reset the global MLX calibration temperature for Jev, which globally affects all logit evaluations.
+*   **Arguments:**
+    *   `action` *(string)*: Must be `"view"`, `"set"`, or `"reset"`.
+    *   `value` *(float, optional)*: The temperature value to set (required if action is `"set"`).
+
+#### ⚡ Train LoRA
+*   **Command:** `/jev-mcp:train`
+*   **Underlying Tool:** `jev_train_lora`
+*   **Natural Language Triggers:** *"Train a custom adapter on this data,"*, *"Fine-tune a local model..."*
+*   **What it does:** Instantly trains a local MLX LoRA adapter on your Apple Silicon GPU using your optimized dataset.
+*   **Arguments:**
+    *   `dataset_path` *(string)*: Absolute path to the `.jsonl` dataset.
+    *   `model_name` *(string, default: "mlx-community/Qwen2.5-7B-Instruct-4bit")*: The base model to fine-tune.
+
 
 #### ⚡ Evaluate Batch
 *   **Command:** `/jev-mcp:evaluate`
@@ -287,23 +306,7 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
     *   `goal` *(string)*: The user's current goal or the objective the context is needed for.
     *   `confidence_threshold` *(float, default: 0.85)*: The logit probability threshold required to keep a chunk.
 
-#### ⚡ Train LoRA
-*   **Command:** `/jev-mcp:train`
-*   **Underlying Tool:** `jev_train_lora`
-*   **Natural Language Triggers:** *"Train a custom adapter on this data,"*, *"Fine-tune a local model..."*
-*   **What it does:** Instantly trains a local MLX LoRA adapter on your Apple Silicon GPU using your optimized dataset.
-*   **Arguments:**
-    *   `dataset_path` *(string)*: Absolute path to the `.jsonl` dataset.
-    *   `model_name` *(string, default: "mlx-community/Qwen2.5-7B-Instruct-4bit")*: The base model to fine-tune.
 
-#### ⚡ Manage Temperature
-*   **Command:** `/jev-mcp:temperature`
-*   **Underlying Tool:** `jev_manage_temperature`
-*   **Natural Language Triggers:** *"Change the global calibration temperature,"*, *"What is the current temperature?"*
-*   **What it does:** View, set, or reset the global MLX calibration temperature for Jev, which globally affects all logit evaluations.
-*   **Arguments:**
-    *   `action` *(string)*: Must be `"view"`, `"set"`, or `"reset"`.
-    *   `value` *(float, optional)*: The temperature value to set (required if action is `"set"`).
 
 ### 4. First-Class Response Types (Question Schemas)
 Jev MCP strongly enforces structured response types to guarantee deterministic mathematics. When defining questions for `jev_evaluate_batch`, you must use one of the following three first-class schemas:
