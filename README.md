@@ -1,8 +1,12 @@
-# Jev MCP: Deterministic Logit Evaluation Engine
+# Jev MCP: The Dual-Engine Intelligence Router
 
-Jev MCP is a high-performance, mathematically rigorous FastMCP server designed for macOS Apple Silicon. It replaces slow, error-prone generative LLM calls with lightning-fast, mathematically calibrated **logit extraction**. 
+Jev MCP is a high-performance, mathematically rigorous FastMCP server designed for macOS Apple Silicon. It replaces slow, error-prone generative API calls by wrapping two local AI models in a unified **Dual-Engine Architecture**.
 
-Instead of asking an LLM to generate "True" or "False", Jev intercepts the LLM's raw mathematical probability distribution (using Apple's `mlx_lm` C++ backend), subtracts its inherent statistical bias, and yields a calibrated probability score that can be strictly thresholded for 100% precision automation.
+Instead of asking a cloud LLM to blindly generate text for routing or classification, Jev runs a hybrid local pipeline:
+1. **The Fast Engine (Kev 0.8B):** Instantly intercepts simple boolean, multiple-choice, and multi-agent routing logic. By utilizing a native pointer-head to extract raw mathematical probability distributions (logit extraction) without generating text, it subtracts statistical bias and yields calibrated confidence scores in ~120ms that can be strictly thresholded for 100% precision automation.
+2. **The Smart Engine (Qwen2.5 7B):** When tasks require deep inferential reasoning, synthetic edge-case generation, or massive context compression, Jev dynamically escalates the request to a powerful 7B reasoning model running on Apple's `mlx_lm` C++ backend.
+
+By combining the strict mathematical safety of Kev with the reasoning depth of Qwen, Jev provides your downstream MCP clients (like Claude Desktop or Antigravity) with the ultimate local safety gate and dynamic task router.
 
 ### ⚡ Speed, Precision & Security
 By bypassing traditional text generation, Jev unlocks massive performance gains on Apple Silicon using two distinct model profiles:
