@@ -2,7 +2,7 @@ import json
 import logging
 from typing import Any, List, Dict
 
-from jev_mcp.provider import JevProvider, QuestionType, NoulQuestion
+from jev_mcp.provider import JevProvider, QuestionType, NoulQuestion, ScoreQuestion
 from jev_mcp.daemon_provider import DaemonProvider
 import os
 

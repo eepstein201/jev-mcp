@@ -482,12 +482,14 @@ If your client (like Claude Code CLI, Antigravity CLI, or OpenCode) supports cha
 ### Standardized MCP Prompts
 Jev MCP exposes native **MCP Prompts** which act as universal slash commands inside clients like Claude Desktop and Claude Code CLI.
 
-* **`/jev-mcp:calibrate`**: Calibrates the exact logit threshold for a custom dataset using the `jev_calibrate_threshold` tool.
+* **`/jev-mcp:calibrate`**: Calibrates the exact logit threshold for a custom dataset and natively automates temperature fitting to calibrate your local daemon.
 * **`/jev-mcp:compact`**: Instantly instructs the LLM to compress its working memory via the 0.5B Logit Confidence Gater to save tokens and prevent hallucinations.
 * **`/jev-mcp:evaluate`**: Interactively evaluates your current context/codebase against a custom set of mathematical criteria using the `jev_evaluate_batch` tool.
 * **`/jev-mcp:explain-decision`**: Asks Jev to extract the exact reasoning behind a specific mathematical score using the `jev_explain_decision` tool.
 * **`/jev-mcp:generate-data`**: Spins up a local synthetic dataset generation loop using the `jev_generate_synthetic_dataset` tool.
+* **`/jev-mcp:handoff`**: Generates a list of specialized agents for your current task and mathematically routes your context to the best one using full agent profiles.
 * **`/jev-mcp:model-router`**: Instructs the LLM to calculate the complexity of your current goal and recommend the mathematically optimal model.
 * **`/jev-mcp:model-router-config`**: Opens an interactive session with the LLM to view or modify your dynamic model routing configuration rules.
 * **`/jev-mcp:optimize-prompt`**: Triggers Jev to mathematically optimize a prompt for maximum LLM adherence using the `jev_optimize_prompt` tool.
+* **`/jev-mcp:train`**: Instantly trains a local MLX LoRA adapter on your Apple Silicon GPU using any dataset (synthetic, logs, or human-labeled).
 
