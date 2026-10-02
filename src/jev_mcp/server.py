@@ -1187,11 +1187,16 @@ def jev_agent_handoff(task_description: str, available_agents: Dict[str, str]) -
     best_agent = res.get("best_agent", {}).get("choice")
     probs = res.get("best_agent", {}).get("probabilities", {})
     
-    return json.dumps({
+    res_dict = {
         "status": "HANDOFF_RECOMMENDATION",
         "recommended_agent": best_agent,
         "probabilities": probs
-    }, indent=2)
+    }
+    notice = get_temp_notice()
+    if notice:
+        res_dict["_system_notice"] = notice
+        
+    return json.dumps(res_dict, indent=2)
 
 @mcp.tool(
     name="jev_train_lora",
