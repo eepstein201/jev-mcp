@@ -91,7 +91,10 @@ Once installed, Jev exposes the following specialized tools to your MCP client (
 
 #### `jev_generate_synthetic_dataset`
 *   **What it does:** Automatically generates a Golden Edge-Case Dataset to test your classification prompts. It uses "Smart Auto-Tiering". If you have the `7B` model active, it generates the dataset locally for free. If the dual engine is heavily loaded, it gracefully falls back and engineers a prompt for your frontier model (like GPT-4o or Claude 3.5 Sonnet) to generate the data.
-*   **How to use & Example:** Call the tool with a question prompt (e.g., *"Is the user requesting a refund?"*) and specify `num_cases` (e.g., `50`).
+*   **Arguments:**
+    *   `question` *(object)*: The target question schema you need a dataset for.
+    *   `num_cases` *(integer, default: 10)*: Number of synthetic edge cases to generate (max 50).
+*   **Example:** Call the tool with a question prompt (e.g., *"Is the user requesting a refund?"*) and specify `num_cases` (e.g., `50`).
     
     **Output Example (JSON Dataset):**
     ```json
@@ -116,7 +119,11 @@ Once installed, Jev exposes the following specialized tools to your MCP client (
 
 #### `jev_calibrate_threshold`
 *   **What it does:** The core feature of Jev. It takes your dataset and evaluates every single case against the local daemon by extracting direct `get_logprobs` mathematical arrays. It subtracts statistical bias and returns a beautiful Markdown Confusion Matrix, showing exactly what Probability Threshold (`>0.95`) you need to achieve 100% Precision.
-*   **How to use & Example:** Pass it a synthetic JSON dataset. It will rapidly output your ROC AUC metrics and a calibration table.
+*   **Arguments:**
+    *   `dataset` *(array of objects)*: Array of dicts representing the edge cases: `[{"state": {...}, "expected": True/False/String}]`.
+    *   `question` *(object)*: The question object schema to calibrate.
+    *   `apply_platt_scaling` *(string, default: "auto")*: Whether to apply Platt Scaling Logistic Calibration (`"auto"`, `"always"`, or `"never"`).
+*   **Example:** Pass it a synthetic JSON dataset. It will rapidly output your ROC AUC metrics and a calibration table.
 
     **Example Output (Calibration Markdown Table):**
     
@@ -161,6 +168,10 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
 
 #### `jev_evaluate_batch`
 *   **What it does:** The production evaluation endpoint. It takes a massive block of text (the "state") and evaluates a batch of questions against it in a single pass.
+*   **Arguments:**
+    *   `state` *(object)*: JSON object representing the context state.
+    *   `questions` *(array of objects)*: Array of question objects (must be structured as Noul, Choice, or Score schemas).
+    *   `auto_apply_fixes` *(boolean, default: false)*: If true, automatically applies linter suggestions.
 *   **Special capabilities:** 
     1. **Strict Linter:** It rejects badly formatted questions that break mathematical calibration. Examples of rejected questions:
        - **Generative Intent:** *"Summarize the customer's issue"* or *"Extract all dates"* (Jev is a classification engine, not a generative tool).
@@ -193,7 +204,10 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
 
 #### `jev_optimize_prompt`
 *   **What it does:** If your prompt is failing calibration (getting False Positives), this tool generates 5 recursive variations of your prompt. It runs the logit math against all 5 and mathematically determines the absolute best phrasing to use in production.
-*   **How to use & Example:** Pass a sample context `state` and your underperforming `question`. It will return a text report with the new mathematically optimal prompt.
+*   **Arguments:**
+    *   `state` *(object)*: Sample context state.
+    *   `question` *(object)*: The draft question schema to optimize.
+*   **Example:** Pass a sample context `state` and your underperforming `question`. It will return a text report with the new mathematically optimal prompt.
 
     **Example Output:**
     ```text
@@ -208,9 +222,53 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
 
 #### `jev_explain_decision`
 *   **What it does:** Since Jev uses pure math to classify, it doesn't generate a text rationale by default. If a user needs an explanation for an audit log, this tool extracts the exact verbatim sentence from the context state that triggered the classification.
+*   **Arguments:**
+    *   `state` *(object)*: The context state used for the decision.
+    *   `question` *(object)*: The question schema that was evaluated.
+    *   `decision` *(string)*: The decision output returned by the model (e.g., `"true"`, `"false"`, or a Choice label).
 *   **Example:**
     *   *Classification:* `is_refund_request = True` (Score: 0.98)
     *   *Audit Log Extraction (Output):* `"I want my money back immediately."`
+
+
+#### `jev_determine_best_model`
+*   **What it does:** Complexity Index Router. Analyzes a task description using the Kev Logit Engine and custom configuration rules to mathematically determine the optimal upstream LLM model (e.g., Sonnet vs Haiku).
+*   **Arguments:**
+    *   `task_description` *(string)*: The prompt or goal the CLI is about to execute.
+    *   `estimated_tokens` *(integer, default: 0)*: The estimated token count of the context payload.
+
+#### `jev_agent_handoff`
+*   **What it does:** Uses multi-class logit routing to mathematically determine which specialized agent should take over the current task based on their full descriptions.
+*   **Arguments:**
+    *   `task_description` *(string)*: The task to route.
+    *   `available_agents` *(object)*: Dictionary mapping agent names to their descriptions (e.g., `{"UI_Agent": "Builds React components"}`).
+
+#### `jev_manage_router_config`
+*   **What it does:** View, add, or remove custom rule overrides for the Multi-Class Logit Router.
+*   **Arguments:**
+    *   `action` *(string)*: Must be `"view"`, `"add_rule"`, or `"remove_rule"`.
+    *   `condition` *(string, default: "")*: The textual condition for adding a rule (e.g., `"Task mentions SQL"`).
+    *   `target` *(string, default: "")*: The model tier bucket (e.g., `"b3"`).
+    *   `rule_id` *(integer, optional)*: The index of the rule to remove.
+
+#### `jev_compact_context`
+*   **What it does:** Context Compressor. Slices massive state contexts into chunks and uses Confidence-Gated Logits to keep only the verbatim chunks strictly relevant to the user's goal. Eliminates hallucination risk of generative summarization.
+*   **Arguments:**
+    *   `state` *(object)*: The massive JSON state or text to compress.
+    *   `goal` *(string)*: The user's current goal or the objective the context is needed for.
+    *   `confidence_threshold` *(float, default: 0.85)*: The logit probability threshold required to keep a chunk.
+
+#### `jev_train_lora`
+*   **What it does:** Instantly trains a local MLX LoRA adapter on your Apple Silicon GPU using your optimized dataset.
+*   **Arguments:**
+    *   `dataset_path` *(string)*: Absolute path to the `.jsonl` dataset.
+    *   `model_name` *(string, default: "mlx-community/Qwen2.5-7B-Instruct-4bit")*: The base model to fine-tune.
+
+#### `jev_manage_temperature`
+*   **What it does:** View, set, or reset the global MLX calibration temperature for Jev, which globally affects all logit evaluations.
+*   **Arguments:**
+    *   `action` *(string)*: Must be `"view"`, `"set"`, or `"reset"`.
+    *   `value` *(float, optional)*: The temperature value to set (required if action is `"set"`).
 
 ### 4. First-Class Response Types (Question Schemas)
 Jev MCP strongly enforces structured response types to guarantee deterministic mathematics. When defining questions for `jev_evaluate_batch`, you must use one of the following three first-class schemas:
