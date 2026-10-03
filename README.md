@@ -296,6 +296,16 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
     *   `target` *(string, default: "")*: The model tier bucket (e.g., `"b3"`).
     *   `rule_id` *(integer, optional)*: The index of the rule to remove.
 
+#### ⚡ Read File (Gated Context)
+*   **Command:** `/jev-mcp:read-file`
+*   **Underlying Tool:** `jev_read_file`
+*   **Natural Language Triggers:** *"Read this file,"*, *"Check if this file has the database logic..."*
+*   **What it does:** Uses the Dual-Engine logit cascade to mathematically evaluate if a file is actually relevant to your task *before* loading it into your context window. It can either block irrelevant files entirely or chunk the file and return only the verbatim blocks of code you need, eliminating context bloat and hallucination.
+*   **Arguments:**
+    *   `file_path` *(string)*: Absolute path to the file.
+    *   `task_description` *(string)*: The goal you are trying to accomplish.
+    *   `filter_by_chunk` *(boolean, default: true)*: If true, slices the file and keeps only relevant chunks. If false, evaluates the file as a whole.
+
 #### ⚡ Compact Context
 *   **Command:** `/jev-mcp:compact`
 *   **Underlying Tool:** `jev_compact_context`

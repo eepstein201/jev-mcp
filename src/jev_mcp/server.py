@@ -1274,6 +1274,82 @@ def jev_manage_temperature(action: Literal["view", "set", "reset"], value: Optio
     except Exception as e:
         return json.dumps({"status": "ERROR", "message": str(e)})
 
+
+@mcp.tool(
+    name="jev_read_file",
+    description="File Context Filter: Reads a file locally and uses the Dual-Engine logit cascade to mathematically evaluate if the file is relevant to the current task. Prevents context bloat by blocking irrelevant files or filtering them down to only the relevant chunks.",
+)
+def jev_read_file(
+    file_path: str = Field(
+        description="The absolute path to the file you want to read."
+    ),
+    task_description: str = Field(
+        description="A description of the current task or goal. Used to filter the file content."
+    ),
+    filter_by_chunk: bool = Field(
+        default=True,
+        description="If True, the tool will chunk the file and return only the relevant chunks. If False, it evaluates the file as a whole and either returns the entire file or blocks it completely."
+    )
+) -> str:
+    import os
+    import json
+    
+    if not os.path.exists(file_path):
+        return json.dumps({"status": "ERROR", "message": f"File not found: {file_path}"})
+        
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            content = f.read()
+    except Exception as e:
+        return json.dumps({"status": "ERROR", "message": f"Failed to read file: {e}"})
+        
+    if not content.strip():
+        return json.dumps({"status": "ERROR", "message": "File is empty."})
+        
+    if filter_by_chunk:
+        # Re-use the powerful jev_compact_context logic
+        logger.info(f"Chunk-filtering {file_path} for task: {task_description}")
+        state_dict = {"text": content}
+        result_str = jev_compact_context(state=state_dict, goal=task_description, confidence_threshold=0.85)
+        try:
+            result_json = json.loads(result_str)
+            if "status" in result_json and result_json["status"] == "COMPACTION_COMPLETE":
+                kept_len = len(result_json.get("compacted_state", ""))
+                if kept_len == 0:
+                     return json.dumps({"status": "BLOCKED", "message": f"Jev evaluated {file_path} and found 0 relevant chunks for the task. The file has been blocked to save context window."})
+                return json.dumps({
+                    "status": "SUCCESS", 
+                    "message": f"File {file_path} filtered successfully. Dropped {result_json.get("dropped_chunks", 0)} irrelevant chunks.",
+                    "content": result_json.get("compacted_state", "")
+                })
+        except:
+            pass
+        return result_str
+        
+    else:
+        # Evaluate the file as a whole
+        logger.info(f"Evaluating entire file {file_path} for task: {task_description}")
+        q = NoulQuestion(
+            key="is_relevant",
+            prompt=f"Does this text contain logic, variables, or context highly relevant to the following task: '{task_description}'?"
+        )
+        
+        # If the file is massive, the router will automatically escalate to the 7B model 
+        # (because routing_provider has a check_token_limit > 4000 block!)
+        from jev_mcp.routing_provider import RoutingProvider
+        provider = RoutingProvider()
+        res = provider.evaluate_batch(content, [q])
+        
+        if "is_relevant" in res and "probabilities" in res["is_relevant"]:
+            true_prob = res["is_relevant"]["probabilities"].get("true", 0.0)
+            if true_prob >= 0.85:
+                return json.dumps({"status": "SUCCESS", "confidence": true_prob, "content": content})
+            else:
+                return json.dumps({"status": "BLOCKED", "confidence": true_prob, "message": f"Jev evaluated {file_path} and determined it is not relevant to the task (Confidence: {true_prob*100:.1f}%). File blocked to save context."})
+        
+        return json.dumps({"status": "ERROR", "message": "Evaluation failed to return probabilities."})
+
+
 def main():
     sys.stdout = _mcp_stdout
     import warnings
