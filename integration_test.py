@@ -1,3 +1,35 @@
+
+def test_scan_repo():
+    print("\n--> 8. Testing jev_scan_repo (AST Multi-File RAG)")
+    import os
+    import json
+    import shutil
+    from src.jev_mcp.server import jev_scan_repo
+    
+    test_dir = "dummy_repo"
+    os.makedirs(f"{test_dir}/auth", exist_ok=True)
+    os.makedirs(f"{test_dir}/ui", exist_ok=True)
+    
+    with open(f"{test_dir}/auth/login.py", "w") as f:
+        f.write("def login_user(username, password):\n    return True\n\ndef validate_token(token):\n    return False")
+        
+    with open(f"{test_dir}/ui/button.js", "w") as f:
+        f.write("function renderButton() {\n    console.log('button');\n}")
+        
+    try:
+        # Test finding login logic
+        res_str = jev_scan_repo(os.path.abspath(test_dir), "Fix the user login validation", )
+        res = json.loads(res_str)
+        
+        if res.get("status") == "SUCCESS":
+            print("Successfully extracted semantic chunks from repository!")
+            print(f"Content: {res.get('content')}")
+        else:
+            print(f"WARNING: Tool returned {res.get('status')} - {res.get('message')}")
+            
+    finally:
+        shutil.rmtree(test_dir)
+
 import sys
 import json
 import os
@@ -83,6 +115,7 @@ def test_read_file():
             os.remove("dummy_test_file.txt")
 
 test_read_file()
+test_scan_repo()
 print("\n=========================================================")
 print("  ALL TESTS PASSED WITH LIVE HYBRID ENGINE")
 print("=========================================================")

@@ -1320,7 +1320,7 @@ def jev_read_file(
                      return json.dumps({"status": "BLOCKED", "message": f"Jev evaluated {file_path} and found 0 relevant chunks for the task. The file has been blocked to save context window."})
                 return json.dumps({
                     "status": "SUCCESS", 
-                    "message": f"File {file_path} filtered successfully. Dropped {result_json.get("dropped_chunks", 0)} irrelevant chunks.",
+                    "message": f"File {file_path} filtered successfully. Dropped {result_json.get('dropped_chunks', 0)} irrelevant chunks.",
                     "content": result_json.get("compacted_state", "")
                 })
         except:
@@ -1349,6 +1349,12 @@ def jev_read_file(
                 return json.dumps({"status": "BLOCKED", "confidence": true_prob, "message": f"Jev evaluated {file_path} and determined it is not relevant to the task (Confidence: {true_prob*100:.1f}%). File blocked to save context."})
         
         return json.dumps({"status": "ERROR", "message": "Evaluation failed to return probabilities."})
+
+
+
+
+
+
 
 
 def main():
@@ -1442,3 +1448,118 @@ def jev_compact_context(
         "compacted_state": compacted_text
     }, indent=2)
 
+@mcp.tool(
+    name="jev_scan_repo",
+    description="Repository Scanner: Walks a codebase, uses Tree-sitter to break code into semantic blocks (functions/classes), and mathematically filters them using the Dual-Engine cascade to find only the code relevant to the task.",
+)
+def jev_scan_repo(
+    directory_path: str = Field(description="The absolute path to the directory to scan."),
+    task_description: str = Field(description="The goal or bug description used to filter the codebase.")
+) -> str:
+    import os
+    import json
+    import urllib.request
+    from jev_mcp.scanner import walk_repository, generate_repo_map
+    from jev_mcp.chunker import SemanticChunker
+    from jev_mcp.routing_provider import RoutingProvider
+    
+    if not os.path.isdir(directory_path):
+        return json.dumps({"status": "ERROR", "message": f"Directory not found: {directory_path}"})
+        
+    logger.info(f"Scanning repository at {directory_path} for task: {task_description}")
+    
+    files = walk_repository(directory_path)
+    if not files:
+        return json.dumps({"status": "BLOCKED", "message": "No valid files found in directory."})
+        
+    target_files = files
+    
+    if len(files) > 20:
+        logger.info(f"Repository is massive ({len(files)} files). Escalating to Smart Model for Surgical Pointing...")
+        repo_map = generate_repo_map(files, directory_path)
+        
+        prompt = f"Given the following task: '{task_description}'\\n\\nHere is the repository structure:\\n{repo_map}\\n\\nRespond with ONLY a comma-separated list of the 5-10 file paths most likely to contain the code needed for this task. Do not include any other text."
+        
+        payload = {
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 200,
+            "temperature": 0.0
+        }
+        
+        try:
+            smart_port = os.getenv("JEV_SMART_PORT", "8081")
+            req = urllib.request.Request(
+                f"http://127.0.0.1:{smart_port}/v1/chat/completions",
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"}
+            )
+            with urllib.request.urlopen(req, timeout=120) as response:
+                res = json.loads(response.read().decode())
+                content = res["choices"][0]["message"]["content"]
+                
+                suggested_paths = [p.strip() for p in content.replace("\\n", ",").split(",") if p.strip()]
+                
+                target_files = []
+                for sp in suggested_paths:
+                    clean_sp = sp.lstrip("- ").strip()
+                    abs_path = os.path.abspath(os.path.join(directory_path, clean_sp))
+                    if abs_path in files:
+                        target_files.append(abs_path)
+                        
+                if not target_files:
+                    logger.warning("Smart model failed to select valid paths. Falling back to first 20 files.")
+                    target_files = files[:20]
+        except Exception as e:
+            logger.warning(f"Surgical pointing failed: {e}. Falling back to first 20 files.")
+            target_files = files[:20]
+
+    chunker = SemanticChunker()
+    all_chunks = []
+    
+    for fpath in target_files:
+        try:
+            with open(fpath, "r", encoding="utf-8") as f:
+                code = f.read()
+                
+            file_chunks = chunker.get_semantic_chunks(fpath, code)
+            for c in file_chunks:
+                rel_path = os.path.relpath(fpath, directory_path)
+                contextualized_chunk = f"### FILE: {rel_path}\\n{c}"
+                all_chunks.append(contextualized_chunk)
+        except Exception:
+            pass
+
+    if not all_chunks:
+        return json.dumps({"status": "BLOCKED", "message": "Failed to extract chunks from repository."})
+
+    provider = RoutingProvider()
+    kept_chunks = []
+    dropped = 0
+    
+    for i, chunk in enumerate(all_chunks):
+        q = NoulQuestion(
+            key=f"chunk_{i}",
+            prompt=f"Does this specific code block contain logic or variables highly relevant to the task: '{task_description}'?"
+        )
+        res = provider.evaluate_batch(chunk, [q])
+        true_prob = res.get(f"chunk_{i}", {}).get("probabilities", {}).get("true", 0.0)
+        
+        if true_prob >= 0.50:
+            kept_chunks.append(chunk)
+        else:
+            dropped += 1
+            
+    if not kept_chunks:
+        return json.dumps({"status": "BLOCKED", "message": f"Scanned {len(target_files)} files and {len(all_chunks)} semantic chunks. Jev determined 0 chunks were relevant to the task. Blocked to save context window."})
+        
+    return json.dumps({
+        "status": "SUCCESS",
+        "message": f"Surgically scanned {len(target_files)} files. Extracted {len(kept_chunks)} highly relevant chunks. Dropped {dropped} noisy chunks.",
+        "content": "\\n\\n".join(kept_chunks)
+    })
+
+def main():
+    mcp.run(transport='stdio')
+
+if __name__ == '__main__':
+    main()
