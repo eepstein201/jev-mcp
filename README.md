@@ -306,6 +306,16 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
     *   `task_description` *(string)*: The goal you are trying to accomplish.
     *   `filter_by_chunk` *(boolean, default: true)*: If true, slices the file and keeps only relevant chunks. If false, evaluates the file as a whole.
 
+
+#### ⚡ Scan Repository (AST Multi-File RAG)
+*   **Command:** `/jev-mcp:scan-repo`
+*   **Underlying Tool:** `jev_scan_repo`
+*   **Natural Language Triggers:** *"Scan the repo for...", "Find the auth logic across all files..."*
+*   **What it does:** Performs Repository-Scale Context Filtering. Uses a Coarse-to-Fine Surgical Architecture: It maps the directory and leverages the Smart Engine to logically isolate target files. It then uses Tree-sitter to parse the code into syntax-aware semantic chunks (functions/classes) and runs them through the Dual-Engine cascade. It returns a surgically precise block of code containing only the logic relevant to your task, entirely eliminating file-bloat and arbitrary chunk-splitting errors.
+*   **Arguments:**
+    *   `directory_path` *(string)*: Absolute path to the directory or workspace root.
+    *   `task_description` *(string)*: The goal or bug description used to filter the codebase.
+
 #### ⚡ Compact Context
 *   **Command:** `/jev-mcp:compact`
 *   **Underlying Tool:** `jev_compact_context`
