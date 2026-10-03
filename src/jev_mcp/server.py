@@ -1300,72 +1300,73 @@ def jev_read_file(
         
     try:
         with open(file_path, "r", encoding="utf-8") as f:
-            content = f.read()
+            file_content = f.read()
     except Exception as e:
         return json.dumps({"status": "ERROR", "message": f"Failed to read file: {e}"})
         
-    if not content.strip():
+    if not file_content.strip():
         return json.dumps({"status": "ERROR", "message": "File is empty."})
         
     if filter_by_chunk:
-        # Re-use the powerful jev_compact_context logic
-        logger.info(f"Chunk-filtering {file_path} for task: {task_description}")
-        state_dict = {"text": content}
-        result_str = jev_compact_context(state=state_dict, goal=task_description, confidence_threshold=0.50)
-        try:
-            result_json = json.loads(result_str)
-            if "status" in result_json and result_json["status"] == "COMPACTION_COMPLETE":
-                kept_len = len(result_json.get("compacted_state", ""))
-                if kept_len == 0:
-                     return json.dumps({"status": "BLOCKED", "message": f"Jev evaluated {file_path} and found 0 relevant chunks for the task. The file has been blocked to save context window."})
-                return json.dumps({
-                    "status": "SUCCESS", 
-                    "message": f"File {file_path} filtered successfully. Dropped {result_json.get('dropped_chunks', 0)} irrelevant chunks.",
-                    "content": result_json.get("compacted_state", "")
-                })
-        except:
-            pass
-        return result_str
+        logger.info(f"AST Chunk-filtering {file_path} for task: {task_description}")
+        from jev_mcp.chunker import SemanticChunker
+        from jev_mcp.routing_provider import RoutingProvider
+        
+        chunker = SemanticChunker()
+        file_chunks = chunker.get_semantic_chunks(file_path, file_content)
+        
+        provider = RoutingProvider()
+        kept_chunks = []
+        dropped = 0
+        
+        for i, chunk in enumerate(file_chunks):
+            q = NoulQuestion(
+                key=f"chunk_{i}",
+                prompt=f"Does this specific code block contain logic or variables highly relevant to the task: '{task_description}'?"
+            )
+            res = provider.evaluate_batch(chunk, [q])
+            true_prob = res.get(f"chunk_{i}", {}).get("probabilities", {}).get("true", 0.0)
+            
+            if true_prob >= 0.50:
+                kept_chunks.append(chunk)
+            else:
+                dropped += 1
+                
+        if not kept_chunks:
+             return json.dumps({"status": "BLOCKED", "message": f"Jev evaluated {file_path} and found 0 relevant chunks for the task. The file has been blocked to save context window."})
+             
+        return json.dumps({
+            "status": "SUCCESS", 
+            "message": f"File {file_path} filtered successfully using AST chunking. Dropped {dropped} irrelevant chunks.",
+            "content": "\n\n".join(kept_chunks)
+        })
         
     else:
-        # Evaluate the file as a whole
-        logger.info(f"Evaluating entire file {file_path} for task: {task_description}")
-        q = NoulQuestion(
-            key="is_relevant",
-            prompt=f"Does this text contain logic, variables, or context highly relevant to the following task: '{task_description}'?"
-        )
-        
-        # If the file is massive, the router will automatically escalate to the 7B model 
-        # (because routing_provider has a check_token_limit > 4000 block!)
+        logger.info(f"Whole-file filtering {file_path} for task: {task_description}")
         from jev_mcp.routing_provider import RoutingProvider
         provider = RoutingProvider()
-        res = provider.evaluate_batch(content, [q])
         
-        if "is_relevant" in res and "probabilities" in res["is_relevant"]:
-            true_prob = res["is_relevant"]["probabilities"].get("true", 0.0)
-            if true_prob >= 0.50:
-                return json.dumps({"status": "SUCCESS", "confidence": true_prob, "content": content})
-            else:
-                return json.dumps({"status": "BLOCKED", "confidence": true_prob, "message": f"Jev evaluated {file_path} and determined it is not relevant to the task (Confidence: {true_prob*100:.1f}%). File blocked to save context."})
+        eval_content = file_content[:16000] 
         
-        return json.dumps({"status": "ERROR", "message": "Evaluation failed to return probabilities."})
+        q = NoulQuestion(
+            key="file_eval",
+            prompt=f"Is this file highly relevant to achieving the goal: '{task_description}'?"
+        )
+        res = provider.evaluate_batch(eval_content, [q])
+        true_prob = res.get("file_eval", {}).get("probabilities", {}).get("true", 0.0)
+        
+        if true_prob >= 0.50:
+            return json.dumps({
+                "status": "SUCCESS",
+                "message": f"File passed relevance check ({round(true_prob * 100, 1)}% confident).",
+                "content": file_content
+            })
+        else:
+            return json.dumps({
+                "status": "BLOCKED",
+                "message": f"Jev determined this file is irrelevant to the task ({round(true_prob * 100, 1)}% confident). Blocked to save context."
+            })
 
-
-
-
-
-
-
-
-def main():
-    sys.stdout = _mcp_stdout
-    import warnings
-
-    warnings.filterwarnings("ignore")
-    mcp.run(transport="stdio")
-
-if __name__ == "__main__":
-    main()
 
 @mcp.tool(
     name="jev_compact_context",
@@ -1555,7 +1556,7 @@ def jev_scan_repo(
     return json.dumps({
         "status": "SUCCESS",
         "message": f"Surgically scanned {len(target_files)} files. Extracted {len(kept_chunks)} highly relevant chunks. Dropped {dropped} noisy chunks.",
-        "content": "\\n\\n".join(kept_chunks)
+        "content": "\n\n".join(kept_chunks)
     })
 
 def main():
