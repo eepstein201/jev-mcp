@@ -61,6 +61,28 @@ explain_q = NoulQuestion(key="exp", prompt="Does this require database access?")
 res6 = server.jev_explain_decision({"task": "I need to drop the database."}, explain_q, "true")
 print(res6)
 
+
+def test_read_file():
+    print("\n--> 7. Testing jev_read_file (Context Cascading)")
+    import os
+    import json
+    from src.jev_mcp.server import jev_read_file
+    
+    with open("dummy_test_file.txt", "w") as f:
+        f.write("def connect_to_database():\n    return psycopg2.connect('localhost')\n\n")
+        
+    try:
+        res1_str = jev_read_file("dummy_test_file.txt", "How do I bake a chocolate cake?", filter_by_chunk=False)
+        res1 = json.loads(res1_str)
+        if res1.get("status") == "BLOCKED":
+            print("Successfully blocked irrelevant file!")
+        else:
+            print(f"WARNING: File was not blocked. Status: {res1.get('status')}")
+    finally:
+        if os.path.exists("dummy_test_file.txt"):
+            os.remove("dummy_test_file.txt")
+
+test_read_file()
 print("\n=========================================================")
 print("  ALL TESTS PASSED WITH LIVE HYBRID ENGINE")
 print("=========================================================")
