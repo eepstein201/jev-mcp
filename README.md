@@ -300,7 +300,7 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
 *   **Command:** `/jev-mcp:read-file`
 *   **Underlying Tool:** `jev_read_file`
 *   **Natural Language Triggers:** *"Read this file,"*, *"Check if this file has the database logic..."*
-*   **What it does:** Uses the Dual-Engine logit cascade to mathematically evaluate if a file is actually relevant to your task *before* loading it into your context window. It can either block irrelevant files entirely or chunk the file and return only the verbatim blocks of code you need, eliminating context bloat and hallucination. **(Note: It uses a 0.50 final acceptance threshold to prevent false negatives on edge cases after escalation).**
+*   **What it does:** Uses the Dual-Engine logit cascade to mathematically evaluate if a file is actually relevant to your task *before* loading it into your context window. If filtering by chunk, it uses **Tree-sitter AST parsing** to semantically extract intact functions/classes (preventing arbitrary string-split errors), and then returns only the verbatim logic blocks you need, eliminating context bloat and hallucination. **(Note: It uses a 0.50 final acceptance threshold to prevent false negatives on edge cases after escalation).**
 *   **Arguments:**
     *   `file_path` *(string)*: Absolute path to the file.
     *   `task_description` *(string)*: The goal you are trying to accomplish.
