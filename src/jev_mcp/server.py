@@ -1290,6 +1290,7 @@ def jev_read_file(
         default=True,
         description="If True, the tool will chunk the file and return only the relevant chunks. If False, it evaluates the file as a whole and either returns the entire file or blocks it completely."
     )
+    # TODO: Expose `confidence_threshold: float = 0.50` parameter here later to allow dynamic strictness
 ) -> str:
     import os
     import json
@@ -1310,7 +1311,7 @@ def jev_read_file(
         # Re-use the powerful jev_compact_context logic
         logger.info(f"Chunk-filtering {file_path} for task: {task_description}")
         state_dict = {"text": content}
-        result_str = jev_compact_context(state=state_dict, goal=task_description, confidence_threshold=0.85)
+        result_str = jev_compact_context(state=state_dict, goal=task_description, confidence_threshold=0.50)
         try:
             result_json = json.loads(result_str)
             if "status" in result_json and result_json["status"] == "COMPACTION_COMPLETE":
@@ -1342,7 +1343,7 @@ def jev_read_file(
         
         if "is_relevant" in res and "probabilities" in res["is_relevant"]:
             true_prob = res["is_relevant"]["probabilities"].get("true", 0.0)
-            if true_prob >= 0.85:
+            if true_prob >= 0.50:
                 return json.dumps({"status": "SUCCESS", "confidence": true_prob, "content": content})
             else:
                 return json.dumps({"status": "BLOCKED", "confidence": true_prob, "message": f"Jev evaluated {file_path} and determined it is not relevant to the task (Confidence: {true_prob*100:.1f}%). File blocked to save context."})
