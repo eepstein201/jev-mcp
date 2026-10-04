@@ -1,6 +1,4 @@
-.PHONY: install test lint clean format update start stop
-
-# Set the default model for installation
+.PHONY: install test lint clean format update start stop hybrid
 
 install:
 	@echo "Installing Jev MCP Environment..."
@@ -28,8 +26,8 @@ lint:
 	bash -c "source .venv/bin/activate && mypy src/jev_mcp/"
 
 test:
-	@echo "Running Pytest Mathematical Verification..."
-	bash -c "source .venv/bin/activate && pytest tests/"
+	@echo "Running Pytest with Strict 85% Code Coverage Requirement..."
+	bash -c "source .venv/bin/activate && pytest --cov=src --cov-report=term-missing tests/"
 
 clean:
 	@echo "Completely uninstalling Jev MCP artifacts..."

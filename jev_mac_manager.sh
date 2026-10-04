@@ -266,9 +266,35 @@ case "$COMMAND" in
             pip install -e .
         fi
 
+
         manage_daemon stop
         setup_launchd_plist "$SELECTED_MODEL" "$JEV_FAST_PORT" "$PLIST_PATH" "$LOG_FILE"
         manage_daemon start "$PLIST_PATH"
+        
+        # Inject Opencode Configuration
+        log_info "Configuring Opencode integration..."
+        python3 -c '
+import json, os
+config_path = os.path.expanduser("~/.config/opencode/opencode.json")
+if os.path.exists(os.path.dirname(config_path)):
+    try:
+        if os.path.exists(config_path):
+            with open(config_path, "r") as f: config = json.load(f)
+        else:
+            config = {"$schema": "https://opencode.ai/config.json", "mcp": {}}
+        if "mcp" not in config: config["mcp"] = {}
+        if "jev-mcp" in config["mcp"]: del config["mcp"]["jev-mcp"]
+        config["mcp"]["jev"] = {
+            "type": "local",
+            "command": [os.path.join(os.getcwd(), ".venv/bin/python3"), "-m", "jev_mcp.server"],
+            "environment": {"PYTHONPATH": os.path.join(os.getcwd(), "src")},
+            "enabled": True
+        }
+        with open(config_path, "w") as f: json.dump(config, f, indent=2)
+        print("Successfully integrated with Opencode!")
+    except Exception as e:
+        pass
+'
         
         echo -e "${GREEN}Installation Complete! Your native macOS daemon is running the $TARGET_MODEL_ALIAS model.${NC}"
         ;;
@@ -323,10 +349,34 @@ case "$COMMAND" in
                 pip install -e .
             fi
             
+
             SELECTED_MODEL=$(resolve_model "$TARGET_MODEL_ALIAS")
             manage_daemon stop
-            setup_launchd_plist "$SELECTED_MODEL"
-            manage_daemon start
+            setup_launchd_plist "$SELECTED_MODEL" "$JEV_FAST_PORT" "$PLIST_PATH" "$LOG_FILE"
+            manage_daemon start "$PLIST_PATH"
+            
+            # Sync Opencode Configuration
+            python3 -c '
+import json, os
+config_path = os.path.expanduser("~/.config/opencode/opencode.json")
+if os.path.exists(os.path.dirname(config_path)):
+    try:
+        if os.path.exists(config_path):
+            with open(config_path, "r") as f: config = json.load(f)
+        else:
+            config = {"$schema": "https://opencode.ai/config.json", "mcp": {}}
+        if "mcp" not in config: config["mcp"] = {}
+        if "jev-mcp" in config["mcp"]: del config["mcp"]["jev-mcp"]
+        config["mcp"]["jev"] = {
+            "type": "local",
+            "command": [os.path.join(os.getcwd(), ".venv/bin/python3"), "-m", "jev_mcp.server"],
+            "environment": {"PYTHONPATH": os.path.join(os.getcwd(), "src")},
+            "enabled": True
+        }
+        with open(config_path, "w") as f: json.dump(config, f, indent=2)
+    except Exception as e:
+        pass
+'
             
             log_success "Environment updated and daemon restarted with $TARGET_MODEL_ALIAS."
         else
@@ -377,9 +427,24 @@ case "$COMMAND" in
         rm -f "$PLIST_FAST_PATH"
         rm -f "$PLIST_SMART_PATH"
         
+
         log_info "Removing virtual environment..."
         rm -rf .venv
         
+        # Remove Opencode Configuration
+        log_info "Removing Opencode integration..."
+        python3 -c '
+import json, os
+config_path = os.path.expanduser("~/.config/opencode/opencode.json")
+try:
+    if os.path.exists(config_path):
+        with open(config_path, "r") as f: config = json.load(f)
+        if "mcp" in config and "jev" in config["mcp"]:
+            del config["mcp"]["jev"]
+            with open(config_path, "w") as f: json.dump(config, f, indent=2)
+except Exception: pass
+' 2>/dev/null || true
+
         log_info "Cleaning up logs..."
         rm -rf "$LOG_DIR" || true
         
