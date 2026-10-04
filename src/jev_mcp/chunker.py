@@ -26,7 +26,7 @@ class SemanticChunker:
             import tree_sitter_python
             import tree_sitter
             self.languages[".py"] = tree_sitter.Language(tree_sitter_python.language())
-        except ImportError:
+        except ImportError:  # pragma: no cover
             logger.warning("tree-sitter-python not installed. Falling back to text chunking for Python.")
             
         try:
@@ -34,7 +34,7 @@ class SemanticChunker:
             import tree_sitter
             self.languages[".js"] = tree_sitter.Language(tree_sitter_javascript.language())
             self.languages[".jsx"] = tree_sitter.Language(tree_sitter_javascript.language())
-        except ImportError:
+        except ImportError:  # pragma: no cover
             pass
 
         try:
@@ -42,7 +42,7 @@ class SemanticChunker:
             import tree_sitter
             self.languages[".ts"] = tree_sitter.Language(tree_sitter_typescript.language_typescript())
             self.languages[".tsx"] = tree_sitter.Language(tree_sitter_typescript.language_tsx())
-        except ImportError:
+        except ImportError:  # pragma: no cover
             pass
 
     def get_semantic_chunks(self, file_path: str, code: str) -> list[str]:
@@ -63,7 +63,7 @@ class SemanticChunker:
             # Target nodes we want to extract
             target_types = {
                 "function_definition", "class_definition", 
-                "function_declaration", "method_definition"
+                "function_declaration", "method_definition", "class_declaration"
             }
             
             def traverse(node):

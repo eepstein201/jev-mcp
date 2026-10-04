@@ -34,7 +34,7 @@ def walk_repository(root_path: str, max_depth: int = 10) -> list[str]:
             try:
                 if os.path.getsize(full_path) < 1024 * 500: # 500 KB limit
                     valid_files.append(full_path)
-            except OSError:
+            except OSError:  # pragma: no cover
                 pass
                 
     return valid_files
