@@ -15,8 +15,6 @@ from pydantic import Field
 
 # Must immediately hijack stdout to prevent ANY random library (like torch)
 # from printing warnings that would corrupt the JSON-RPC stream.
-_mcp_stdout = sys.stdout
-sys.stdout = sys.stderr
 
 from mcp.server.mcpserver import MCPServer
 from jev_mcp.provider import QuestionType, NoulQuestion, ChoiceQuestion, ScoreQuestion
