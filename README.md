@@ -35,6 +35,11 @@ Using the `/jev-mcp:compact` tool, the AI assistant passes its massive state int
 **The Jev-MCP Solution:**
 By triggering `/jev-mcp:evaluate`, agents can query Jev with a strict boolean prompt. The local Kev Logit Engine intercepts the math and returns a strict, bias-free confidence score (e.g., `True (92.4% confident)`), safely gating the AI from making hallucinated decisions at 10x the speed of a generative model. You get the semantic intelligence of an LLM, with the type-safety of traditional code.
 
+### 🎯 The Privacy Guardian (Local LoRA Fine-Tuning)
+**The Problem:** Your enterprise handles highly sensitive, proprietary data (e.g., medical records, internal legal contracts, or classified source code). You want your multi-agent system to understand your domain-specific jargon and routing logic, but you are legally prohibited from uploading your data to OpenAI or Anthropic for fine-tuning.
+**The Jev-MCP Solution:**
+Jev's ML pipeline is 100% local. After using the dataset generator to curate your edge cases, trigger `/jev-mcp:train`. Jev will instantly spin up your Apple Silicon GPU and train a native **MLX LoRA Adapter** directly on top of the 7B Smart Engine (or the 0.8B Fast Engine for routing logic) using your proprietary dataset. The fine-tuned weights never leave your physical machine, allowing you to build highly specialized, GDPR-compliant routing engines entirely in-house.
+
 ### 🎯 The Machine Learning Engineer (Deterministic Optimization)
 **The Problem:** You are trying to write a complex system prompt, but your LLM occasionally gets the categories wrong. You don't know how to phrase the prompt to enforce strict adherence, and you don't have the data to finetune a custom BERT model.
 **The Jev-MCP Solution:**
