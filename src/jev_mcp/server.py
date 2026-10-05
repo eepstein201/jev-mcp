@@ -862,7 +862,7 @@ REQUIRED JSON SCHEMA:
   }}
 ]
 
-Once you have generated this JSON array, you must immediately pass it into the `jev_calibrate_threshold` tool to mathematically evaluate the model's performance on your synthetic data.
+Once you have generated this JSON array, you must immediately pass it into the `calibrate` tool to mathematically evaluate the model's performance on your synthetic data.
 """
 
     is_local_model = False
@@ -981,7 +981,7 @@ def get_temp_notice() -> str | None:
         if temp != 1.0:
             _has_notified_temp = True
             updated_at = config.get("temperature_updated_at", "an unknown time")
-            return f"NOTICE: Jev is running with a custom calibrated temperature of {temp} (set on {updated_at}). This globally affects ALL evaluations. You can ask me to reset it to default (1.0) at any time using the /jev-mcp:temperature command or jev_manage_temperature tool."
+            return f"NOTICE: Jev is running with a custom calibrated temperature of {temp} (set on {updated_at}). This globally affects ALL evaluations. You can ask me to reset it to default (1.0) at any time using the /jev-mcp:temperature command or temperature tool."
     except Exception:
         pass
     return None
@@ -1112,67 +1112,67 @@ def jev_determine_best_model(
         return json.dumps({"status": "ERROR", "message": str(e)})
 
 @mcp.prompt(
-    name="jev-mcp:calibrate",
+    name="calibrate",
     description="Calibrate the logit threshold for a dataset and automatically fit/save the global MLX temperature."
 )
 def calibrate_prompt() -> str:
-    return "I want to calibrate Jev. Ask me for the dataset. Then run `jev_calibrate_threshold` with `save_to_config=True`. When it completes, you MUST explicitly notify me that 'The global Jev MLX temperature was dynamically calibrated and saved to your router config, altering default behavior.' If I declined auto-saving, let me know we will fallback to manual Platt scaling."
+    return "I want to calibrate Jev. Ask me for the dataset. Then run `calibrate` with `save_to_config=True`. When it completes, you MUST explicitly notify me that 'The global Jev MLX temperature was dynamically calibrated and saved to your router config, altering default behavior.' If I declined auto-saving, let me know we will fallback to manual Platt scaling."
 
 @mcp.prompt(
-    name="jev-mcp:compact",
+    name="compact",
     description="Compress your current context and codebase state to save tokens and eliminate hallucination risk, using Jev's logit confidence gating."
 )
 def compact_jev_prompt() -> str:
-    return "Gather all your current conversation history, scratchpads, and the contents of any relevant codebase files you currently have open or in your working memory. Immediately execute the `jev_compact_context` MCP tool, passing this massive payload as the `state` argument, and your current goal as the `goal` argument. Do not generate a summary yourself; wait for the Jev tool to return the mathematically compressed payload, and then silently update your working memory with the results to proceed."
+    return "Gather all your current conversation history, scratchpads, and the contents of any relevant codebase files you currently have open or in your working memory. Immediately execute the `compact` MCP tool, passing this massive payload as the `state` argument, and your current goal as the `goal` argument. Do not generate a summary yourself; wait for the Jev tool to return the mathematically compressed payload, and then silently update your working memory with the results to proceed."
 
 @mcp.prompt(
-    name="jev-mcp:evaluate",
+    name="evaluate",
     description="Ask Jev to mathematically evaluate your current codebase or context against a specific set of questions."
 )
 def evaluate_prompt() -> str:
-    return "I want to mathematically evaluate my current context. Please ask me what questions or criteria I want to evaluate. Once I provide them, gather my relevant codebase state and use the `jev_evaluate_batch` tool to get the mathematical logit probabilities for each question, then present the results."
+    return "I want to mathematically evaluate my current context. Please ask me what questions or criteria I want to evaluate. Once I provide them, gather my relevant codebase state and use the `evaluate` tool to get the mathematical logit probabilities for each question, then present the results."
 
 @mcp.prompt(
-    name="jev-mcp:explain-decision",
+    name="explain-decision",
     description="Ask Jev to extract the exact reasoning behind a specific mathematical score or decision."
 )
 def explain_decision_prompt() -> str:
-    return "I want to understand why Jev gave a specific mathematical score. Please ask me which evaluation or task I want explained. Then use the `jev_explain_decision` tool to extract the generative reasoning behind the logit probability, and present it to me."
+    return "I want to understand why Jev gave a specific mathematical score. Please ask me which evaluation or task I want explained. Then use the `explain-decision` tool to extract the generative reasoning behind the logit probability, and present it to me."
 
 @mcp.prompt(
-    name="jev-mcp:generate-data",
+    name="generate-data",
     description="Use the local Jev engine to quickly spin up massive synthetic test datasets."
 )
 def generate_data_prompt() -> str:
-    return "I want to generate a synthetic dataset locally. Ask me what kind of data I need and the exact schema. Then use the `jev_generate_synthetic_dataset` tool to generate it, and present a sample or save it to my workspace."
+    return "I want to generate a synthetic dataset locally. Ask me what kind of data I need and the exact schema. Then use the `generate-data` tool to generate it, and present a sample or save it to my workspace."
 
 @mcp.prompt(
-    name="jev-mcp:handoff",
+    name="handoff",
     description="Ask Jev to evaluate your current context and mathematically route it to the best specialized subagent using full agent profiles."
 )
 def handoff_prompt() -> str:
-    return "I want to hand off this task to a specialist. Please generate a list of 3-4 highly relevant specialized agents for this specific task, including their names and a detailed 1-sentence description of their capabilities. Present this list to me for confirmation or edits. Once I approve, pass the task context and the dictionary of agent names/descriptions to the `jev_agent_handoff` tool so Jev can mathematically route the context to the best option."
+    return "I want to hand off this task to a specialist. Please generate a list of 3-4 highly relevant specialized agents for this specific task, including their names and a detailed 1-sentence description of their capabilities. Present this list to me for confirmation or edits. Once I approve, pass the task context and the dictionary of agent names/descriptions to the `handoff` tool so Jev can mathematically route the context to the best option."
 
 @mcp.prompt(
-    name="jev-mcp:model-router",
+    name="model-router",
     description="Ask Jev to calculate the Complexity Index of your current goal and recommend the optimal LLM model to use."
 )
 def model_router_prompt() -> str:
-    return "Please take my current primary task/goal and execute the `jev_determine_best_model` tool to calculate its mathematical Complexity Index. Once Jev returns the recommended model and complexity breakdown, present the results to me. If Jev warns about massive context, or recommends a more powerful model than I am currently using, please proactively ask me if I want to switch models before we proceed."
+    return "Please take my current primary task/goal and execute the `model-router` tool to calculate its mathematical Complexity Index. Once Jev returns the recommended model and complexity breakdown, present the results to me. If Jev warns about massive context, or recommends a more powerful model than I am currently using, please proactively ask me if I want to switch models before we proceed."
 
 @mcp.prompt(
-    name="jev-mcp:model-router-config",
+    name="manage-router",
     description="View or modify your dynamic LLM routing configuration (buckets and exception rules) using natural language."
 )
 def router_config_prompt() -> str:
-    return "I would like to configure my Jev model routing settings. Please use the `jev_manage_router_config` tool with the `view_all` action to retrieve my current settings. Present my current buckets and exception rules to me in a clean, readable format. Then, ask me what I would like to change (e.g., adding a rule, removing a rule, or reassigning a bucket model)."
+    return "I would like to configure my Jev model routing settings. Please use the `manage-router` tool with the `view_all` action to retrieve my current settings. Present my current buckets and exception rules to me in a clean, readable format. Then, ask me what I would like to change (e.g., adding a rule, removing a rule, or reassigning a bucket model)."
 
 @mcp.prompt(
-    name="jev-mcp:optimize-prompt",
+    name="optimize-prompt",
     description="Mathematically optimize a prompt for maximum LLM adherence."
 )
 def optimize_prompt() -> str:
-    return "I want to mathematically optimize a prompt. Ask me what prompt I want to optimize and what my goals are. Then use the `jev_optimize_prompt` tool to generate and validate the optimal version of the prompt using logit extraction, and present the final optimized prompt to me."
+    return "I want to mathematically optimize a prompt. Ask me what prompt I want to optimize and what my goals are. Then use the `optimize-prompt` tool to generate and validate the optimal version of the prompt using logit extraction, and present the final optimized prompt to me."
 
 @mcp.tool(
     name="handoff",
@@ -1226,18 +1226,18 @@ def jev_train_lora(dataset_path: str, model_name: str = "mlx-community/Qwen2.5-7
     }, indent=2)
 
 @mcp.prompt(
-    name="jev-mcp:temperature",
+    name="temperature",
     description="View or change Jev's global MLX calibration temperature (which affects all evaluations)."
 )
 def temperature_prompt() -> str:
-    return "I want to manage Jev's global calibration temperature. First, use `jev_manage_temperature` to view the current temperature. Then ask me if I want to keep it, manually set a new value, or reset it to the default 1.0."
+    return "I want to manage Jev's global calibration temperature. First, use `temperature` to view the current temperature. Then ask me if I want to keep it, manually set a new value, or reset it to the default 1.0."
 
 @mcp.prompt(
-    name="jev-mcp:train",
+    name="train",
     description="Train a local MLX LoRA adapter on your Apple Silicon GPU using any dataset format to customize Jev."
 )
 def train_prompt() -> str:
-    return "I want to fine-tune Jev to my codebase. If I provide a dataset in CSV, Markdown, or another raw format, you MUST first convert it into the strict `.jsonl` schema required by Jev and save it locally. (If I don't have data, use `jev_generate_synthetic_dataset` to generate it). Once the `.jsonl` file is ready, pass its path to the `jev_train_lora` tool to instantly train a custom adapter on the GPU."
+    return "I want to fine-tune Jev to my codebase. If I provide a dataset in CSV, Markdown, or another raw format, you MUST first convert it into the strict `.jsonl` schema required by Jev and save it locally. (If I don't have data, use `generate-data` to generate it). Once the `.jsonl` file is ready, pass its path to the `train` tool to instantly train a custom adapter on the GPU."
 
 @mcp.tool(
     name="temperature",
@@ -1558,22 +1558,24 @@ def jev_scan_repo(
         "content": "\n\n".join(kept_chunks)
     })
 
-def main():
-    mcp.run(transport='stdio')
 
-if __name__ == '__main__':
-    main()
 
 @mcp.prompt(
-    name="jev-mcp:scan-repo",
+    name="scan-repo",
     description="Ask Jev to surgically scan the current workspace repository to find and extract the AST chunks relevant to a specific task."
 )
 def scan_repo_prompt() -> str:
     return "I want to scan this repository for code relevant to my current task. Please ask me for the target directory path (if not the root) and the specific bug or feature I am looking for. Then execute the `scan-repo` tool with those arguments and report back the mathematically extracted AST chunks."
 
 @mcp.prompt(
-    name="jev-mcp:read-file",
+    name="read-file",
     description="Ask Jev to read a specific file and mathematically extract only the AST chunks relevant to a task, dropping irrelevant noise."
 )
 def read_file_prompt() -> str:
     return "I want to read a file, but I only want the parts relevant to my current task. Please ask me for the file path and my objective. Then execute the `read-file` tool with filter_by_chunk=True and report back the extracted AST blocks."
+
+def main():
+    mcp.run(transport='stdio')
+
+if __name__ == '__main__':
+    main()
