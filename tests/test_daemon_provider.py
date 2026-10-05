@@ -237,3 +237,37 @@ def test_env_var():
     with patch.dict(os.environ, {"JEV_DAEMON_PORT": "9090"}):
         p = DaemonProvider()
         assert p.base_url == "http://127.0.0.1:9090/v1/chat/completions"
+
+@patch("subprocess.check_output")
+@patch.object(DaemonProvider, "_get_daemon_pid", return_value="1234")
+@patch.object(DaemonProvider, "get_logprobs")
+def test_pgrep_runs_once_per_batch_not_per_question(mock_get_logprobs, mock_pid, mock_check_output, provider):
+    mock_check_output.return_value = b"mlx_lm 7B"
+    # q1: actual + prior (prior then cached for identical prompts), q2/q3: actual only
+    mock_get_logprobs.side_effect = [
+        ({"true": math.log(0.8), "false": math.log(0.2)}, "test-model"),
+        ({"true": math.log(0.5), "false": math.log(0.5)}, "test-model"),
+        ({"true": math.log(0.8), "false": math.log(0.2)}, "test-model"),
+        ({"true": math.log(0.8), "false": math.log(0.2)}, "test-model"),
+    ]
+    questions = [NoulQuestion(key=f"q{i}", prompt="same prompt") for i in range(3)]
+    provider.evaluate_batch("state", questions)
+    assert mock_check_output.call_count == 1
+
+@patch.object(DaemonProvider, "_get_daemon_pid", return_value="1234")
+@patch.object(DaemonProvider, "get_logprobs")
+@patch("subprocess.check_output", return_value=b"mlx_lm 7B")
+def test_prior_cache_shared_across_instances(mock_check_output, mock_get_logprobs, mock_pid):
+    # The empty-payload prior must survive across DaemonProvider instances
+    # (RoutingProvider constructs a fresh one per tool call).
+    mock_get_logprobs.side_effect = [
+        ({"true": math.log(0.8), "false": math.log(0.2)}, "m1"),  # p1 actual
+        ({"true": math.log(0.5), "false": math.log(0.5)}, "m1"),  # p1 prior (fills cache)
+        ({"true": math.log(0.8), "false": math.log(0.2)}, "m1"),  # p2 actual (prior = cache hit)
+    ]
+    q = NoulQuestion(key="q", prompt="distinctive prior-cache prompt")
+    p1 = DaemonProvider()
+    p2 = DaemonProvider()
+    p1.evaluate_batch("s", [q])
+    p2.evaluate_batch("s", [q])
+    assert mock_get_logprobs.call_count == 3

@@ -22,6 +22,12 @@ class DaemonProvider(JevProvider):
     - Empty-Payload Structural Prior & DCPMI (Eliminates Bias)
     """
 
+    # Shared across instances (the cache key includes daemon pid + model + prompt),
+    # so the empty-payload prior survives RoutingProvider being rebuilt per tool
+    # call. Dict reads/writes are GIL-atomic; a rare duplicate prior fetch under
+    # the scan-repo thread pool is harmless.
+    _prior_cache: dict[str, dict[str, float]] = {}
+
     def __init__(self, base_url: str | None = None) -> None:
         import os
         import json
@@ -34,7 +40,6 @@ class DaemonProvider(JevProvider):
         port = os.getenv("JEV_DAEMON_PORT", "8080")
         self.base_url = base_url or f"http://127.0.0.1:{port}/v1/chat/completions"
         self.max_tokens = 8192
-        self._prior_cache: dict[str, dict[str, float]] = {}
         self.current_model_id = "unknown_model"
         
         self.fitted_temperature = 1.0
@@ -176,6 +181,13 @@ class DaemonProvider(JevProvider):
         state_str = sanitize_payload(state_str)
         daemon_pid = self._get_daemon_pid()
 
+        # Detect the engine once per batch, not once per question.
+        try:
+            out = subprocess.check_output(["pgrep", "-fl", "mlx_lm"]).decode()
+            is_small_model = "0.5B" in out
+        except Exception:
+            is_small_model = True
+
         for q in questions:
             prompt_str = sanitize_payload(q.prompt)
 
@@ -200,12 +212,6 @@ class DaemonProvider(JevProvider):
                 expected_keys = [str(l).lower() for l in q.labels]
             else:
                 format_hint = ""
-
-            try:
-                out = subprocess.check_output(["pgrep", "-fl", "mlx_lm"]).decode()
-                is_small_model = "0.5B" in out
-            except Exception:
-                is_small_model = True
 
             if is_small_model:
                 empty_payload_prompt = (
@@ -246,7 +252,10 @@ class DaemonProvider(JevProvider):
                 self.current_model_id = model_id
 
             # 2. Extract Prior (Cache Hit or Fetch)
-            cache_key = f"{daemon_pid}::{model_id}::{empty_payload_prompt}"
+            # Key on format_hint, not the full empty prompt: the 7B sandbox
+            # template embeds a per-question salt tag, which would make every
+            # cache key unique and refetch the prior on every question.
+            cache_key = f"{daemon_pid}::{model_id}::{format_hint}"
             if cache_key not in self._prior_cache:
                 prior_lps, _ = self.get_logprobs(empty_payload_prompt, expected_keys)
                 self._prior_cache[cache_key] = prior_lps

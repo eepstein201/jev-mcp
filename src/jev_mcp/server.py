@@ -9,7 +9,7 @@ except ImportError:
     pass
 import json
 import logging
-import urllib.request
+import subprocess
 from typing import Any, Dict, List, Optional, Literal
 from pydantic import Field
 
@@ -17,7 +17,7 @@ from pydantic import Field
 # from printing warnings that would corrupt the JSON-RPC stream.
 
 from mcp.server.mcpserver import MCPServer
-from jev_mcp.provider import QuestionType, NoulQuestion, ChoiceQuestion, ScoreQuestion
+from jev_mcp.provider import QuestionType, NoulQuestion, ChoiceQuestion, ScoreQuestion, post_json
 from jev_mcp.linter import DecisionPreflightLinter
 from jev_mcp.routing_provider import RoutingProvider
 import re
@@ -62,6 +62,43 @@ def _clean_json(text: str) -> str:
 
     return text.strip()
 
+def _chat_completion(
+    user: str,
+    system: Optional[str] = None,
+    *,
+    port_env: str = "JEV_SMART_PORT",
+    default_port: str = "8081",
+    temperature: float = 0.1,
+    max_tokens: int = 1024,
+    response_format: Optional[Dict[str, str]] = None,
+    timeout: int = 45,
+) -> str:
+    """Single entry point for local mlx_lm chat-completions calls.
+
+    Returns the raw message content; raises on transport/API errors so callers
+    keep their existing try/except contracts.
+    """
+    messages: List[Dict[str, str]] = []
+    if system is not None:
+        messages.append({"role": "system", "content": system})
+    messages.append({"role": "user", "content": user})
+
+    payload: Dict[str, Any] = {
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+    }
+    if response_format is not None:
+        payload["response_format"] = response_format
+
+    port = os.getenv(port_env, default_port)
+    res = post_json(f"http://127.0.0.1:{port}/v1/chat/completions", payload, timeout=timeout)
+    return res["choices"][0]["message"]["content"]
+
+def _chat_completion_json(**kwargs: Any) -> Any:
+    """_chat_completion + fence stripping + JSON parsing."""
+    return json.loads(_clean_json(_chat_completion(**kwargs)))
+
 # Initialize MCP and Provider
 mcp = MCPServer("jev-mcp")
 from jev_mcp.daemon_provider import DaemonProvider
@@ -85,29 +122,16 @@ def call_fast_autofixer(state, questions, errors):
     )
     user_prompt = f"STATE/CONTEXT:\n{json.dumps(state)[:1000]}...\n\nBROKEN QUESTIONS:\n{json.dumps(questions, indent=2)}\n\nLINTER ERRORS:\n{json.dumps(errors, indent=2)}\n\nReturn ONLY the JSON object."
 
-    payload = {
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        "temperature": 0.1,
-        "max_tokens": 1024,
-        "response_format": {"type": "json_object"},
-    }
-
-    req = urllib.request.Request(
-        f"http://127.0.0.1:{os.getenv('JEV_FAST_PORT', '8080')}/v1/chat/completions",
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-    )
-
-    with urllib.request.urlopen(req, timeout=45) as response:
-        result = json.loads(response.read().decode())
-
-    content = result["choices"][0]["message"]["content"]
-
     # Constrained Decoding guarantees JSON; no regex needed.
-    data = json.loads(_clean_json(content))
+    data = _chat_completion_json(
+        user=user_prompt,
+        system=system_prompt,
+        port_env="JEV_FAST_PORT",
+        default_port="8080",
+        temperature=0.1,
+        max_tokens=1024,
+        response_format={"type": "json_object"},
+    )
     return data.get("fixed_questions", [])
 
 @mcp.tool(
@@ -153,26 +177,13 @@ def jev_evaluate_batch(
                 f"QUESTIONS TO BE ANSWERED:\n{json.dumps(q_prompts, indent=2)}"
             )
 
-            payload = {
-                "messages": [
-                    {"role": "system", "content": qfe_prompt},
-                    {"role": "user", "content": f"MASSIVE STATE:\n{json.dumps(state)}"},
-                ],
-                "temperature": 0.1,
-                "max_tokens": 1500,
-            }
-
-            req = urllib.request.Request(
-                f"http://127.0.0.1:{os.getenv('JEV_SMART_PORT', '8081')}/v1/chat/completions",
-                data=json.dumps(payload).encode("utf-8"),
-                headers={"Content-Type": "application/json"},
-            )
-
-            with urllib.request.urlopen(req, timeout=45) as response:
-                result = json.loads(response.read().decode())
-
             compressed_state = {
-                "qfe_extracted_context": result["choices"][0]["message"]["content"]
+                "qfe_extracted_context": _chat_completion(
+                    f"MASSIVE STATE:\n{json.dumps(state)}",
+                    system=qfe_prompt,
+                    temperature=0.1,
+                    max_tokens=1500,
+                )
             }
             logger.info("QFE Compression successful. Re-checking token count...")
 
@@ -415,36 +426,15 @@ def jev_optimize_prompt(
         "Output ONLY a JSON object.\n"
         'Format: {"variations": ["Variation 1", "Variation 2", ...]}'
     )
-    payload = {
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"Optimize this question: {q_dict_str}"},
-        ],
-        "temperature": 0.3,
-        "max_tokens": 512,
-        "response_format": {"type": "json_object"},
-    }
     try:
-        req = urllib.request.Request(
-            f"http://127.0.0.1:{os.getenv('JEV_SMART_PORT', '8081')}/v1/chat/completions",
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-        )
-        with urllib.request.urlopen(req, timeout=45) as response:
-            res = json.loads(response.read().decode())
-
-        content = res["choices"][0]["message"]["content"]
-        content = content.strip()
-        if content.startswith("```json"):
-            content = content[7:]
-        elif content.startswith("```"):
-            content = content[3:]
-        if content.endswith("```"):
-            content = content[:-3]
-        content = content.strip()
-
         # Guaranteed JSON via Constrained Decoding
-        variations_data = json.loads(_clean_json(content))
+        variations_data = _chat_completion_json(
+            user=f"Optimize this question: {q_dict_str}",
+            system=system_prompt,
+            temperature=0.3,
+            max_tokens=512,
+            response_format={"type": "json_object"},
+        )
         variations = variations_data.get("variations", [])
         if isinstance(variations, str):
             variations = [variations]
@@ -663,7 +653,7 @@ def jev_calibrate_threshold(
                     valid_indices.append(i)
             
             if len(X_raw) > 1 and len(set(y_true)) > 1:
-                clf = LogisticRegression(penalty=None, solver='lbfgs')
+                clf = LogisticRegression(C=np.inf, solver="lbfgs")  # C=inf ≡ unregularized (penalty=None is removed in sklearn 1.10)
                 clf.fit(np.array(X_raw), np.array(y_true))
                 calibrated_probs = clf.predict_proba(np.array(X_raw))
                 
@@ -751,36 +741,14 @@ def jev_explain_decision(
 
     user_prompt = f"STATE:\n{state_str[:3000]}...\n\nQUESTION:\n{q_prompt}\n\nDECISION:\n{decision}\n\nReturn ONLY the JSON object."
 
-    payload = {
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        "temperature": 0.1,
-        "max_tokens": 256,
-        "response_format": {"type": "json_object"},
-    }
-
     try:
-        req = urllib.request.Request(
-            f"http://127.0.0.1:{os.getenv('JEV_SMART_PORT', '8081')}/v1/chat/completions",
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
+        data = _chat_completion_json(
+            user=user_prompt,
+            system=system_prompt,
+            temperature=0.1,
+            max_tokens=256,
+            response_format={"type": "json_object"},
         )
-        with urllib.request.urlopen(req, timeout=45) as response:
-            res = json.loads(response.read().decode())
-
-        content = res["choices"][0]["message"]["content"]
-        content = content.strip()
-        if content.startswith("```json"):
-            content = content[7:]
-        elif content.startswith("```"):
-            content = content[3:]
-        if content.endswith("```"):
-            content = content[:-3]
-        content = content.strip()
-
-        data = json.loads(_clean_json(content))
         return json.dumps(
             {
                 "status": "EVIDENCE_EXTRACTED",
@@ -805,8 +773,6 @@ def jev_generate_synthetic_dataset(
         default=10, description="Number of synthetic edge cases to generate."
     ),
 ) -> str:
-    import subprocess
-    import urllib.request
     import json
     import random
     from jev_mcp.security import sanitize_payload
@@ -820,7 +786,6 @@ def jev_generate_synthetic_dataset(
     q_prompt = sanitize_payload(q_prompt)
 
     logger.info(f"Checking if 7B model is loaded for local dataset generation...")
-    q_prompt = question.prompt
 
     expected_type = "boolean (true/false)"
     if isinstance(question, ChoiceQuestion):
@@ -884,38 +849,13 @@ Once you have generated this JSON array, you must immediately pass it into the `
                 current_batch = min(batch_size, remaining)
 
                 seed = random.randint(1000, 9999)
-                payload = {
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {
-                            "role": "user",
-                            "content": f"Generate exactly {current_batch} cases now. Ensure these cases are highly unique. [Random Seed: {seed}]",
-                        },
-                    ],
-                    "temperature": 0.2,
-                    "max_tokens": 2048,
-                    "response_format": {"type": "json_object"},
-                }
-
-                req = urllib.request.Request(
-                    f"http://127.0.0.1:{os.getenv('JEV_SMART_PORT', '8081')}/v1/chat/completions",
-                    data=json.dumps(payload).encode("utf-8"),
-                    headers={"Content-Type": "application/json"},
+                batch_data = _chat_completion_json(
+                    user=f"Generate exactly {current_batch} cases now. Ensure these cases are highly unique. [Random Seed: {seed}]",
+                    system=system_prompt,
+                    temperature=0.2,
+                    max_tokens=2048,
+                    response_format={"type": "json_object"},
                 )
-                with urllib.request.urlopen(req, timeout=45) as response:
-                    res = json.loads(response.read().decode())
-
-                content = res["choices"][0]["message"]["content"]
-                content = content.strip()
-                if content.startswith("```json"):
-                    content = content[7:]
-                elif content.startswith("```"):
-                    content = content[3:]
-                if content.endswith("```"):
-                    content = content[:-3]
-                content = content.strip()
-
-                batch_data = json.loads(_clean_json(content))
                 if isinstance(batch_data, dict) and "dataset" in batch_data:
                     batch_data = batch_data["dataset"]
 
@@ -1199,16 +1139,49 @@ def jev_agent_handoff(task_description: str, available_agents: Dict[str, str]) -
 )
 def jev_train_lora(dataset_path: str, model_name: str = "mlx-community/Qwen2.5-7B-Instruct-4bit") -> str:
     """
-    Invokes the local mlx_lm.lora training loop.
+    Launches mlx_lm.lora fine-tuning in a detached background process
+    and returns the live pid plus log location.
     """
-    # In a real environment, we would use subprocess to run: mlx_lm.lora --model <model> --data <path> --iters 500
-    # For now, we simulate the execution output to prove the architecture.
+    import importlib.util
+    import tempfile
+    from jev_mcp.security import is_safe_path
+
+    if not is_safe_path(dataset_path):
+        return json.dumps({"status": "BLOCKED", "message": f"Access denied: '{dataset_path}' resolves to a sensitive system or credential location."})
+
+    if not os.path.isfile(dataset_path) or not dataset_path.endswith(".jsonl"):
+        return json.dumps({"status": "ERROR", "message": f"Dataset not found or not a .jsonl file: {dataset_path}"})
+
+    if importlib.util.find_spec("mlx_lm") is None:
+        return json.dumps({"status": "NOT_AVAILABLE", "message": "mlx_lm is not installed in this environment. Run: pip install mlx-lm"})
+
+    # mlx_lm.lora expects a data dir containing train.jsonl — link the dataset in.
+    data_dir = os.path.dirname(dataset_path)
+    if os.path.basename(dataset_path) != "train.jsonl":
+        data_dir = tempfile.mkdtemp(prefix="jev-train-")
+        os.symlink(os.path.abspath(dataset_path), os.path.join(data_dir, "train.jsonl"))
+
+    log_path = os.path.expanduser("~/.jev/train.log")
+    os.makedirs(os.path.dirname(log_path), exist_ok=True)
+    cmd = [
+        sys.executable, "-m", "mlx_lm.lora",
+        "--model", model_name,
+        "--data", data_dir,
+        "--train",
+        "--iters", "500",
+    ]
+    with open(log_path, "a") as log_f:
+        proc = subprocess.Popen(cmd, stdout=log_f, stderr=log_f, start_new_session=True)
+
     return json.dumps({
         "status": "TRAINING_STARTED",
         "dataset": dataset_path,
+        "data_dir": data_dir,
         "base_model": model_name,
-        "estimated_time_minutes": 3.2,
-        "message": "Local LoRA adapter training initialized on Apple Silicon GPU."
+        "pid": proc.pid,
+        "log": log_path,
+        "command": " ".join(cmd),
+        "note": "Training runs in a detached background process. Monitor with: tail -f ~/.jev/train.log",
     }, indent=2)
 
 @mcp.prompt(
@@ -1448,7 +1421,6 @@ def jev_scan_repo(
 ) -> str:
     import os
     import json
-    import urllib.request
     from jev_mcp.scanner import walk_repository, generate_repo_map
     from jev_mcp.chunker import SemanticChunker
     from jev_mcp.routing_provider import RoutingProvider
@@ -1474,35 +1446,26 @@ def jev_scan_repo(
         
         prompt = f"Given the following task: '{task_description}'\\n\\nHere is the repository structure:\\n{repo_map}\\n\\nRespond with ONLY a comma-separated list of the 5-10 file paths most likely to contain the code needed for this task. Do not include any other text."
         
-        payload = {
-            "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": 200,
-            "temperature": 0.0
-        }
-        
         try:
-            smart_port = os.getenv("JEV_SMART_PORT", "8081")
-            req = urllib.request.Request(
-                f"http://127.0.0.1:{smart_port}/v1/chat/completions",
-                data=json.dumps(payload).encode("utf-8"),
-                headers={"Content-Type": "application/json"}
+            content = _chat_completion(
+                prompt,
+                temperature=0.0,
+                max_tokens=200,
+                timeout=120,
             )
-            with urllib.request.urlopen(req, timeout=120) as response:
-                res = json.loads(response.read().decode())
-                content = res["choices"][0]["message"]["content"]
-                
-                suggested_paths = [p.strip() for p in content.replace("\\n", ",").split(",") if p.strip()]
-                
-                target_files = []
-                for sp in suggested_paths:
-                    clean_sp = sp.lstrip("- ").strip()
-                    abs_path = os.path.abspath(os.path.join(directory_path, clean_sp))
-                    if abs_path in files:
-                        target_files.append(abs_path)
-                        
-                if not target_files:
-                    logger.warning("Smart model failed to select valid paths. Falling back to first 20 files.")
-                    target_files = files[:20]
+
+            suggested_paths = [p.strip() for p in content.replace("\\n", ",").split(",") if p.strip()]
+
+            target_files = []
+            for sp in suggested_paths:
+                clean_sp = sp.lstrip("- ").strip()
+                abs_path = os.path.abspath(os.path.join(directory_path, clean_sp))
+                if abs_path in files:
+                    target_files.append(abs_path)
+
+            if not target_files:
+                logger.warning("Smart model failed to select valid paths. Falling back to first 20 files.")
+                target_files = files[:20]
         except Exception as e:
             logger.warning(f"Surgical pointing failed: {e}. Falling back to first 20 files.")
             target_files = files[:20]

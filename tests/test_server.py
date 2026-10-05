@@ -1,5 +1,6 @@
 import pytest
 import json
+import os
 import urllib.request
 import subprocess
 from unittest.mock import patch, MagicMock
@@ -632,11 +633,68 @@ def test_jev_agent_handoff(mock_provider_class):
     assert res["status"] == "HANDOFF_RECOMMENDATION"
     assert res["recommended_agent"] == "Python_Agent"
     
-def test_jev_train_lora():
-    res_str = server.jev_train_lora("/tmp/data.jsonl")
-    res = json.loads(res_str)
+def test_jev_train_lora_rejects_missing_dataset():
+    res = json.loads(server.jev_train_lora("/nonexistent/path/data.jsonl"))
+    assert res["status"] == "ERROR"
+    assert ".jsonl" in res["message"] or "not" in res["message"].lower()
+
+@patch("shutil.which", return_value="/opt/mlx/bin/mlx_lm.lora")
+@patch("subprocess.Popen")
+def test_jev_train_lora_starts_training(mock_popen, mock_which, tmp_path):
+    mock_proc = MagicMock()
+    mock_proc.pid = 4242
+    mock_popen.return_value = mock_proc
+
+    ds = tmp_path / "mydata.jsonl"
+    ds.write_text('{"messages": []}\n')
+
+    res = json.loads(server.jev_train_lora(str(ds)))
+
     assert res["status"] == "TRAINING_STARTED"
-    assert "/tmp/data.jsonl" in res["dataset"]
+    assert res["pid"] == 4242
+    cmd = mock_popen.call_args[0][0]
+    assert "mlx_lm.lora" in cmd
+    assert "mlx-community/Qwen2.5-7B-Instruct-4bit" in cmd
+    # A train.jsonl link must exist in the run data dir passed via --data
+    data_dir = res["data_dir"]
+    assert os.path.exists(os.path.join(data_dir, "train.jsonl"))
+
+@patch("jev_mcp.server.post_json")
+def test_chat_completion_sends_system_and_json_format(mock_post):
+    mock_post.return_value = {"choices": [{"message": {"content": "hello"}}]}
+    out = server._chat_completion(
+        "user-msg",
+        "system-msg",
+        temperature=0.5,
+        max_tokens=10,
+        response_format={"type": "json_object"},
+    )
+    assert out == "hello"
+    url, payload = mock_post.call_args[0][0], mock_post.call_args[0][1]
+    assert url.endswith(":8081/v1/chat/completions")
+    assert payload["messages"] == [
+        {"role": "system", "content": "system-msg"},
+        {"role": "user", "content": "user-msg"},
+    ]
+    assert payload["response_format"] == {"type": "json_object"}
+
+@patch("jev_mcp.server.post_json")
+def test_chat_completion_without_system_or_format(mock_post, monkeypatch):
+    monkeypatch.setenv("JEV_FAST_PORT", "9999")
+    mock_post.return_value = {"choices": [{"message": {"content": "raw text"}}]}
+    out = server._chat_completion(
+        "user-msg",
+        port_env="JEV_FAST_PORT",
+        default_port="8080",
+        temperature=0.0,
+        max_tokens=200,
+        timeout=120,
+    )
+    assert out == "raw text"
+    url, payload = mock_post.call_args[0][0], mock_post.call_args[0][1]
+    assert url.endswith(":9999/v1/chat/completions")
+    assert payload["messages"] == [{"role": "user", "content": "user-msg"}]
+    assert "response_format" not in payload
 
 @patch("jev_mcp.server.load_router_config")
 @patch("jev_mcp.server.save_router_config")
