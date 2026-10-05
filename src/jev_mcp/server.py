@@ -382,7 +382,7 @@ def jev_optimize_prompt(
     question: QuestionType = Field(description="The draft question to optimize."),
 ) -> str:
     import json
-    from jev_mcp.security import sanitize_payload, is_safe_path
+    from jev_mcp.security import sanitize_payload
 
     logger.info("Starting Prompt Optimization...")
     q_dict: Dict[str, Any] = {}
@@ -719,7 +719,7 @@ def jev_explain_decision(
     ),
 ) -> str:
     import json
-    from jev_mcp.security import sanitize_payload, is_safe_path
+    from jev_mcp.security import sanitize_payload
 
     logger.info("Starting Evidence Extraction...")
 
@@ -809,7 +809,7 @@ def jev_generate_synthetic_dataset(
     import urllib.request
     import json
     import random
-    from jev_mcp.security import sanitize_payload, is_safe_path
+    from jev_mcp.security import sanitize_payload
 
     # 6. MCP Tool Boundary Defenses (DoS & OOM Prevention)
     num_cases = min(max(num_cases, 1), 50)
@@ -1279,7 +1279,11 @@ def jev_read_file(
 ) -> str:
     import os
     import json
-    
+    from jev_mcp.security import is_safe_path
+
+    if not is_safe_path(file_path):
+        return json.dumps({"status": "BLOCKED", "message": f"Access denied: '{file_path}' resolves to a sensitive system or credential location."})
+
     if not os.path.exists(file_path):
         return json.dumps({"status": "ERROR", "message": f"File not found: {file_path}"})
         
@@ -1448,7 +1452,11 @@ def jev_scan_repo(
     from jev_mcp.scanner import walk_repository, generate_repo_map
     from jev_mcp.chunker import SemanticChunker
     from jev_mcp.routing_provider import RoutingProvider
-    
+    from jev_mcp.security import is_safe_path
+
+    if not is_safe_path(directory_path):
+        return json.dumps({"status": "BLOCKED", "message": f"Access denied: '{directory_path}' resolves to a sensitive system or credential location."})
+
     if not os.path.isdir(directory_path):
         return json.dumps({"status": "ERROR", "message": f"Directory not found: {directory_path}"})
         

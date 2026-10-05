@@ -27,6 +27,11 @@ def sanitize_payload(text: Any) -> str:
     return re.sub(pattern, " ", normalized_text, flags=re.IGNORECASE)
 
 import os
+import tempfile
+
+# Per-user scratch space stays readable: on macOS the system temp root lives
+# under /private/var, which the forbidden prefixes below would otherwise block.
+_TEMP_ROOT = os.path.realpath(tempfile.gettempdir())
 
 def is_safe_path(requested_path: str) -> bool:
     """
@@ -34,8 +39,12 @@ def is_safe_path(requested_path: str) -> bool:
     Prevents directory traversal into sensitive OS or user credential directories.
     """
     try:
-        resolved = os.path.realpath(requested_path)
-        
+        resolved = os.path.realpath(os.path.expanduser(requested_path))
+
+        # Allow the per-user temp root (macOS $TMPDIR lives under /private/var)
+        if resolved == _TEMP_ROOT or resolved.startswith(_TEMP_ROOT + os.sep):
+            return True
+
         # Block known dangerous absolute paths (OS level)
         forbidden_prefixes = ["/etc", "/var", "/dev", "/usr", "/bin", "/sbin", "/opt", "/System", "/private"]
         for p in forbidden_prefixes:

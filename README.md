@@ -291,6 +291,7 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
 *   **Underlying Tool:** `read-file`
 *   **Natural Language Triggers:** *"Read this file,"*, *"Check if this file has the database logic..."*
 *   **What it does:** Uses the Dual-Engine logit cascade to mathematically evaluate if a file is actually relevant to your task *before* loading it into your context window. If filtering by chunk, it uses **Tree-sitter AST parsing** to semantically extract intact functions/classes (preventing arbitrary string-split errors), and then returns only the verbatim logic blocks you need, eliminating context bloat and hallucination. **(Note: It uses a 0.50 final acceptance threshold to prevent false negatives on edge cases after escalation).**
+*   **Path Security:** Every request is validated with `is_safe_path` before any content is read — sensitive system and credential locations (e.g. `/etc`, `~/.ssh`, `~/.aws`) are blocked.
 *   **Arguments:**
     *   `file_path` *(string)*: Absolute path to the file.
     *   `task_description` *(string)*: The goal you are trying to accomplish.
@@ -302,6 +303,7 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
 *   **Underlying Tool:** `scan-repo`
 *   **Natural Language Triggers:** *"Scan the repo for...", "Find the auth logic across all files..."*
 *   **What it does:** Performs Repository-Scale Context Filtering. Uses a Coarse-to-Fine Surgical Architecture: It maps the directory and leverages the Smart Engine to logically isolate target files. It then uses Tree-sitter to parse the code into syntax-aware semantic chunks (functions/classes) and runs them through the Dual-Engine cascade. It returns a surgically precise block of code containing only the logic relevant to your task, entirely eliminating file-bloat and arbitrary chunk-splitting errors.
+*   **Path Security:** The scanned directory is validated with `is_safe_path` up front — requests resolving to sensitive system or credential locations are blocked before any file is walked.
 *   **Arguments:**
     *   `directory_path` *(string)*: Absolute path to the directory or workspace root.
     *   `task_description` *(string)*: The goal or bug description used to filter the codebase.
