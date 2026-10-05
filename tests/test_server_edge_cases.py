@@ -182,53 +182,77 @@ def test_main():
 
 
 @patch.object(server.provider, "evaluate_batch")
-def test_coverage_231(mock_eval):
-    # Cover 231-232
-    mock_eval.side_effect = Exception("test")
+@patch.object(server.provider, "check_token_limit")
+def test_coverage_231(mock_ctl, mock_eval):
+    # Model-based linting raises (warning path); static linter passes; eval succeeds.
+    mock_ctl.return_value = 0
+    server.provider.max_tokens = 1000
+    mock_eval.side_effect = [Exception("test231"), {"q1": {"noul": 0.9}}]
     q = NoulQuestion(key="q1", prompt="prompt")
-    server.provider.max_tokens = 999999 # ensure it runs
-    server.jev_evaluate_batch(state={"text": "t"}, questions=[q])
+    res_str = server.jev_evaluate_batch(state={"text": "t"}, questions=[q])
+    assert "SUCCESS" in res_str
 
-def test_coverage_267():
-    # Cover 267 semantic dedupe continue
-    # We need to simulate that the model returned a duplicate intent
-    q = NoulQuestion(key="q1", prompt="prompt")
-    with patch.object(server.linter, "lint") as mock_lint:
-        mock_lint.return_value = PreflightReport(
-            is_valid=False,
-            findings=[
-                LintFinding(severity="ERROR", code="GENERATIVE_INTENT_DETECTED", message="m", suggestion="s")
-            ]
-        )
-        with patch.object(server.provider, "evaluate_batch") as mock_eval:
-            # First call is linting, second is second question
-            mock_eval.return_value = {"q1": {"noul": 0.9}, "q2": {"noul": 0.9}}
-            server.jev_evaluate_batch(state={}, questions=[q, q])
+@patch("jev_mcp.server.call_fast_autofixer")
+@patch.object(server.provider, "evaluate_batch")
+@patch.object(server.provider, "check_token_limit")
+@patch.object(server.linter, "lint")
+def test_coverage_267(mock_lint, mock_ctl, mock_eval, mock_autofix):
+    # Both linters flag generative intent (dedupe path); autofixer fails -> rejected.
+    mock_lint.return_value = PreflightReport(
+        is_valid=False,
+        findings=[
+            LintFinding(severity="ERROR", code="GENERATIVE_INTENT_DETECTED", message="m", suggestion="s")
+        ]
+    )
+    mock_ctl.return_value = 0
+    server.provider.max_tokens = 1000
+    mock_eval.return_value = {"q_0": {"noul": 0.99}}
+    mock_autofix.side_effect = Exception("autofixer down")
 
-def test_coverage_472():
-    # Cover 472
+    q = NoulQuestion(key="q1", prompt="Summarize this document.")
+    res_str = server.jev_evaluate_batch(state={}, questions=[q])
+    assert "REJECTED_BY_LINTER" in res_str
+
+@patch("urllib.request.urlopen")
+def test_coverage_472(mock_urlopen):
+    # Non-dict JSON from the optimizer falls through to the error return.
+    mock_res = MagicMock()
+    mock_res.read.return_value = json.dumps({
+        "choices": [{"message": {"content": "```json\n123\n```"}}]
+    }).encode("utf-8")
+    mock_res.__enter__.return_value = mock_res
+    mock_urlopen.return_value = mock_res
+
     q = NoulQuestion(key="q1", prompt="prompt")
-    with patch("urllib.request.urlopen") as mock_urlopen:
-        mock_res = MagicMock()
-        mock_res.read.return_value = json.dumps({
-            "choices": [{"message": {"content": "```json\n123\n```"}}]
-        }).encode("utf-8")
-        mock_res.__enter__.return_value = mock_res
-        mock_urlopen.return_value = mock_res
-        server.jev_optimize_prompt(state={}, question=q)
+    res = server.jev_optimize_prompt(state={}, question=q)
+    assert "Optimizer Generator Failed" in res
 
 def test_coverage_633():
-    # Cover 633
+    # Threshold table across a mixed automation distribution (FP + TPs + abstains).
     q = ScoreQuestion(key="sq", prompt="score?", labels=["1", "2"])
-    states = [{"state": i, "expected": "1"} for i in range(1)] # size 1
+    states = [{"state": i, "expected": "1"} for i in range(100)]
+    states[0]["expected"] = "2"
     with patch.object(server.provider, "evaluate_dataset") as mock_eval:
-        mock_eval.return_value = [{"sq": {"probabilities": {"1": 0.0}}}]
-        server.jev_calibrate_threshold(dataset=states, question=q)
+        results = [{"probabilities": {"1": 0.9}}]  # the false positive
+        results += [{"probabilities": {"1": 0.9}} for _ in range(4)]  # true positives
+        results += [{"probabilities": {"1": 0.1}} for _ in range(95)]  # abstains
+        mock_eval.return_value = results
+        res_str = server.jev_calibrate_threshold(dataset=states, question=q)
+
+    res = json.loads(res_str)
+    assert res["status"] == "CALIBRATION_COMPLETE"
+    assert "| > 0.50 |" in res["markdown_report"]
 
 def test_coverage_983():
+    # runpy re-executes the module into a fresh namespace with a NEW MCPServer
+    # instance, so patch the stubbed class itself (importing the real "mcp"
+    # package under conftest's stubs would fail).
     import runpy
-    with patch("jev_mcp.server.mcp.run"):
+    import sys
+    dummy_server_cls = sys.modules["mcp.server.mcpserver"].MCPServer
+    with patch.object(dummy_server_cls, "run") as mock_run:
         runpy.run_module("jev_mcp.server", run_name="__main__")
+    mock_run.assert_called_once_with(transport="stdio")
 
 def test_new_prompts():
     from jev_mcp.server import scan_repo_prompt, read_file_prompt
