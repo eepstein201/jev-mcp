@@ -14,46 +14,31 @@ By bypassing traditional text generation, Jev unlocks massive performance gains 
 - **The `7B` Intel Profile:** Delivers evaluations in **~800ms**. While slightly slower than the 0.8B fast engine, it possesses deep inferential reasoning capabilities, achieving a mathematically perfect **1.0 ROC AUC** on edge cases. This easily outperforms standard cloud API text-generation methods in both accuracy and reliability for complex logic.
 - **Enterprise-Grade Security:** Because Jev evaluates raw, untrusted user data, all payloads are strictly sterilized via NFKC Unicode normalization and recursive Control Token stripping. For the 7B profile, prompts are additionally wrapped in strict XML sandboxing to isolate prompt injection payloads.
 
-### 🎯 Real-World Use Case: The Evaluator (Autonomous Confidence Gate)
 
-Imagine you want your AI assistant to process a massive batch of customer support emails and determine if refunds should be issued. If the AI hallucinates its analysis, it costs your company money.
+### 🎯 The Codebase Architect (Surgical Repository Interaction & AST Extraction)
+**The Problem:** Standard LLMs struggle to read entire enterprise repositories. If an AI agent attempts to "read the codebase" to fix a bug, it will blindly dump thousands of files into its context window, causing API timeouts, context collapse, and severe hallucinations.
+**The Jev-MCP Solution:** 
+By utilizing Jev's `/jev-mcp:scan-repo` and `/jev-mcp:read-file` tools, your AI acts as a surgical architect. The agent passes the repository path and the specific bug description to Jev. Jev's **Hybrid Router** kicks in: the local Qwen 7B model performs intelligent file-pointing to isolate the 3 relevant files out of 10,000, and the Kev 0.8B model uses **Tree-Sitter AST parsing** to extract only the specific classes and functions related to the bug, dropping all irrelevant noise before returning the context.
 
-**This is where `jev-mcp` comes in.**
-By typing `/jev-mcp:evaluate` in your chat, you can instruct your AI to evaluate the emails against a strict mathematical boolean (*"Did the customer explicitly demand a refund?"*). The local Kev Logit Engine intercepts the math and returns a strict, bias-free confidence score (e.g. `92.4%`), safely gating the AI from making hallucinated decisions.
+### 🎯 The Cost Optimizer (Dynamic Hybrid Model Routing)
+**The Problem:** Running a multi-agent system entirely on frontier models (like Claude 3.5 Sonnet or GPT-4o) is extraordinarily expensive. However, hardcoding tasks to smaller models leads to failures on edge cases. You need an intelligent traffic controller.
+**The Jev-MCP Solution:** 
+Using the `/jev-mcp:determine-best-model` tool, your system passes the prompt to Jev locally *before* calling the cloud API. Jev mathematically calculates a `Complexity Index` and instantly recommends the cheapest model capable of solving the task. Using `/jev-mcp:manage-router-config`, agents can even inject dynamic fallback rules (e.g., *if token length > 100k, route to smart model*), saving thousands of dollars while preventing task failures.
 
-### 🎯 Real-World Use Case: The Data Scientist (Zero-Shot Classification)
+### 🎯 The Context Compressor (Anti-Hallucination RAG)
+**The Problem:** Agents querying databases or performing RAG often retrieve massive JSON arrays or complex data structures. Feeding this raw, bloated state into a generative model dilutes its attention mechanism, causing it to hallucinate answers.
+**The Jev-MCP Solution:**
+Using the `/jev-mcp:compact` tool, the AI assistant passes its massive state into Jev. Jev slices the JSON into individual chunks, tests each chunk against the specific goal (*"Does this block relate to authentication?"*), and uses **Confidence-Gated Logits** to ruthlessly filter out the noise. It returns a surgically compressed payload containing only the exact verbatim nodes required, completely eliminating hallucination risk.
 
-Traditionally, if you wanted to build a strict text classifier, you would have to gather thousands of labeled examples, clean the data, and write Python scripts to fine-tune a custom BERT model.
+### 🎯 The Evaluator (Mathematical Confidence Gating)
+**The Problem:** You want to run a massive automated QA workflow (e.g., checking 5,000 customer support tickets to see if a refund should be issued). Generative text models are slow, expensive, and prone to sycophancy (always saying "yes").
+**The Jev-MCP Solution:**
+By triggering `/jev-mcp:evaluate`, agents can query Jev with a strict boolean prompt. The local Kev Logit Engine intercepts the math and returns a strict, bias-free confidence score (e.g., `True (92.4% confident)`), safely gating the AI from making hallucinated decisions at 10x the speed of a generative model. You get the semantic intelligence of an LLM, with the type-safety of traditional code.
 
-**This is where `jev-mcp` comes in.**
-You can instantly build and calibrate a classifier right in your chat window. First, type `/jev-mcp:generate-data` to have Jev's Smart Engine synthetically generate 50 edge cases. Then, type `/jev-mcp:calibrate` to run the dataset through the logit engine. Jev extracts the raw mathematical logprobs and prints a beautiful Markdown ROC Curve and Confusion Matrix, mathematically proving your precision threshold—all locally, with zero code required.
-
-### 🎯 Real-World Use Case: The Prompt Engineer (Deterministic Optimization)
-
-Imagine you are trying to write a complex prompt to strictly route incoming tickets into `Sales`, `Billing`, or `Tech Support`, but your LLM keeps hallucinating weird formats or occasionally getting the categories wrong. You don't know how to phrase the prompt to enforce strict adherence.
-
-**This is where `jev-mcp` comes in.**
-By typing `/jev-mcp:optimize-prompt` in your chat, Jev will generate 5 variations of your prompt and mathematically test all of them against the local logit engine. It will instantly return the statistically optimal phrasing that yields the highest Area Under Curve (AUC), completely eliminating prompt engineering guesswork.
-
-### 🎯 Real-World Use Case: The Multi-Agent Orchestrator (Dynamic Agent Handoff)
-Imagine you are building a complex AI team (Swarm architecture) with specialized subagents (e.g., a "Postgres Database Expert", a "React UI Specialist", and a "DevOps Engineer"). When a generic user request comes in, you need to instantly route the task to the correct expert without waiting for a slow generative LLM. 
-
-**This is where `jev-mcp` comes in.**
-By using the `/jev-mcp:handoff` slash command, your primary orchestrator agent passes the user's task and a dictionary of the available subagent profiles to Jev. The local Kev Logit Engine mathematically evaluates the profiles and returns the highest probability specialist in ~120ms. The orchestrator can seamlessly hand off the task, enabling massive autonomous swarms that don't get bottlenecked by slow, expensive generative routing calls.
-
-### 🎯 Real-World Use Case: The Cost Optimizer (Dynamic LLM Tiering)
-Imagine you are a startup scaling an AI coding assistant. You want to use a massive frontier model (like Claude 3.5 Sonnet or GPT-4o) for everything, but at scale, sending simple tasks (like fixing a typo) to a top-tier model burns through your API credits. You want to route simple tasks to cheap/fast models, and complex reasoning tasks to expensive models.
-
-**This is where `jev-mcp` comes in.**
-Using the `/jev-mcp:model-router` feature, you can define complexity buckets in Jev's local `router_config.json`. Before calling the cloud API, your system passes the prompt to Jev locally. Jev mathematically calculates a `Complexity Index` and instantly recommends the cheapest model capable of solving the task. If a task touches a massive codebase (100k+ tokens), Jev dynamically catches it and escalates it to a specialized 1M+ context model, saving you thousands of dollars while preventing API context collapse.
-
-### 🎯 Real-World Use Case: The Context Compressor (Anti-Hallucination)
-Imagine you are writing code in a massive monorepo. You ask your AI assistant to "Fix the database schema", and the AI aggressively reads 50 different files, bloating its context window with 150,000 tokens of completely irrelevant UI components. When the AI tries to write the SQL fix, it hallucinates because its attention mechanism is diluted by the noise.
-
-**This is where `jev-mcp` comes in.**
-Using the `/jev-mcp:compact` slash command, the AI assistant passes its massive, bloated state into Jev. Jev slices the context into chunks, tests each chunk against the specific goal ("Fix the database schema"), and uses Confidence-Gated Logits to ruthlessly filter out the noise. It returns a surgically compressed payload containing only the exact verbatim code blocks required, completely eliminating hallucination risk and speeding up the upstream LLM generation.
-You get the semantic intelligence of a generative model, with the speed, cost, and type-safety of traditional code.
-
+### 🎯 The Machine Learning Engineer (Deterministic Optimization)
+**The Problem:** You are trying to write a complex system prompt, but your LLM occasionally gets the categories wrong. You don't know how to phrase the prompt to enforce strict adherence, and you don't have the data to finetune a custom BERT model.
+**The Jev-MCP Solution:**
+Jev provides an instant ML pipeline locally in your chat window. First, use `/jev-mcp:generate-dataset` to have the Smart Engine auto-generate 50 adversarial edge cases. Then, use `/jev-mcp:optimize-prompt` to test prompt variations against the local logit engine, discovering the statistically optimal phrasing. Finally, use `/jev-mcp:calibrate-threshold` to run a **Scikit-Learn Platt Scaling** regression that outputs a beautiful Markdown ROC Matrix, mathematically proving your precision threshold with zero code required.
 
 ---
 
