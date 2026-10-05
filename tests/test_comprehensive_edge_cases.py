@@ -218,12 +218,19 @@ def test_manage_router_config_remove(mock_save, mock_load):
 # 10. Determine Best Model (rule triggered)
 # ---------------------------------------------------------
 from jev_mcp.server import jev_determine_best_model
+@patch("jev_mcp.server.RoutingProvider")
 @patch("jev_mcp.server.load_router_config", return_value={
-    "rules": [{"condition": "'urgent' in context", "target": "smart"}], 
+    "rules": [{"condition": "'urgent' in context", "target": "smart"}],
     "buckets": {"smart": "qwen"}
 })
-def test_determine_best_model_rule_triggered(mock_load):
+def test_determine_best_model_rule_triggered(mock_load, mock_provider_class):
+    # Mock the engine so the test passes with or without a live daemon (CI).
+    mock_provider = MagicMock()
+    mock_provider_class.return_value = mock_provider
+    mock_provider.evaluate_batch.return_value = {"rule": {"noul": 0.95}}
+
     res_str = jev_determine_best_model(task_description="urgent", estimated_tokens=0)
     res = json.loads(res_str)
     assert res["status"] == "RULE_TRIGGERED"
     assert res["recommended_target"] == "smart"
+    assert res["model"] == "qwen"
