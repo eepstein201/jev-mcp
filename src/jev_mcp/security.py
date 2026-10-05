@@ -41,6 +41,13 @@ def is_safe_path(requested_path: str) -> bool:
     try:
         resolved = os.path.realpath(os.path.expanduser(requested_path))
 
+        # Block sensitive credential/history names wherever they live —
+        # including inside the temp root (scratch copies of keys are a real pattern).
+        forbidden_parts = [".ssh", ".aws", ".gnupg", ".kube", ".npmrc", ".bash_history", ".zsh_history", ".config", ".netrc", ".git-credentials"]
+        for part in forbidden_parts:
+            if f"/{part}/" in resolved or resolved.endswith(f"/{part}"):
+                return False
+
         # Allow the per-user temp root (macOS $TMPDIR lives under /private/var)
         if resolved == _TEMP_ROOT or resolved.startswith(_TEMP_ROOT + os.sep):
             return True
@@ -50,13 +57,7 @@ def is_safe_path(requested_path: str) -> bool:
         for p in forbidden_prefixes:
             if resolved.startswith(p + "/") or resolved == p:
                 return False
-        
-        # Block sensitive user credential/history directories
-        forbidden_parts = [".ssh", ".aws", ".gnupg", ".kube", ".npmrc", ".bash_history", ".zsh_history", ".config"]
-        for part in forbidden_parts:
-            if f"/{part}/" in resolved or resolved.endswith(f"/{part}"):
-                return False
-                
+
         return True
     except Exception:
         return False

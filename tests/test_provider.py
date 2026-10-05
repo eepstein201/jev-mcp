@@ -1,7 +1,17 @@
 from unittest.mock import patch
 
+import pytest
+
 from jev_mcp.kev_provider import KevProvider
-from jev_mcp.provider import NoulQuestion, ChoiceQuestion, ScoreQuestion
+from jev_mcp.provider import NoulQuestion, ChoiceQuestion, ScoreQuestion, post_json
+
+
+def test_post_json_refuses_non_local_hosts():
+    with pytest.raises(ValueError):
+        post_json("http://evil.com/v1/chat/completions", {})
+
+    with pytest.raises(ValueError):
+        post_json("http://127.0.0.1:8081@evil.com/v1/chat/completions", {})
 
 
 def test_question_to_dict():

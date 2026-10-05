@@ -638,9 +638,9 @@ def test_jev_train_lora_rejects_missing_dataset():
     assert res["status"] == "ERROR"
     assert ".jsonl" in res["message"] or "not" in res["message"].lower()
 
-@patch("shutil.which", return_value="/opt/mlx/bin/mlx_lm.lora")
 @patch("subprocess.Popen")
-def test_jev_train_lora_starts_training(mock_popen, mock_which, tmp_path):
+def test_jev_train_lora_starts_training(mock_popen, tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))  # keep ~/.jev writes inside the test
     mock_proc = MagicMock()
     mock_proc.pid = 4242
     mock_popen.return_value = mock_proc
@@ -658,6 +658,32 @@ def test_jev_train_lora_starts_training(mock_popen, mock_which, tmp_path):
     # A train.jsonl link must exist in the run data dir passed via --data
     data_dir = res["data_dir"]
     assert os.path.exists(os.path.join(data_dir, "train.jsonl"))
+
+@patch("subprocess.Popen")
+def test_jev_train_lora_rejects_bad_model_name(mock_popen, tmp_path):
+    ds = tmp_path / "data.jsonl"
+    ds.write_text("{}\n")
+
+    res = json.loads(server.jev_train_lora(str(ds), model_name="/etc/passwd"))
+    assert res["status"] == "ERROR"
+    assert "model" in res["message"].lower()
+    mock_popen.assert_not_called()
+
+@patch("subprocess.Popen")
+def test_jev_train_lora_returns_json_error_on_failure(mock_popen, tmp_path):
+    ds = tmp_path / "data.jsonl"
+    ds.write_text("{}\n")
+    mock_popen.side_effect = OSError("spawn failed")
+
+    res = json.loads(server.jev_train_lora(str(ds)))  # must not raise
+    assert res["status"] == "ERROR"
+    assert "spawn failed" in res["message"]
+
+@patch("jev_mcp.server.post_json")
+def test_chat_completion_rejects_non_numeric_port(mock_post, monkeypatch):
+    monkeypatch.setenv("JEV_SMART_PORT", "8081@evil.com")
+    with pytest.raises(ValueError):
+        server._chat_completion("user-msg")
 
 @patch("jev_mcp.server.post_json")
 def test_chat_completion_sends_system_and_json_format(mock_post):

@@ -3,7 +3,6 @@ import logging
 from typing import Any, Dict, List, Literal, Union
 from abc import ABC, abstractmethod
 import urllib.request
-import urllib.error
 
 from pydantic import BaseModel
 
@@ -15,11 +14,11 @@ class NoulQuestion(BaseModel):
     prompt: str
     key: str
 
-    def to_dict(self):
+    def to_dict(self) -> Dict[str, Any]:
         """Serialize to the SystemOne question payload shape."""
         return {"type": "noul", "instructions": self.prompt}
 
-    def to_llm_options(self):
+    def to_llm_options(self) -> List[Dict[str, str]]:
         return [{"id": "true", "description": "True"}, {"id": "false", "description": "False"}]
 
 class ChoiceQuestion(BaseModel):
@@ -28,11 +27,11 @@ class ChoiceQuestion(BaseModel):
     options: List[str]
     key: str
 
-    def to_dict(self):
+    def to_dict(self) -> Dict[str, Any]:
         """Serialize to the SystemOne question payload shape."""
         return {"type": "choice", "instructions": self.prompt, "criteria": {opt: "" for opt in self.options}}
 
-    def to_llm_options(self):
+    def to_llm_options(self) -> List[Dict[str, str]]:
         return [{"id": str(idx), "description": str(opt)} for idx, opt in enumerate(self.options)]
 
 class ScoreQuestion(BaseModel):
@@ -41,11 +40,11 @@ class ScoreQuestion(BaseModel):
     labels: List[str]
     key: str
 
-    def to_dict(self):
+    def to_dict(self) -> Dict[str, Any]:
         """Serialize to the SystemOne question payload shape."""
         return {"type": "score", "instructions": self.prompt, "criteria": self.labels}
 
-    def to_llm_options(self):
+    def to_llm_options(self) -> List[Dict[str, str]]:
         return [{"id": str(idx), "description": str(opt)} for idx, opt in enumerate(self.labels)]
 
 QuestionType = Union[NoulQuestion, ChoiceQuestion, ScoreQuestion]
@@ -71,7 +70,18 @@ class JevProvider(ABC):
         state_str = json.dumps(state) if not isinstance(state, str) else state
         return len(state_str) // 4
 
-def post_json(url: str, payload: dict, timeout: int = 45) -> dict:
+def post_json(url: str, payload: dict, timeout: int = 45) -> Any:
+    """POST JSON to a local daemon and return the parsed response.
+
+    Refuses non-local hosts so a tainted env var cannot redirect engine
+    traffic (and question content) off-box.
+    """
+    from urllib.parse import urlsplit
+
+    host = urlsplit(url).hostname or ""
+    if host not in ("127.0.0.1", "localhost"):
+        raise ValueError(f"post_json only calls local daemons, got host {host!r}")
+
     req = urllib.request.Request(
         url,
         data=json.dumps(payload).encode("utf-8"),

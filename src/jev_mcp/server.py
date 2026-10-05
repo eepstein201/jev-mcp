@@ -92,6 +92,8 @@ def _chat_completion(
         payload["response_format"] = response_format
 
     port = os.getenv(port_env, default_port)
+    if not port.isdigit():
+        raise ValueError(f"Invalid {port_env} value: {port!r} (expected a port number)")
     res = post_json(f"http://127.0.0.1:{port}/v1/chat/completions", payload, timeout=timeout)
     return res["choices"][0]["message"]["content"]
 
@@ -1140,49 +1142,68 @@ def jev_agent_handoff(task_description: str, available_agents: Dict[str, str]) -
 def jev_train_lora(dataset_path: str, model_name: str = "mlx-community/Qwen2.5-7B-Instruct-4bit") -> str:
     """
     Launches mlx_lm.lora fine-tuning in a detached background process
-    and returns the live pid plus log location.
+    and returns the live pid plus adapter/log locations.
     """
     import importlib.util
-    import tempfile
+    import time
     from jev_mcp.security import is_safe_path
 
-    if not is_safe_path(dataset_path):
-        return json.dumps({"status": "BLOCKED", "message": f"Access denied: '{dataset_path}' resolves to a sensitive system or credential location."})
+    try:
+        if not is_safe_path(dataset_path):
+            return json.dumps({"status": "BLOCKED", "message": f"Access denied: '{dataset_path}' resolves to a sensitive system or credential location."})
 
-    if not os.path.isfile(dataset_path) or not dataset_path.endswith(".jsonl"):
-        return json.dumps({"status": "ERROR", "message": f"Dataset not found or not a .jsonl file: {dataset_path}"})
+        dataset_path = os.path.expanduser(dataset_path)
 
-    if importlib.util.find_spec("mlx_lm") is None:
-        return json.dumps({"status": "NOT_AVAILABLE", "message": "mlx_lm is not installed in this environment. Run: pip install mlx-lm"})
+        if not os.path.isfile(dataset_path) or not dataset_path.endswith(".jsonl"):
+            return json.dumps({"status": "ERROR", "message": f"Dataset not found or not a .jsonl file: {dataset_path}"})
 
-    # mlx_lm.lora expects a data dir containing train.jsonl — link the dataset in.
-    data_dir = os.path.dirname(dataset_path)
-    if os.path.basename(dataset_path) != "train.jsonl":
-        data_dir = tempfile.mkdtemp(prefix="jev-train-")
-        os.symlink(os.path.abspath(dataset_path), os.path.join(data_dir, "train.jsonl"))
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]*", model_name):
+            return json.dumps({"status": "ERROR", "message": f"Invalid model_name (expected a HuggingFace id like 'org/model-name'): {model_name}"})
 
-    log_path = os.path.expanduser("~/.jev/train.log")
-    os.makedirs(os.path.dirname(log_path), exist_ok=True)
-    cmd = [
-        sys.executable, "-m", "mlx_lm.lora",
-        "--model", model_name,
-        "--data", data_dir,
-        "--train",
-        "--iters", "500",
-    ]
-    with open(log_path, "a") as log_f:
-        proc = subprocess.Popen(cmd, stdout=log_f, stderr=log_f, start_new_session=True)
+        if importlib.util.find_spec("mlx_lm") is None:
+            return json.dumps({"status": "NOT_AVAILABLE", "message": "mlx_lm is not installed in this environment. Run: pip install mlx-lm"})
 
-    return json.dumps({
-        "status": "TRAINING_STARTED",
-        "dataset": dataset_path,
-        "data_dir": data_dir,
-        "base_model": model_name,
-        "pid": proc.pid,
-        "log": log_path,
-        "command": " ".join(cmd),
-        "note": "Training runs in a detached background process. Monitor with: tail -f ~/.jev/train.log",
-    }, indent=2)
+        # Reuse a single training dir under ~/.jev (no mkdtemp litter) and link
+        # the dataset in under the name mlx_lm.lora expects.
+        run_root = os.path.expanduser("~/.jev/training")
+        os.makedirs(run_root, exist_ok=True)
+        if os.path.basename(dataset_path) != "train.jsonl":
+            link = os.path.join(run_root, "train.jsonl")
+            if os.path.lexists(link):
+                os.remove(link)
+            os.symlink(os.path.abspath(dataset_path), link)
+
+        # Adapters and logs get a fresh per-run directory instead of the CWD.
+        run_id = time.strftime("%Y%m%d-%H%M%S")
+        adapter_path = os.path.expanduser(f"~/.jev/adapters/{run_id}")
+        os.makedirs(adapter_path, exist_ok=True)
+        log_path = os.path.join(adapter_path, "train.log")
+
+        cmd = [
+            sys.executable, "-m", "mlx_lm.lora",
+            "--model", model_name,
+            "--data", run_root,
+            "--adapter-path", adapter_path,
+            "--train",
+            "--iters", "500",
+        ]
+        with open(log_path, "a") as log_f:
+            proc = subprocess.Popen(cmd, stdout=log_f, stderr=log_f, start_new_session=True)
+
+        return json.dumps({
+            "status": "TRAINING_STARTED",
+            "dataset": dataset_path,
+            "data_dir": run_root,
+            "adapter_path": adapter_path,
+            "base_model": model_name,
+            "pid": proc.pid,
+            "log": log_path,
+            "command": " ".join(cmd),
+            "note": f"Training runs in a detached background process. Monitor with: tail -f {log_path}",
+        }, indent=2)
+    except Exception as e:
+        logger.error(f"train tool failed: {e}")
+        return json.dumps({"status": "ERROR", "message": str(e)})
 
 @mcp.prompt(
     name="temperature",
@@ -1256,6 +1277,8 @@ def jev_read_file(
 
     if not is_safe_path(file_path):
         return json.dumps({"status": "BLOCKED", "message": f"Access denied: '{file_path}' resolves to a sensitive system or credential location."})
+
+    file_path = os.path.expanduser(file_path)
 
     if not os.path.exists(file_path):
         return json.dumps({"status": "ERROR", "message": f"File not found: {file_path}"})
@@ -1428,6 +1451,8 @@ def jev_scan_repo(
 
     if not is_safe_path(directory_path):
         return json.dumps({"status": "BLOCKED", "message": f"Access denied: '{directory_path}' resolves to a sensitive system or credential location."})
+
+    directory_path = os.path.expanduser(directory_path)
 
     if not os.path.isdir(directory_path):
         return json.dumps({"status": "ERROR", "message": f"Directory not found: {directory_path}"})

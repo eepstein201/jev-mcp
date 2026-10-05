@@ -238,6 +238,24 @@ def test_env_var():
         p = DaemonProvider()
         assert p.base_url == "http://127.0.0.1:9090/v1/chat/completions"
 
+
+def test_prior_cache_is_capped():
+    # The shared class-level cache must not grow unboundedly across daemon
+    # restarts (pid is part of the key).
+    saved = dict(DaemonProvider._prior_cache)
+    try:
+        DaemonProvider._prior_cache.clear()
+        DaemonProvider._prior_cache.update({f"k{i}": {} for i in range(300)})
+        with patch.object(DaemonProvider, "_get_daemon_pid", return_value="1234"), \
+             patch.object(DaemonProvider, "get_logprobs", return_value=({"true": -0.2}, "m1")), \
+             patch("subprocess.check_output", return_value=b"mlx_lm 7B"):
+            p = DaemonProvider()
+            p.evaluate_batch("s", [NoulQuestion(key="q", prompt="cap test prompt")])
+        assert len(DaemonProvider._prior_cache) < 300
+    finally:
+        DaemonProvider._prior_cache.clear()
+        DaemonProvider._prior_cache.update(saved)
+
 @patch("subprocess.check_output")
 @patch.object(DaemonProvider, "_get_daemon_pid", return_value="1234")
 @patch.object(DaemonProvider, "get_logprobs")

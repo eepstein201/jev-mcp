@@ -257,6 +257,9 @@ class DaemonProvider(JevProvider):
             # cache key unique and refetch the prior on every question.
             cache_key = f"{daemon_pid}::{model_id}::{format_hint}"
             if cache_key not in self._prior_cache:
+                if len(self._prior_cache) > 256:
+                    # Bound process-lifetime growth (pid churn mints new key families).
+                    self._prior_cache.clear()
                 prior_lps, _ = self.get_logprobs(empty_payload_prompt, expected_keys)
                 self._prior_cache[cache_key] = prior_lps
 
