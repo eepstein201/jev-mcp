@@ -228,23 +228,9 @@ def jev_evaluate_batch(
 
         # --- STATIC STRUCTURAL LINTING ---
         for i, q in enumerate(qs):
-            is_score = False
-            if isinstance(q, NoulQuestion):
-                opts = [
-                    {"id": "true", "description": "True"},
-                    {"id": "false", "description": "False"},
-                ]
-            elif isinstance(q, ChoiceQuestion):
-                opts = [
-                    {"id": str(idx), "description": str(opt)}
-                    for idx, opt in enumerate(q.options)
-                ]
-            elif isinstance(q, ScoreQuestion):
-                opts = [
-                    {"id": str(idx), "description": str(opt)}
-                    for idx, opt in enumerate(q.labels)
-                ]
-                is_score = True
+            is_score = isinstance(q, ScoreQuestion)
+            if isinstance(q, (NoulQuestion, ChoiceQuestion, ScoreQuestion)):
+                opts = q.to_llm_options()
             else:
                 opts = []
 
@@ -640,7 +626,7 @@ def jev_calibrate_threshold(
     
     if apply_platt_scaling == "always" or (apply_platt_scaling == "auto" and auto_rate_99 > 0.5):
         try:
-            from sklearn.linear_model import LogisticRegression
+            from sklearn.linear_model import LogisticRegression  # type: ignore[import-untyped]
             import numpy as np
             import math
             
@@ -1082,14 +1068,14 @@ def jev_determine_best_model(
             logger.warning(f"Rule evaluation failed: {e}")
             
     # 3. Complexity Index (Multi-Class Logit Routing)
-    q = ScoreQuestion(
+    complexity_q = ScoreQuestion(
         key="complexity",
         prompt="Score the complexity of this task on a scale from 1 to 4. 1 is trivial, 4 is an agentic refactor.",
         labels=["1", "2", "3", "4"]
     )
-    
+
     try:
-        res = provider.evaluate_batch(state, [q])
+        res = provider.evaluate_batch(state, [complexity_q])
         score = res.get("complexity", {}).get("score", "1")
         probs = res.get("complexity", {}).get("probabilities", {})
         
@@ -1536,18 +1522,24 @@ def jev_scan_repo(
     kept_chunks = []
     dropped = 0
     
-    for i, chunk in enumerate(all_chunks):
+    from concurrent.futures import ThreadPoolExecutor
+    
+    def eval_chunk(args):
+        i, chunk = args
         q = NoulQuestion(
             key=f"chunk_{i}",
             prompt=f"Does this specific code block contain logic or variables highly relevant to the task: '{task_description}'?"
         )
         res = provider.evaluate_batch(chunk, [q])
         true_prob = res.get(f"chunk_{i}", {}).get("probabilities", {}).get("true", 0.0)
-        
-        if true_prob >= 0.50:
-            kept_chunks.append(chunk)
-        else:
-            dropped += 1
+        return (chunk, true_prob >= 0.50)
+
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        for chunk, keep in executor.map(eval_chunk, enumerate(all_chunks)):
+            if keep:
+                kept_chunks.append(chunk)
+            else:
+                dropped += 1
             
     if not kept_chunks:
         return json.dumps({"status": "BLOCKED", "message": f"Scanned {len(target_files)} files and {len(all_chunks)} semantic chunks. Jev determined 0 chunks were relevant to the task. Blocked to save context window."})

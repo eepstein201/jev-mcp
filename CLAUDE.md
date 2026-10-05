@@ -4,6 +4,42 @@ You are an AI pair programmer operating in the Jev MCP repository. The user reli
 
 ## Handling Model Switching Requests
 
-3. **Execution**:
-   - Automatically execute the command once validated.
-   - Confirm to the user which model is now actively running in the background.
+- **Execution**:
+  - Automatically execute the command once validated.
+  - Confirm to the user which model is now actively running in the background.
+
+## Tech Stack
+
+- Python ≥3.10, single package `src/jev_mcp/` (hatchling build).
+- MCP SDK `mcp` 2.2.0 (`>=2.2,<3`), pydantic 2.x for question models.
+- Runtime engines (not imports): `mlx`/`mlx-lm` daemons — Kev-0.8B on `JEV_FAST_PORT` (8080), Qwen-2.5-7B on `JEV_SMART_PORT` (8081), managed by `jev_mac_manager.sh` (launchd).
+- scikit-learn (Platt scaling), tree-sitter (AST chunking, py/js/ts).
+- Tools: pytest + pytest-mock, mypy (strict, CI), ruff format. No mypy/ruff/pytest config files — defaults apply.
+
+## Project Structure
+
+- `src/jev_mcp/server.py` — all MCP tools & prompts, QFE compression, linter/autofixer gate, router config persistence.
+- `src/jev_mcp/provider.py` — `JevProvider` ABC + `NoulQuestion`/`ChoiceQuestion`/`ScoreQuestion` + shared `post_json`.
+- `src/jev_mcp/kev_provider.py` (fast tier) / `daemon_provider.py` (smart tier, DCPMI math) / `routing_provider.py` (0.85 confidence gate).
+- `src/jev_mcp/linter.py`, `cli_linter.py`, `security.py`, `chunker.py`, `scanner.py`.
+- `tests/` — pytest suite; `conftest.py` stubs the MCP SDK before server import.
+- Global runtime config lives OUTSIDE the repo: `~/.jev/router_config.json` (buckets, rules, fitted temperature); logs go to `~/.jev/jev.log`.
+
+## Code Rules
+
+- NEVER `print()` in server code — stdout is the JSON-RPC stream. Use `logging`.
+- MCP tools return JSON strings (`{"status": ...}`) and never raise across the boundary; wrap in try/except.
+- Tests must mock at the HTTP/subprocess boundary (`urllib.request.urlopen`, `subprocess.check_output`) and must NOT touch the real `~/.jev/router_config.json` — monkeypatch `ROUTER_CONFIG_PATH` to a tmp path.
+- Prefer immutable updates (no in-place mutation of result dicts).
+
+## Build & Run
+
+- Daemons: `make start` / `./jev_mac_manager.sh hybrid` · stop: `make stop`.
+- Tests: `make test` (pytest with coverage) · Type check: `make lint` (mypy) · Format: `make format` (ruff).
+- Live tool calls require the daemons running; without them providers return empty results and log "PLEASE ENSURE THE DAEMON IS RUNNING".
+
+## Conventions
+
+- Commits: conventional style (`feat:`, `fix:`, `docs:`, `security:`, `test:`, optional scope) on `main`.
+- Before committing: follow AGENTS.md — green test run + coverage thresholds (95% per modified file, 85% overall) observed before `git commit`.
+- File naming: snake_case modules, `test_*.py` mirroring the source module.

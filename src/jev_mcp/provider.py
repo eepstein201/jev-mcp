@@ -1,20 +1,26 @@
 import json
 import logging
-from pathlib import Path
-from typing import Any, Dict, List, Protocol, Literal, Union
+from typing import Any, Dict, List, Literal, Union
+from abc import ABC, abstractmethod
+import urllib.request
+import urllib.error
 
 from pydantic import BaseModel
 
-# -----------------------------------------------------------------------------
-# Polymorphic Question Definitions (Used by FastMCP for JSON Schema generation)
-# -----------------------------------------------------------------------------
-
+# Polymorphic question definitions (drive MCP JSON-schema generation and
+# provider serialization).
 
 class NoulQuestion(BaseModel):
     type: Literal["noul"] = "noul"
     prompt: str
     key: str
 
+    def to_dict(self):
+        """Serialize to the SystemOne question payload shape."""
+        return {"type": "noul", "instructions": self.prompt}
+
+    def to_llm_options(self):
+        return [{"id": "true", "description": "True"}, {"id": "false", "description": "False"}]
 
 class ChoiceQuestion(BaseModel):
     type: Literal["choice"] = "choice"
@@ -22,6 +28,12 @@ class ChoiceQuestion(BaseModel):
     options: List[str]
     key: str
 
+    def to_dict(self):
+        """Serialize to the SystemOne question payload shape."""
+        return {"type": "choice", "instructions": self.prompt, "criteria": {opt: "" for opt in self.options}}
+
+    def to_llm_options(self):
+        return [{"id": str(idx), "description": str(opt)} for idx, opt in enumerate(self.options)]
 
 class ScoreQuestion(BaseModel):
     type: Literal["score"] = "score"
@@ -29,41 +41,41 @@ class ScoreQuestion(BaseModel):
     labels: List[str]
     key: str
 
+    def to_dict(self):
+        """Serialize to the SystemOne question payload shape."""
+        return {"type": "score", "instructions": self.prompt, "criteria": self.labels}
+
+    def to_llm_options(self):
+        return [{"id": str(idx), "description": str(opt)} for idx, opt in enumerate(self.labels)]
 
 QuestionType = Union[NoulQuestion, ChoiceQuestion, ScoreQuestion]
 
-# -----------------------------------------------------------------------------
-# Dependency Inversion: The Provider Protocol
-# -----------------------------------------------------------------------------
+# Dependency inversion: every engine backend (Kev SystemOne, MLX logprob
+# daemon, hybrid router) subclasses this contract so the MCP server never
+# depends on a concrete engine.
 
-
-class JevProvider(Protocol):
-    """
-    Protocol defining the required interface for a Jev engine backend.
-    This allows us to seamlessly swap between a local `jev-mcp` toy model,
-    a production PyTorch model, or a remote API without changing the MCP server.
-    """
-
+class JevProvider(ABC):
+    @abstractmethod
     def evaluate_batch(
         self, state: Any, questions: List[QuestionType]
     ) -> Dict[str, Dict[str, Any]]:
-        """
-        Evaluate a single state against a batch of typed questions.
+        """Evaluate one state against a batch of questions.
 
-        Args:
-            state: A JSON-serializable object (dict, list, str, etc.)
-            questions: A list of polymorphic Question objects.
-
-        Returns:
-            A list of dictionary answers containing probabilities and confidence scores.
+        Returns a dict keyed by question key, each holding at least a
+        "probabilities" mapping plus the typed answer field (noul/choice/score).
         """
-        ...
+        pass
 
     def check_token_limit(self, state: Any) -> int:
-        """
-        Measure the state payload size to enforce physical context limits.
+        """Rough token estimate (~4 chars/token) used to enforce context limits."""
+        state_str = json.dumps(state) if not isinstance(state, str) else state
+        return len(state_str) // 4
 
-        Returns:
-            The number of tokens the state occupies.
-        """
-        ...
+def post_json(url: str, payload: dict, timeout: int = 45) -> dict:
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as response:
+        return json.loads(response.read().decode())

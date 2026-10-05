@@ -1,5 +1,5 @@
 import json
-import urllib.request
+from jev_mcp.provider import post_json
 import logging
 from jev_mcp.security import sanitize_payload
 from typing import Any, List, Dict
@@ -31,23 +31,10 @@ class KevProvider(JevProvider):
         
         q_payload = {}
         for q in questions:
-            if isinstance(q, NoulQuestion):
-                q_payload[q.key] = {
-                    "type": "noul",
-                    "instructions": sanitize_payload(q.prompt)
-                }
-            elif isinstance(q, ChoiceQuestion):
-                q_payload[q.key] = {
-                    "type": "choice",
-                    "instructions": sanitize_payload(q.prompt),
-                    "criteria": {opt: "" for opt in q.options}
-                }
-            elif isinstance(q, ScoreQuestion):
-                q_payload[q.key] = {
-                    "type": "score",
-                    "instructions": sanitize_payload(q.prompt),
-                    "criteria": q.labels
-                }
+            if isinstance(q, (NoulQuestion, ChoiceQuestion, ScoreQuestion)):
+                payload_q = q.to_dict()
+                payload_q["instructions"] = sanitize_payload(payload_q["instructions"])
+                q_payload[q.key] = payload_q
                 
         payload = {
             "state": state_str,
@@ -55,13 +42,7 @@ class KevProvider(JevProvider):
         }
         
         try:
-            req = urllib.request.Request(
-                self.base_url,
-                data=json.dumps(payload).encode("utf-8"),
-                headers={"Content-Type": "application/json"},
-            )
-            with urllib.request.urlopen(req, timeout=30) as response:
-                res = json.loads(response.read().decode())
+            res = post_json(self.base_url, payload, timeout=30)
                 
         except Exception as e:
             logger.error(f"Kev API call failed: {e}\nPLEASE ENSURE THE KEV DAEMON IS RUNNING! Run: ./jev_mac_manager.sh hybrid")
