@@ -28,5 +28,5 @@ jobs:
     - name: Strict Static Type Checking
       run: mypy src/jev_mcp/
       
-    - name: Mathematical Unit Tests
-      run: pytest tests/
+    - name: Mathematical Unit Tests (85% coverage gate)
+      run: pytest --cov=src --cov-report=term --cov-fail-under=85 tests/

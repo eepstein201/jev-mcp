@@ -13,4 +13,5 @@ python-dotenv==1.0.1
 ruff
 mypy
 pytest
+pytest-cov
 scikit-learn>=1.0.0

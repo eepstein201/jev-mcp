@@ -27,7 +27,7 @@ lint:
 
 test:
 	@echo "Running Pytest with Strict 85% Code Coverage Requirement..."
-	bash -c "source .venv/bin/activate && pytest --cov=src --cov-report=term-missing tests/"
+	bash -c "source .venv/bin/activate && pytest --cov=src --cov-report=term-missing --cov-fail-under=85 tests/"
 
 clean:
 	@echo "Completely uninstalling Jev MCP artifacts..."
