@@ -111,7 +111,7 @@ def call_fast_autofixer(state, questions, errors):
     return data.get("fixed_questions", [])
 
 @mcp.tool(
-    name="jev_evaluate_batch",
+    name="evaluate",
     description=(
         "Evaluate a complex state against a batch of polymorphic System-1 questions.\n"
         "WARNING: The 'state' payload MUST be under 2048 tokens. If exceeded, QFE middleware will attempt to compress it."
@@ -388,7 +388,7 @@ def jev_evaluate_batch(
         return f"INTERNAL ENGINE ERROR: {str(e)}"
 
 @mcp.tool(
-    name="jev_optimize_prompt",
+    name="optimize-prompt",
     description="Automated Prompt Engineer: Generates semantic variations of a prompt, evaluates them all via Shared-State, and returns the most mathematically confident phrasing.",
 )
 def jev_optimize_prompt(
@@ -529,7 +529,7 @@ def jev_optimize_prompt(
     )
 
 @mcp.tool(
-    name="jev_calibrate_threshold",
+    name="calibrate",
     description="Evaluation Sandbox: Pass a dataset of Golden Edge Cases to mathematically map out the optimal Logit Confidence Threshold for production automation.",
 )
 def jev_calibrate_threshold(
@@ -720,7 +720,7 @@ def jev_calibrate_threshold(
     )
 
 @mcp.tool(
-    name="jev_explain_decision",
+    name="explain-decision",
     description="Evidence Highlighting: Generates a Post-Hoc Rationale for a decision by extracting the exact, verbatim sentence from the state that proves the decision.",
 )
 def jev_explain_decision(
@@ -808,7 +808,7 @@ def jev_explain_decision(
         return f"Evidence Extraction Failed: {str(e)}"
 
 @mcp.tool(
-    name="jev_generate_synthetic_dataset",
+    name="generate-data",
     description="Dataset Generator: Automatically generates a Golden Dataset using the local 7B model if available, otherwise returns instructions for the primary LLM to generate it.",
 )
 def jev_generate_synthetic_dataset(
@@ -1006,7 +1006,7 @@ def save_router_config(config):
         json.dump(config, f, indent=2)
 
 @mcp.tool(
-    name="jev_manage_router_config",
+    name="manage-router",
     description="Interactive configuration manager for Jev's Model Router. Use this to view, add, or remove custom bucket models and exception rules.",
 )
 def jev_manage_router_config(
@@ -1045,7 +1045,7 @@ def jev_manage_router_config(
         return f"Rule removed: {removed}"
 
 @mcp.tool(
-    name="jev_determine_best_model",
+    name="model-router",
     description="Complexity Index Router: Analyzes a task description using the Hybrid local engine and custom rules to determine the mathematically optimal LLM model to use.",
 )
 def jev_determine_best_model(
@@ -1175,7 +1175,7 @@ def optimize_prompt() -> str:
     return "I want to mathematically optimize a prompt. Ask me what prompt I want to optimize and what my goals are. Then use the `jev_optimize_prompt` tool to generate and validate the optimal version of the prompt using logit extraction, and present the final optimized prompt to me."
 
 @mcp.tool(
-    name="jev_agent_handoff",
+    name="handoff",
     description="Uses multi-class logit routing to mathematically determine which specialized agent should take over the current task based on their full descriptions."
 )
 def jev_agent_handoff(task_description: str, available_agents: Dict[str, str]) -> str:
@@ -1208,7 +1208,7 @@ def jev_agent_handoff(task_description: str, available_agents: Dict[str, str]) -
     return json.dumps(res_dict, indent=2)
 
 @mcp.tool(
-    name="jev_train_lora",
+    name="train",
     description="Instantly trains a local MLX LoRA adapter on your Apple Silicon GPU. Accepts ANY .jsonl dataset (synthetic, human-labeled, production logs, etc)."
 )
 def jev_train_lora(dataset_path: str, model_name: str = "mlx-community/Qwen2.5-7B-Instruct-4bit") -> str:
@@ -1240,7 +1240,7 @@ def train_prompt() -> str:
     return "I want to fine-tune Jev to my codebase. If I provide a dataset in CSV, Markdown, or another raw format, you MUST first convert it into the strict `.jsonl` schema required by Jev and save it locally. (If I don't have data, use `jev_generate_synthetic_dataset` to generate it). Once the `.jsonl` file is ready, pass its path to the `jev_train_lora` tool to instantly train a custom adapter on the GPU."
 
 @mcp.tool(
-    name="jev_manage_temperature",
+    name="temperature",
     description="View, set, or reset the global MLX calibration temperature for Jev. This temperature globally affects all Jev evaluations, handoffs, and prompts."
 )
 def jev_manage_temperature(action: Literal["view", "set", "reset"], value: Optional[float] = None) -> str:
@@ -1275,7 +1275,7 @@ def jev_manage_temperature(action: Literal["view", "set", "reset"], value: Optio
 
 
 @mcp.tool(
-    name="jev_read_file",
+    name="read-file",
     description="File Context Filter: Reads a file locally and uses the Dual-Engine logit cascade to mathematically evaluate if the file is relevant to the current task. Prevents context bloat by blocking irrelevant files or filtering them down to only the relevant chunks.",
 )
 def jev_read_file(
@@ -1368,7 +1368,7 @@ def jev_read_file(
 
 
 @mcp.tool(
-    name="jev_compact_context",
+    name="compact",
     description="Context Compressor: Slices massive state contexts into chunks and uses Confidence-Gated Logits to keep only the verbatim chunks strictly relevant to the user's goal. Eliminates hallucination risk of generative summarization.",
 )
 def jev_compact_context(
@@ -1449,7 +1449,7 @@ def jev_compact_context(
     }, indent=2)
 
 @mcp.tool(
-    name="jev_scan_repo",
+    name="scan-repo",
     description="Repository Scanner: Walks a codebase, uses Tree-sitter to break code into semantic blocks (functions/classes), and mathematically filters them using the Dual-Engine cascade to find only the code relevant to the task.",
 )
 def jev_scan_repo(
@@ -1563,3 +1563,17 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+@mcp.prompt(
+    name="jev-mcp:scan-repo",
+    description="Ask Jev to surgically scan the current workspace repository to find and extract the AST chunks relevant to a specific task."
+)
+def scan_repo_prompt() -> str:
+    return "I want to scan this repository for code relevant to my current task. Please ask me for the target directory path (if not the root) and the specific bug or feature I am looking for. Then execute the `scan-repo` tool with those arguments and report back the mathematically extracted AST chunks."
+
+@mcp.prompt(
+    name="jev-mcp:read-file",
+    description="Ask Jev to read a specific file and mathematically extract only the AST chunks relevant to a task, dropping irrelevant noise."
+)
+def read_file_prompt() -> str:
+    return "I want to read a file, but I only want the parts relevant to my current task. Please ask me for the file path and my objective. Then execute the `read-file` tool with filter_by_chunk=True and report back the extracted AST blocks."

@@ -284,7 +284,7 @@ if os.path.exists(os.path.dirname(config_path)):
             config = {"$schema": "https://opencode.ai/config.json", "mcp": {}}
         if "mcp" not in config: config["mcp"] = {}
         if "jev-mcp" in config["mcp"]: del config["mcp"]["jev-mcp"]
-        config["mcp"]["jev"] = {
+        config["mcp"]["jev-mcp"] = {
             "type": "local",
             "command": [os.path.join(os.getcwd(), ".venv/bin/python3"), "-m", "jev_mcp.server"],
             "environment": {"PYTHONPATH": os.path.join(os.getcwd(), "src")},
@@ -367,7 +367,7 @@ if os.path.exists(os.path.dirname(config_path)):
             config = {"$schema": "https://opencode.ai/config.json", "mcp": {}}
         if "mcp" not in config: config["mcp"] = {}
         if "jev-mcp" in config["mcp"]: del config["mcp"]["jev-mcp"]
-        config["mcp"]["jev"] = {
+        config["mcp"]["jev-mcp"] = {
             "type": "local",
             "command": [os.path.join(os.getcwd(), ".venv/bin/python3"), "-m", "jev_mcp.server"],
             "environment": {"PYTHONPATH": os.path.join(os.getcwd(), "src")},
@@ -440,7 +440,7 @@ try:
     if os.path.exists(config_path):
         with open(config_path, "r") as f: config = json.load(f)
         if "mcp" in config and "jev" in config["mcp"]:
-            del config["mcp"]["jev"]
+            del config["mcp"]["jev-mcp"]
             with open(config_path, "w") as f: json.dump(config, f, indent=2)
 except Exception: pass
 ' 2>/dev/null || true

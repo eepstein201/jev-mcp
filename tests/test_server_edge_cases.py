@@ -229,3 +229,8 @@ def test_coverage_983():
     import runpy
     with patch("jev_mcp.server.mcp.run"):
         runpy.run_module("jev_mcp.server", run_name="__main__")
+
+def test_new_prompts():
+    from jev_mcp.server import scan_repo_prompt, read_file_prompt
+    assert "scan" in scan_repo_prompt()
+    assert "read" in read_file_prompt()
