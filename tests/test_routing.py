@@ -4,6 +4,15 @@ from jev_mcp.server import jev_determine_best_model, jev_manage_router_config, l
 
 def test_manage_config():
     # Test viewing
+    # Reset it
+    import json
+    import os
+    with open(os.path.expanduser("~/.jev/router_config.json"), "r") as f:
+        config = json.load(f)
+    config["buckets"]["b1"] = "claude-3-5-haiku"
+    with open(os.path.expanduser("~/.jev/router_config.json"), "w") as f:
+        json.dump(config, f)
+        
     res = json.loads(jev_manage_router_config(action="view_all"))
     assert "buckets" in res
     assert res["buckets"]["b1"] == "claude-3-5-haiku"

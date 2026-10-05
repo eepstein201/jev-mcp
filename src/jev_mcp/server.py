@@ -101,7 +101,7 @@ def call_fast_autofixer(state, questions, errors):
         headers={"Content-Type": "application/json"},
     )
 
-    with urllib.request.urlopen(req, timeout=None) as response:
+    with urllib.request.urlopen(req, timeout=45) as response:
         result = json.loads(response.read().decode())
 
     content = result["choices"][0]["message"]["content"]
@@ -168,7 +168,7 @@ def jev_evaluate_batch(
                 headers={"Content-Type": "application/json"},
             )
 
-            with urllib.request.urlopen(req, timeout=None) as response:
+            with urllib.request.urlopen(req, timeout=45) as response:
                 result = json.loads(response.read().decode())
 
             compressed_state = {
@@ -396,7 +396,7 @@ def jev_optimize_prompt(
     question: QuestionType = Field(description="The draft question to optimize."),
 ) -> str:
     import json
-    from jev_mcp.security import sanitize_payload
+    from jev_mcp.security import sanitize_payload, is_safe_path
 
     logger.info("Starting Prompt Optimization...")
     q_dict: Dict[str, Any] = {}
@@ -444,7 +444,7 @@ def jev_optimize_prompt(
             data=json.dumps(payload).encode("utf-8"),
             headers={"Content-Type": "application/json"},
         )
-        with urllib.request.urlopen(req, timeout=None) as response:
+        with urllib.request.urlopen(req, timeout=45) as response:
             res = json.loads(response.read().decode())
 
         content = res["choices"][0]["message"]["content"]
@@ -733,7 +733,7 @@ def jev_explain_decision(
     ),
 ) -> str:
     import json
-    from jev_mcp.security import sanitize_payload
+    from jev_mcp.security import sanitize_payload, is_safe_path
 
     logger.info("Starting Evidence Extraction...")
 
@@ -781,7 +781,7 @@ def jev_explain_decision(
             data=json.dumps(payload).encode("utf-8"),
             headers={"Content-Type": "application/json"},
         )
-        with urllib.request.urlopen(req, timeout=None) as response:
+        with urllib.request.urlopen(req, timeout=45) as response:
             res = json.loads(response.read().decode())
 
         content = res["choices"][0]["message"]["content"]
@@ -823,7 +823,7 @@ def jev_generate_synthetic_dataset(
     import urllib.request
     import json
     import random
-    from jev_mcp.security import sanitize_payload
+    from jev_mcp.security import sanitize_payload, is_safe_path
 
     # 6. MCP Tool Boundary Defenses (DoS & OOM Prevention)
     num_cases = min(max(num_cases, 1), 50)
@@ -916,7 +916,7 @@ Once you have generated this JSON array, you must immediately pass it into the `
                     data=json.dumps(payload).encode("utf-8"),
                     headers={"Content-Type": "application/json"},
                 )
-                with urllib.request.urlopen(req, timeout=None) as response:
+                with urllib.request.urlopen(req, timeout=45) as response:
                     res = json.loads(response.read().decode())
 
                 content = res["choices"][0]["message"]["content"]
@@ -1032,7 +1032,8 @@ def jev_manage_router_config(
     if action == "add_rule":
         if not condition or not target:
             return "Error: condition and target required."
-        config["rules"].append({"condition": condition, "target": target})
+        from jev_mcp.security import sanitize_payload
+        config["rules"].append({"condition": sanitize_payload(condition), "target": target})
         save_router_config(config)
         return f"Rule added. If '{condition}', route to '{target}'."
         

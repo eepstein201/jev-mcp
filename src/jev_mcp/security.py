@@ -25,3 +25,29 @@ def sanitize_payload(text: Any) -> str:
 
     # Ignore case and replace with space
     return re.sub(pattern, " ", normalized_text, flags=re.IGNORECASE)
+
+import os
+
+def is_safe_path(requested_path: str) -> bool:
+    """
+    Checks if the requested file path is safe to access.
+    Prevents directory traversal into sensitive OS or user credential directories.
+    """
+    try:
+        resolved = os.path.realpath(requested_path)
+        
+        # Block known dangerous absolute paths (OS level)
+        forbidden_prefixes = ["/etc", "/var", "/dev", "/usr", "/bin", "/sbin", "/opt", "/System", "/private"]
+        for p in forbidden_prefixes:
+            if resolved.startswith(p + "/") or resolved == p:
+                return False
+        
+        # Block sensitive user credential/history directories
+        forbidden_parts = [".ssh", ".aws", ".gnupg", ".kube", ".npmrc", ".bash_history", ".zsh_history", ".config"]
+        for part in forbidden_parts:
+            if f"/{part}/" in resolved or resolved.endswith(f"/{part}"):
+                return False
+                
+        return True
+    except Exception:
+        return False

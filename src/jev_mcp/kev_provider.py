@@ -1,6 +1,7 @@
 import json
 import urllib.request
 import logging
+from jev_mcp.security import sanitize_payload
 from typing import Any, List, Dict
 
 from jev_mcp.provider import JevProvider, QuestionType, NoulQuestion, ScoreQuestion, ChoiceQuestion
@@ -20,29 +21,31 @@ class KevProvider(JevProvider):
 
     def check_token_limit(self, state: Any) -> int:
         state_str = json.dumps(state) if not isinstance(state, str) else state
+        state_str = sanitize_payload(state_str)
         # Rough estimation
         return len(state_str) // 4
         
     def evaluate_batch(self, state: Any, questions: List[QuestionType]) -> Dict[str, Dict[str, Any]]:
         state_str = json.dumps(state) if not isinstance(state, str) else state
+        state_str = sanitize_payload(state_str)
         
         q_payload = {}
         for q in questions:
             if isinstance(q, NoulQuestion):
                 q_payload[q.key] = {
                     "type": "noul",
-                    "instructions": q.prompt
+                    "instructions": sanitize_payload(q.prompt)
                 }
             elif isinstance(q, ChoiceQuestion):
                 q_payload[q.key] = {
                     "type": "choice",
-                    "instructions": q.prompt,
+                    "instructions": sanitize_payload(q.prompt),
                     "criteria": {opt: "" for opt in q.options}
                 }
             elif isinstance(q, ScoreQuestion):
                 q_payload[q.key] = {
                     "type": "score",
-                    "instructions": q.prompt,
+                    "instructions": sanitize_payload(q.prompt),
                     "criteria": q.labels
                 }
                 
