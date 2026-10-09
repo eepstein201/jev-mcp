@@ -62,6 +62,14 @@ def _clean_json(text: str) -> str:
 
     return text.strip()
 
+def _safe_truncate(content: str, max_length: int = 24000) -> tuple[str, bool]:
+    """Truncates content safely to prevent MCP Client JSON-breakage."""
+    if len(content) <= max_length:
+        return content, False
+    
+    truncated_msg = f"\n\n... [TRUNCATED: Content exceeded {max_length} characters. Please refine your search or read specific files for more detail.] ..."
+    return content[:max_length - len(truncated_msg)] + truncated_msg, True
+
 def _chat_completion(
     user: str,
     system: Optional[str] = None,
@@ -1320,10 +1328,17 @@ def jev_read_file(
         if not kept_chunks:
              return json.dumps({"status": "BLOCKED", "message": f"Jev evaluated {file_path} and found 0 relevant chunks for the task. The file has been blocked to save context window."})
              
+        raw_content = "\n\n".join(kept_chunks)
+        safe_content, was_truncated = _safe_truncate(raw_content)
+        
+        msg = f"File {file_path} filtered successfully using AST chunking. Dropped {dropped} irrelevant chunks."
+        if was_truncated:
+            msg += " WARNING: Output was truncated to protect the context window."
+            
         return json.dumps({
             "status": "SUCCESS", 
-            "message": f"File {file_path} filtered successfully using AST chunking. Dropped {dropped} irrelevant chunks.",
-            "content": "\n\n".join(kept_chunks)
+            "message": msg,
+            "content": safe_content
         })
         
     else:
@@ -1341,10 +1356,15 @@ def jev_read_file(
         true_prob = res.get("file_eval", {}).get("probabilities", {}).get("true", 0.0)
         
         if true_prob >= 0.50:
+            safe_content, was_truncated = _safe_truncate(file_content)
+            msg = f"File passed relevance check ({round(true_prob * 100, 1)}% confident)."
+            if was_truncated:
+                msg += " WARNING: Output was truncated to protect the context window. Use filter_by_chunk=True to extract only relevant parts."
+            
             return json.dumps({
                 "status": "SUCCESS",
-                "message": f"File passed relevance check ({round(true_prob * 100, 1)}% confident).",
-                "content": file_content
+                "message": msg,
+                "content": safe_content
             })
         else:
             return json.dumps({
@@ -1422,16 +1442,21 @@ def jev_compact_context(
             logger.warning(f"Failed to evaluate chunk {i}: {e}. Keeping chunk by default.")
             kept_chunks.append(chunk)
 
-    compacted_text = "\n\n".join(kept_chunks)
+    raw_text = "\n\n".join(kept_chunks)
+    safe_text, was_truncated = _safe_truncate(raw_text)
     compression_ratio = (1.0 - (len(kept_chunks) / total_chunks)) * 100 if total_chunks > 0 else 0
     
+    status_msg = "COMPACTION_COMPLETE"
+    if was_truncated:
+        status_msg += " (TRUNCATED TO PROTECT CONTEXT WINDOW)"
+        
     return json.dumps({
-        "status": "COMPACTION_COMPLETE",
+        "status": status_msg,
         "original_chunks": total_chunks,
         "kept_chunks": len(kept_chunks),
         "dropped_chunks": dropped_chunks,
         "compression_ratio": f"{compression_ratio:.1f}%",
-        "compacted_state": compacted_text
+        "compacted_state": safe_text
     }, indent=2)
 
 @mcp.tool(
@@ -1540,10 +1565,17 @@ def jev_scan_repo(
     if not kept_chunks:
         return json.dumps({"status": "BLOCKED", "message": f"Scanned {len(target_files)} files and {len(all_chunks)} semantic chunks. Jev determined 0 chunks were relevant to the task. Blocked to save context window."})
         
+    raw_content = "\n\n".join(kept_chunks)
+    safe_content, was_truncated = _safe_truncate(raw_content)
+    
+    msg = f"Surgically scanned {len(target_files)} files. Extracted {len(kept_chunks)} highly relevant chunks. Dropped {dropped} noisy chunks."
+    if was_truncated:
+        msg += " WARNING: Output was truncated to protect the context window. Refine task_description or use read-file."
+        
     return json.dumps({
         "status": "SUCCESS",
-        "message": f"Surgically scanned {len(target_files)} files. Extracted {len(kept_chunks)} highly relevant chunks. Dropped {dropped} noisy chunks.",
-        "content": "\n\n".join(kept_chunks)
+        "message": msg,
+        "content": safe_content
     })
 
 
