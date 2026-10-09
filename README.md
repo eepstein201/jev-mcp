@@ -9,6 +9,11 @@ Instead of asking a cloud LLM to blindly generate text for routing or classifica
 By combining the strict mathematical safety of Kev with the reasoning depth of Qwen, Jev provides your downstream MCP clients (like Claude Desktop or Antigravity) with the ultimate local safety gate and dynamic task router.
 
 ### ⚡ Speed, Precision & Security
+- **Context Armor**: Automatically truncates massive context payloads (e.g., full repo scans) to prevent catastrophic `JSONDecodeError` crashes in your MCP client, appending LLM-friendly recovery instructions.
+- **Parallelized AST Analysis**: Thread-safe, multi-worker chunking allows instantaneous evaluation of massive codebases without triggering MCP request timeouts.
+- **Enterprise Reliability**: Strictly enforces 95%+ mathematical unit test coverage and DRY architectural patterns across the Python codebase.
+
+### ⚡ Legacy Highlights
 By bypassing traditional text generation, Jev unlocks massive performance gains on Apple Silicon using two distinct model profiles:
 - **The `0.8B` Fast Profile (Kev):** Achieves lightning-fast mathematical evaluations in **~120ms**. Powered by a native pointer-head, it intercepts routing mechanics perfectly without generating text, yielding an exceptionally reliable `0.866` ROC AUC.*
 - **The `7B` Intel Profile:** Delivers evaluations in **~800ms**. While slightly slower than the 0.8B fast engine, it possesses deep inferential reasoning capabilities, achieving a mathematically perfect **1.0 ROC AUC** on edge cases. This easily outperforms standard cloud API text-generation methods in both accuracy and reliability for complex logic.
@@ -393,6 +398,8 @@ Under the hood, Jev MCP employs several highly specialized mathematical and syst
 
 ## 💻 Dynamic Engine Architecture
 
+Jev MCP utilizes a polymorphic `JevProvider` architecture that enforces strict DRY (Don't Repeat Yourself) compliance. This centralizes payload sanitization and execution, allowing the system to seamlessly route identical prompt schemas between two completely different inference backends:
+
 Jev MCP intelligently routes prompts and parses outputs based on the specific capabilities of the model loaded in the macOS Daemon:
 
 *   **`0.8B` Kev Profile (`jaredpalmer/kev-0.8b`): Dedicated router engine handling instantaneous >85% confidence gates.
@@ -621,19 +628,25 @@ You have access to the following FastMCP tools via the `jev-mcp` server:
 - **`calibrate`**: Passes datasets to the background MLX daemon to extract mathematically proven logit scores via DCPMI. Returns a Markdown Confusion Matrix.
 - **`optimize-prompt`**: Features a recursive internal linter utilizing constrained decoding. Automatically fixes prompts that fail calibration.
 - **`evaluate`** & **`explain-decision`**: For manual testing and extracting post-hoc rationales.
+- **`scan-repo`**, **`read-file`**, & **`compact`**: Protected by Context Armor. Use these to dynamically evaluate massive codebases or summarize state.
 
-### 2. Standard Operating Procedure (SOP)
+### 2. Context Armor & Data Handling
+If you call `scan-repo` or `read-file` and receive a message containing `[TRUNCATED TO PROTECT CONTEXT WINDOW]`, **DO NOT** attempt to call the exact same tool again. The output was intentionally truncated to prevent your client from crashing. Instead, react by:
+1. Narrowing your `task_description` to be more specific.
+2. Using `read-file` with `filter_by_chunk=true` to isolate only highly relevant functions rather than scanning entire architectures.
+
+### 3. Standard Operating Procedure (SOP)
 When the user asks you to evaluate a rule or prompt for Jev, execute this loop:
 1. **Generate**: Call `generate-data`. 
 2. **Calibrate**: Feed the dataset into `calibrate`. Analyze the Confusion Matrix.
 3. **Optimize**: If False Positives exist below a reasonable threshold, call `optimize-prompt` to rewrite the prompt constraints. Repeat until perfect.
 
 
-### 3. The Confidence Gate Pattern
+### 4. The Confidence Gate Pattern
 When writing code for the user, proactively suggest using `evaluate` to generate a mathematical confidence score *before* the primary LLM executes a high-risk action (like deleting files, sending emails, or triggering payments). Use Jev as the final, deterministic safety check.
 </agent_instructions>
 
-### 4. Dynamic Agentic Model Routing (`model-router`)
+### 5. Dynamic Agentic Model Routing (`model-router`)
 If your client (like Claude Code CLI, Antigravity CLI, or OpenCode) supports changing models mid-flight, Jev provides an interactive MCP tool that mathematically recommends the optimal model based on the complexity of the current task.
 
 - **Context-Aware Routing**: It analyzes `estimated_tokens`. If a task touches a massive context (e.g., >100k tokens), it actively warns the client to ensure large-context flags are set and recommends 1M+ token models to prevent context collapse.
