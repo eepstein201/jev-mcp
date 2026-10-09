@@ -17,6 +17,7 @@ from pydantic import Field
 # from printing warnings that would corrupt the JSON-RPC stream.
 
 from mcp.server.mcpserver import MCPServer
+from jev_mcp.router_config import load_router_config, save_router_config
 from jev_mcp.provider import QuestionType, NoulQuestion, ChoiceQuestion, ScoreQuestion, post_json
 from jev_mcp.linter import DecisionPreflightLinter
 from jev_mcp.routing_provider import RoutingProvider
@@ -921,25 +922,6 @@ def get_temp_notice() -> str | None:
     except Exception:
         pass
     return None
-
-def load_router_config():
-    if not os.path.exists(ROUTER_CONFIG_PATH):
-        return {
-            "buckets": {
-                "b1": "claude-3-5-haiku",
-                "b2": "claude-3-5-sonnet",
-                "b3": "claude-3-opus",
-                "b4": "claude-fable"
-            },
-            "rules": []
-        }
-    with open(ROUTER_CONFIG_PATH, "r") as f:
-        return json.load(f)
-
-def save_router_config(config):
-    os.makedirs(os.path.dirname(ROUTER_CONFIG_PATH), exist_ok=True)
-    with open(ROUTER_CONFIG_PATH, "w") as f:
-        json.dump(config, f, indent=2)
 
 @mcp.tool(
     name="manage-router",

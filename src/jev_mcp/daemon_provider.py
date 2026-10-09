@@ -1,3 +1,4 @@
+from functools import singledispatchmethod
 from jev_mcp.provider import post_json
 import json
 import random
@@ -44,11 +45,9 @@ class DaemonProvider(JevProvider):
         
         self.fitted_temperature = 1.0
         try:
-            config_path = os.path.expanduser("~/.jev/router_config.json")
-            if os.path.exists(config_path):
-                with open(config_path, "r") as f:
-                    cfg = json.load(f)
-                    self.fitted_temperature = cfg.get("fitted_temperature", 1.0)
+            from jev_mcp.router_config import load_router_config
+            cfg = load_router_config()
+            self.fitted_temperature = cfg.get("fitted_temperature", 1.0)
         except Exception:
             pass
 
@@ -168,6 +167,26 @@ class DaemonProvider(JevProvider):
         sum_exp = sum(math.exp(lp - max_lp) for lp in scaled_lps.values())
         return {k: math.exp(lp - max_lp) / sum_exp for k, lp in scaled_lps.items()}
 
+    
+    @singledispatchmethod
+    def _get_format(self, q: Any) -> tuple[str, list[str]]:
+        logger.warning(f"Unsupported question type in DaemonProvider: {type(q)}")
+        return "", []
+        
+    @_get_format.register
+    def _(self, q: NoulQuestion) -> tuple[str, list[str]]:
+        return "Answer True or False.", ["true", "false"]
+        
+    @_get_format.register
+    def _(self, q: ChoiceQuestion) -> tuple[str, list[str]]:
+        opts = ", ".join([f"{chr(65 + i)}: {opt}" for i, opt in enumerate(q.options)])
+        return f"Options: {opts}\nAnswer strictly with the corresponding letter.", [chr(65 + i).lower() for i in range(len(q.options))]
+        
+    @_get_format.register
+    def _(self, q: ScoreQuestion) -> tuple[str, list[str]]:
+        opts = ", ".join([f"{i}: {label}" for i, label in enumerate(q.labels)])
+        return f"Options: {opts}\nAnswer strictly with the corresponding index number.", [str(i) for i in range(len(q.labels))]
+
     def evaluate_batch(
         self, state: Any, questions: List[Any]
     ) -> dict[str, dict[str, Any]]:
@@ -194,24 +213,10 @@ class DaemonProvider(JevProvider):
             salt = "".join(random.choices(string.ascii_lowercase + string.digits, k=8))
             tag = f"payload_{salt}"
 
-            expected_keys = []
-            if isinstance(q, NoulQuestion):
-                format_hint = "Answer True or False."
-                expected_keys = ["true", "false"]
-            elif isinstance(q, ChoiceQuestion):
-                opts = ", ".join(
-                    [f"{chr(65 + i)}: {opt}" for i, opt in enumerate(q.options)]
-                )
-                format_hint = (
-                    f"Options: {opts}\nAnswer strictly with the corresponding letter."
-                )
-                expected_keys = [chr(65 + i).lower() for i in range(len(q.options))]
-            elif isinstance(q, ScoreQuestion):
-                opts = ", ".join(q.labels)
-                format_hint = f"Answer strictly with one of: {opts}."
-                expected_keys = [str(l).lower() for l in q.labels]
-            else:
-                format_hint = ""
+            format_hint, expected_keys = self._get_format(q)
+            
+            if not expected_keys:
+                continue
 
             if is_small_model:
                 empty_payload_prompt = (
