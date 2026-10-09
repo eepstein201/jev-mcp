@@ -11,7 +11,7 @@ By combining the strict mathematical safety of Kev with the reasoning depth of Q
 ### ⚡ Speed, Precision & Security
 - **Context Armor**: Automatically truncates massive context payloads (e.g., full repo scans) to prevent catastrophic `JSONDecodeError` crashes in your MCP client, appending LLM-friendly recovery instructions.
 - **Parallelized AST Analysis**: Thread-safe, multi-worker chunking allows instantaneous evaluation of massive codebases without triggering MCP request timeouts.
-- **Enterprise Reliability**: Strictly enforces 95%+ mathematical unit test coverage and DRY architectural patterns across the Python codebase.
+- **Enterprise Reliability**: Adheres strictly to SOLID programming principles (SRP, OCP), enforcing 95%+ mathematical unit test coverage and DRY architectural patterns across the Python codebase.
 
 ### ⚡ Legacy Highlights
 By bypassing traditional text generation, Jev unlocks massive performance gains on Apple Silicon using two distinct model profiles:
