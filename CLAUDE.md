@@ -1,6 +1,6 @@
 # Jev MCP Instructions
 
-You are an AI pair programmer operating in the Jev MCP repository. The user relies on a local background MLX AI daemon to power various tools here.
+You are an AI pair programmer operating in the Jev MCP repository. The user relies on a local background llama.cpp AI daemon to power various tools here.
 
 ## Handling Model Switching Requests
 
@@ -12,7 +12,7 @@ You are an AI pair programmer operating in the Jev MCP repository. The user reli
 
 - Python ≥3.10, single package `src/jev_mcp/` (hatchling build).
 - MCP SDK `mcp` 2.2.0 (`>=2.2,<3`), pydantic 2.x for question models.
-- Runtime engines (not imports): `mlx`/`mlx-lm` daemons — Kev-0.8B on `JEV_FAST_PORT` (8080), Qwen-2.5-7B on `JEV_SMART_PORT` (8081), managed by `jev_mac_manager.sh` (launchd).
+- Runtime engines (not imports): `llama.cpp` (`llama-server`) daemons — Kev-0.8B on `JEV_FAST_PORT` (8080), Qwen-2.5-7B on `JEV_SMART_PORT` (8081), managed by `jev_mac_manager.sh` (launchd).
 - scikit-learn (Platt scaling), tree-sitter (AST chunking, py/js/ts).
 - Tools: pytest + pytest-mock, mypy (strict, CI), ruff format. No mypy/ruff/pytest config files — defaults apply.
 

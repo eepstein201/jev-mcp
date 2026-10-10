@@ -489,7 +489,7 @@ def test_jev_explain_decision_fail(mock_urlopen):
 @patch("subprocess.check_output")
 @patch("urllib.request.urlopen")
 def test_jev_generate_synthetic_dataset_local_success(mock_urlopen, mock_check_output):
-    mock_check_output.return_value = b"1234 mlx_lm.server\n"
+    mock_check_output.return_value = b"1234 llama-server\n"
     
     mock_response = MagicMock()
     mock_response.read.return_value = json.dumps({
@@ -512,7 +512,7 @@ def test_jev_generate_synthetic_dataset_local_success(mock_urlopen, mock_check_o
 @patch("subprocess.check_output")
 @patch("urllib.request.urlopen")
 def test_jev_generate_synthetic_dataset_local_fail_fallback(mock_urlopen, mock_check_output):
-    mock_check_output.return_value = b"1234 mlx_lm.server\n"
+    mock_check_output.return_value = b"1234 llama-server\n"
     mock_urlopen.side_effect = Exception("Server error")
     
     q = NoulQuestion(key="q1", prompt="Some prompt")

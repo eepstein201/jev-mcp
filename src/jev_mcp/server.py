@@ -118,7 +118,7 @@ provider = DaemonProvider()
 linter = DecisionPreflightLinter()
 
 def call_fast_autofixer(state, questions, errors):
-    """Hits the persistent local mlx_lm.server to fix prompts in <300ms using Constrained Decoding."""
+    """Hits the persistent local llama-server to fix prompts in <300ms using Constrained Decoding."""
     system_prompt = (
         "You are an expert prompt engineer for a fast-decision classification model. "
         "The user submitted questions that violate the system's framing rules. "
@@ -829,8 +829,8 @@ Once you have generated this JSON array, you must immediately pass it into the `
 
     is_local_model = False
     try:
-        out = subprocess.check_output(["pgrep", "-fl", "mlx_lm"]).decode()
-        if "mlx_lm" in out:
+        out = subprocess.check_output(["pgrep", "-fl", "llama-server"]).decode()
+        if "llama-server" in out:
             is_local_model = True
     except Exception:
         pass
@@ -1578,10 +1578,20 @@ def read_file_prompt() -> str:
 
 def main():
     import sys
+    import argparse
+    
     if len(sys.argv) > 1 and sys.argv[1] == "setup-gas":
+        parser = argparse.ArgumentParser(prog="jev-mcp setup-gas")
+        parser.add_argument("--webhook-url", type=str, help="The Webhook URL to route emails to.")
+        parser.add_argument("--api-key", type=str, help="The secure API Key to protect the webhook.")
+        
+        # Parse arguments starting from the 3rd argument since sys.argv[1] is 'setup-gas'
+        args = parser.parse_args(sys.argv[2:])
+        
         from jev_mcp.email_triage.gas_setup import setup_gas_workflow
-        setup_gas_workflow()
+        setup_gas_workflow(webhook_url=args.webhook_url, api_key=args.api_key)
         return
+        
     mcp.run(transport='stdio')
 
 if __name__ == '__main__':
@@ -1648,7 +1658,10 @@ def tool_configure_triage_labels(
 
 @mcp.tool(
     name="setup_gas_workflow",
-    description="Automated CLI Setup Flow for Google Apps Script. Runs interactively in terminal."
+    description="Automated CLI Setup Flow for Google Apps Script. Pass webhook_url and api_key directly when running in a non-interactive environment."
 )
-def tool_setup_gas_workflow() -> str:
-    return setup_gas_workflow()
+def tool_setup_gas_workflow(
+    webhook_url: Optional[str] = Field(None, description="The Webhook URL to route emails to."),
+    api_key: Optional[str] = Field(None, description="The secure API Key to protect the webhook.")
+) -> str:
+    return setup_gas_workflow(webhook_url=webhook_url, api_key=api_key)

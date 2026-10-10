@@ -62,7 +62,7 @@ class FakeQuestion:
 @patch("subprocess.check_output")
 def test_daemon_provider_format_hint_else(mock_check_output):
     # Covers line 189
-    mock_check_output.return_value = b"mlx_lm.server"
+    mock_check_output.return_value = b"llama-server"
     provider = DaemonProvider()
     # Mock evaluate_batch behavior with a fake question that hits the "else" branch
     q = FakeQuestion()
@@ -77,7 +77,7 @@ def test_daemon_provider_format_hint_else(mock_check_output):
 @patch("subprocess.check_output")
 @patch("urllib.request.urlopen")
 def test_daemon_provider_format_hint_else_fixed(mock_urlopen, mock_check_output):
-    mock_check_output.return_value = b"mlx_lm.server"
+    mock_check_output.return_value = b"llama-server"
     
     # We need urlopen to not fail
     mock_response = MagicMock()

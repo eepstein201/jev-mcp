@@ -38,7 +38,7 @@ end
 
 node_client(("MCP Client"))
 node_fastservice["Kev Local Service"]
-node_smartservice["MLX Local Service"]
+node_smartservice["Local LLM Service (llama.cpp)"]
 
 node_client -->|"calls tools"| node_server
 node_server -->|"evaluates"| node_router
@@ -96,7 +96,7 @@ By bypassing traditional text generation, Jev unlocks massive performance gains 
 - **The `0.8B` Fast Profile (Kev):** Achieves lightning-fast mathematical evaluations in **~120ms**. Powered by a native pointer-head, it intercepts routing mechanics perfectly without generating text, yielding an exceptionally reliable `0.866` ROC AUC.*
 - **The `7B` Intel Profile:** Delivers evaluations in **~800ms**. While slightly slower than the 0.8B fast engine, it possesses deep inferential reasoning capabilities, achieving a mathematically perfect **1.0 ROC AUC** on edge cases. This easily outperforms standard cloud API text-generation methods in both accuracy and reliability for complex logic.
 - **Enterprise-Grade Security:** Because Jev evaluates raw, untrusted user data, all payloads are strictly sterilized via NFKC Unicode normalization and recursive Control Token stripping. For the 7B profile, prompts are additionally wrapped in strict XML sandboxing to isolate prompt injection payloads.
-- **Browser Automation Gateway:** Integrated tightly with the `jev-ultrafast` local browser agent, Jev-MCP supplies the core probabilistic evaluation engine for TypeSafe AI browser navigation, seamlessly converting DOM state and objective logic into fully-local, dual-engine MLX routing decisions without requiring external cloud API keys.
+- **Browser Automation Gateway:** Integrated tightly with the `jev-ultrafast` local browser agent, Jev-MCP supplies the core probabilistic evaluation engine for TypeSafe AI browser navigation, seamlessly converting DOM state and objective logic into fully-local, dual-engine llama.cpp routing decisions without requiring external cloud API keys.
 
 
 ### 🎯 The Codebase Architect (Surgical Repository Interaction & AST Extraction)
@@ -261,10 +261,10 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
 *   **Command:** `/jev-mcp:train`
 *   **Underlying Tool:** `train`
 *   **Natural Language Triggers:** *"Train a custom adapter on this data,"*, *"Fine-tune a local model..."*
-*   **What it does:** Instantly trains a local MLX LoRA adapter for the **Qwen 7B Smart Engine** on your Apple Silicon GPU using your optimized dataset. *(Note: You can also explicitly pass `model_name="jaredpalmer/kev-0.8b"` to fine-tune the Kev Fast Engine for your specific company routing logic!)*
+*   **What it does:** Instantly trains a local MLX LoRA adapter for the **Qwen 7B Smart Engine** on your Apple Silicon GPU using your optimized dataset. *(Note: You can also explicitly pass `model_name="ggml-org/Kev-0.8B-GGUF"` to fine-tune the Kev Fast Engine for your specific company routing logic!)*
 *   **Arguments:**
     *   `dataset_path` *(string)*: Absolute path to the `.jsonl` dataset.
-    *   `model_name` *(string, default: "mlx-community/Qwen2.5-7B-Instruct-4bit")*: The base model to fine-tune.
+    *   `model_name` *(string, default: "Qwen/Qwen2.5-7B-Instruct-GGUF")*: The base model to fine-tune.
 
 
 #### ⚡ Evaluate Batch
@@ -468,10 +468,10 @@ Under the hood, Jev MCP employs several highly specialized mathematical and syst
 
 *   **Empty-Payload Bias Extraction**: LLMs suffer from severe "Recency Bias" (preferring the last option shown) and "Vocabulary Bias" (preferring the token "A" over "B"). Jev MCP evaluates your prompt twice: once normally, and once with an *empty payload*. By measuring the baseline probabilities of the empty payload, we extract the model's pure statistical bias.
 *   **DCPMI Subtraction**: Uses Domain Conditional Pointwise Mutual Information (DCPMI) to mathematically subtract the extracted bias from the active evaluation. This isolates the model's *true conditional intent*, pushing models that natively perform at 0.66 ROC AUC up to a perfect 1.0 ROC AUC.
-*   **Laplace Horizon Smoothing**: Apple's MLX C++ API natively truncates logprobs at a hard horizon of `top_logprobs=11`. If a target option falls out of the top 11, it yields zero probability, which ordinarily causes catastrophic $log(0)$ math explosions. Implemented a $+1/K$ Laplace smoothing factor (pseudo-counts) to gracefully absorb probability mass beyond the hardware truncation limit.
+*   **Laplace Horizon Smoothing**: Local engines natively truncate logprobs at a hard horizon of `top_logprobs=11`. If a target option falls out of the top 11, it yields zero probability, which ordinarily causes catastrophic $log(0)$ math explosions. Implemented a $+1/K$ Laplace smoothing factor (pseudo-counts) to gracefully absorb probability mass beyond the hardware truncation limit.
 *   **Log-Sum-Exp Token Aggregation**: LLM tokenizers fragment answers unexpectedly. The concept of "True" might be split across the tokens `"True"`, `" True"`, `" T"`, and `"T"`. Jev MCP aggregates these fragmented probability masses using rigorous `Log-Sum-Exp` mathematics to ensure no confidence is lost.
 *   **Absolute Confidence Gating**: If the total sum of all target token probabilities is $< 5\%$, Jev MCP instantly recognizes that the model is confused or hallucinating due to out-of-distribution context, and forces a `0.0` confidence score.
-*   **PID-Bound Cache Protection**: When the background daemon restarts, it could theoretically corrupt the mathematical priors. Jev MCP binds its high-speed in-memory cache directly to the OS-level Process ID (`PID`) of the MLX daemon, guaranteeing mathematical purity even during daemon restarts.
+*   **PID-Bound Cache Protection**: When the background daemon restarts, it could theoretically corrupt the mathematical priors. Jev MCP binds its high-speed in-memory cache directly to the OS-level Process ID (`PID`) of the llama-server daemon, guaranteeing mathematical purity even during daemon restarts.
 
 ---
 
@@ -481,11 +481,11 @@ Jev MCP utilizes a polymorphic `JevProvider` architecture that enforces strict D
 
 Jev MCP intelligently routes prompts and parses outputs based on the specific capabilities of the model loaded in the macOS Daemon:
 
-*   **`0.8B` Kev Profile (`jaredpalmer/kev-0.8b`): Dedicated router engine handling instantaneous >85% confidence gates.
-*   **`7B` Profile** (`mlx-community/Qwen2.5-7B-Instruct-4bit`): Used for highly intelligent structured data generation and 1.0 ROC AUC evaluation. When active, Jev MCP wraps prompts in a highly secure XML Sandbox to defend against prompt-injection.
+*   **`0.8B` Kev Profile (`ggml-org/Kev-0.8B-GGUF`): Dedicated router engine handling instantaneous >85% confidence gates.
+*   **`7B` Profile** (`Qwen/Qwen2.5-7B-Instruct-GGUF`): Used for highly intelligent structured data generation and 1.0 ROC AUC evaluation. When active, Jev MCP wraps prompts in a highly secure XML Sandbox to defend against prompt-injection.
 
 **Robust E2E Generative Pipelines (7B)**
-Jev MCP's advanced tools (`QFE Compression`, `Auto-Fixer`, `Prompt Optimizer`, `Evidence Extractor`) are fully supported on the local 7B model. To bypass the lack of native `xgrammar` on the MLX daemon, Jev MCP uses an aggressive **JSON Extractor Middleware** that slices JSON arrays/objects directly out of the generative text, rendering the pipeline completely immune to conversational boilerplate or markdown wrappers (e.g. ````json`). Timeouts are dynamically scaled to support massive 13,000+ token context states (QFE) on local Apple Silicon.
+Jev MCP's advanced tools (`QFE Compression`, `Auto-Fixer`, `Prompt Optimizer`, `Evidence Extractor`) are fully supported on the local 7B model. To bypass the lack of native `xgrammar` on the llama-server daemon, Jev MCP uses an aggressive **JSON Extractor Middleware** that slices JSON arrays/objects directly out of the generative text, rendering the pipeline completely immune to conversational boilerplate or markdown wrappers (e.g. ````json`). Timeouts are dynamically scaled to support massive 13,000+ token context states (QFE) on local Apple Silicon.
 
 [![Architecture diagram of eepstein201/jev-mcp](https://gitdiagram.com/eepstein201/jev-mcp/diagram.png)](https://gitdiagram.com/eepstein201/jev-mcp?utm_source=readme&utm_medium=picture)
 
@@ -522,8 +522,8 @@ subgraph group_routing["Task routing"]
 end
 
 node_client(("MCP client"))
-node_kev_server(("kev.serve (Port 8080)"))
-node_mlx_server(("mlx_lm.server (Port 8081)"))
+node_kev_server(("llama-server (Port 8080)"))
+node_mlx_server(("llama-server (Port 8081)"))
 
 node_client -->|"calls tools"| node_server
 node_server -->|"exposes"| node_evaluate
@@ -658,8 +658,8 @@ The tool outputs warnings and errors using the standard compiler format (`file:l
 questions.json:0: ERROR: GENERATIVE_INTENT_DETECTED - Question asks the model to generate content. (Suggestion: Rewrite as a classification. E.g. replace 'Summarize the user's tone' with 'Is the user angry?')
 ```
 
-### 4. Hidden Daemon Flags (`mlx_lm.server`)
-When `jev_mac_manager.sh` boots the background macOS Daemon, it automatically injects a hardcoded set of Apple Silicon performance flags into the C++ MLX backend. 
+### 4. Hidden Daemon Flags (`llama-server`)
+When `jev_mac_manager.sh` boots the background macOS Daemon, it automatically injects a hardcoded set of Apple Silicon performance flags into the llama.cpp backend. 
 *   `--model`: Resolves to the HuggingFace repo path.
 *   `--port`: Driven by `JEV_DAEMON_PORT` in your `.env` (defaults to `8080`).
 *   `--prompt-cache-size 20` & `--prompt-cache-bytes 12G`: Hardware memory tuning.
@@ -704,7 +704,7 @@ If you are an AI agent reading this README, welcome! You have been granted acces
 ### 1. The Tools at Your Disposal
 You have access to the following FastMCP tools via the `jev-mcp` server:
 - **`generate-data`**: Uses Smart Auto-Tiering. If the local 7B model is active, it securely generates datasets locally. Otherwise, it returns an engineered prompt for YOU (the frontier model) to synthesize the data.
-- **`calibrate`**: Passes datasets to the background MLX daemon to extract mathematically proven logit scores via DCPMI. Returns a Markdown Confusion Matrix.
+- **`calibrate`**: Passes datasets to the background llama-server daemon to extract mathematically proven logit scores via DCPMI. Returns a Markdown Confusion Matrix.
 - **`optimize-prompt`**: Features a recursive internal linter utilizing constrained decoding. Automatically fixes prompts that fail calibration.
 - **`evaluate`** & **`explain-decision`**: For manual testing and extracting post-hoc rationales.
 - **`scan-repo`**, **`read-file`**, & **`compact`**: Protected by Context Armor. Use these to dynamically evaluate massive codebases or summarize state.
