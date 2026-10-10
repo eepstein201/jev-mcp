@@ -43,6 +43,7 @@ class KevProvider(JevProvider):
     def _(self, q: ChoiceQuestion, ans: dict) -> dict:
         return {
             "choice": ans.get("choice", ""),
+            "confidence": ans.get("confidence", 1.0),
             "probabilities": ans.get("probabilities", {})
         }
         

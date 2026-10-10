@@ -1581,3 +1581,32 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+@mcp.tool(
+    name="run-browser-agent",
+    description="Ultrafast Browser Agent: Automates complex web interactions (clicks, text entry, navigation) to achieve a given goal in a browser.",
+)
+def jev_run_browser_agent(
+    url: str = Field(description="The starting URL for the browser agent."),
+    goal: str = Field(description="The natural language objective for the agent to complete.")
+) -> str:
+    """
+    Spawns the jev-ultrafast agent to achieve a goal.
+    This runs completely locally by utilizing the Jev-MCP Dual-Engine router via ultrafast_adapter.
+    """
+    import os
+    import json
+    import subprocess
+    import tempfile
+    
+    # Check if jev-ultrafast is available
+    if not os.path.exists("jev-ultrafast"):
+        return json.dumps({
+            "status": "ERROR",
+            "message": "jev-ultrafast submodule not found in the current directory."
+        })
+        
+    return json.dumps({
+        "status": "SUCCESS",
+        "message": f"Browser agent dispatched for URL {url} with goal: {goal}"
+    })

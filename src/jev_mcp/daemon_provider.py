@@ -280,8 +280,13 @@ class DaemonProvider(JevProvider):
                     "noul": probs.get("true", 0.0),
                 }
             elif isinstance(q, ChoiceQuestion):
-                best_opt = max(probs.items(), key=lambda x: x[1])[0] if probs else None
-                results[q.key] = {"probabilities": probs, "choice": best_opt}
+                mapped_probs = {}
+                for idx, opt_label in enumerate(q.options):
+                    letter = chr(97 + idx)
+                    mapped_probs[opt_label] = probs.get(letter, 0.0)
+                best_opt = max(mapped_probs.items(), key=lambda x: x[1])[0] if mapped_probs else None
+                confidence = mapped_probs.get(best_opt, 0.0) if best_opt else 0.0
+                results[q.key] = {"probabilities": mapped_probs, "choice": best_opt, "confidence": confidence}
             elif isinstance(q, ScoreQuestion):
                 best_opt = max(probs.items(), key=lambda x: x[1])[0] if probs else None
                 results[q.key] = {"probabilities": probs, "score": best_opt}
