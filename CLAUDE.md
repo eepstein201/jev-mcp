@@ -10,11 +10,11 @@ You are an AI pair programmer operating in the Jev MCP repository. The user reli
 
 ## Tech Stack
 
-- Python ≥3.10, single package `src/jev_mcp/` (hatchling build).
+- Python ≥3.11 (`requires-python`; CI runs 3.12 because `kev` in `requirements.txt` needs ≥3.12), single package `src/jev_mcp/` (hatchling build).
 - MCP SDK `mcp` 2.2.0 (`>=2.2,<3`), pydantic 2.x for question models.
 - Runtime engines (not imports): `llama.cpp` (`llama-server`) daemons — Kev-0.8B on `JEV_FAST_PORT` (8080), Qwen-2.5-7B on `JEV_SMART_PORT` (8081), managed by `jev_mac_manager.sh` (launchd).
 - scikit-learn (Platt scaling), tree-sitter (AST chunking, py/js/ts).
-- Tools: pytest + pytest-mock, mypy (strict, CI), ruff format. No mypy/ruff/pytest config files — defaults apply.
+- Tools: pytest + pytest-mock, mypy (`make lint`, CI gate), ruff format. No mypy/ruff/pytest config files — defaults apply.
 
 ## Project Structure
 
@@ -22,6 +22,8 @@ You are an AI pair programmer operating in the Jev MCP repository. The user reli
 - `src/jev_mcp/provider.py` — `JevProvider` ABC + `NoulQuestion`/`ChoiceQuestion`/`ScoreQuestion` + shared `post_json`.
 - `src/jev_mcp/kev_provider.py` (fast tier) / `daemon_provider.py` (smart tier, DCPMI math) / `routing_provider.py` (0.85 confidence gate).
 - `src/jev_mcp/linter.py`, `cli_linter.py`, `security.py`, `chunker.py`, `scanner.py`.
+- `src/jev_mcp/router_config.py` (router config load/save), `ultrafast_adapter.py` (`local_choose` for the `jev-ultrafast` submodule), `email_triage/` (FastAPI webhook `api.py`, `auth.py`, `core.py` routing rules, `mcp_tool.py`, `slack.py`, `gas_setup.py`; labels persist in `~/.jev-mcp/triage_configs.json`).
+- `docs/CODEMAPS/` — token-lean architecture maps (architecture, backend, data, dependencies).
 - `tests/` — pytest suite; `conftest.py` stubs the MCP SDK before server import.
 - Global runtime config lives OUTSIDE the repo: `~/.jev/router_config.json` (buckets, rules, fitted temperature); logs go to `~/.jev/jev.log`.
 

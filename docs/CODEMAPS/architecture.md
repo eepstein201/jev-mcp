@@ -10,7 +10,7 @@ MCP client (Claude Code / Claude Desktop / Antigravity CLI / OpenCode)
    │ JSON-RPC over stdio  (NEVER print() — use logging)
    ▼
 server.py  MCPServer  ── tools + prompts
-   │  linter.py (DecisionPreflightLinter gate) → call_fast_autofixer → QFE compress (>2048 tok)
+   │  linter.py (DecisionPreflightLinter gate) → call_fast_autofixer → QFE compress (> provider.max_tokens: 65536 kev / 8192 daemon)
    ▼
 routing_provider.RoutingProvider  (0.85 confidence gate)
    ├─ KevProvider    → llama-server :JEV_FAST_PORT 8080  (Kev-0.8B, fast)

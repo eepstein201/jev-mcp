@@ -13,7 +13,7 @@ Submodule: jev-ultrafast (github.com/browser-use/jev-ultrafast)
 
 ## Env vars
 JEV_FAST_PORT JEV_SMART_PORT JEV_DAEMON_PORT JEV_FAST_ENGINE JEV_BATCH_SIZE
-JEV_MCP_API_KEY JEV_MCP_WEBHOOK_URL
+JEV_MCP_API_KEY (webhook bearer token; JEV_MCP_WEBHOOK_URL / JEV_MCP_API_KEY are also constants inside the generated Apps Script, not process env)
 
 ## Build / CI
 make start|stop|test|lint|format|train · ci.yml (macos-latest, py3.12, checkout with submodules): mypy src/jev_mcp/ + pytest --cov-fail-under=85
