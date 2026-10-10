@@ -1129,7 +1129,7 @@ def jev_agent_handoff(task_description: str, available_agents: Dict[str, str]) -
     name="train",
     description="Instantly trains a local MLX LoRA adapter on your Apple Silicon GPU. Accepts ANY .jsonl dataset (synthetic, human-labeled, production logs, etc)."
 )
-def jev_train_lora(dataset_path: str, model_name: str = "mlx-community/Qwen2.5-7B-Instruct-4bit") -> str:
+def jev_train_lora(dataset_path: str, model_name: str = "mlx-community/Qwen2.5-7B-Instruct-4bit", engine: str = "mlx") -> str:
     """
     Launches mlx_lm.lora fine-tuning in a detached background process
     and returns the live pid plus adapter/log locations.
@@ -1150,9 +1150,6 @@ def jev_train_lora(dataset_path: str, model_name: str = "mlx-community/Qwen2.5-7
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]*", model_name):
             return json.dumps({"status": "ERROR", "message": f"Invalid model_name (expected a HuggingFace id like 'org/model-name'): {model_name}"})
 
-        if importlib.util.find_spec("mlx_lm") is None:
-            return json.dumps({"status": "NOT_AVAILABLE", "message": "mlx_lm is not installed in this environment. Run: pip install mlx-lm"})
-
         # Reuse a single training dir under ~/.jev (no mkdtemp litter) and link
         # the dataset in under the name mlx_lm.lora expects.
         run_root = os.path.expanduser("~/.jev/training")
@@ -1169,14 +1166,31 @@ def jev_train_lora(dataset_path: str, model_name: str = "mlx-community/Qwen2.5-7
         os.makedirs(adapter_path, exist_ok=True)
         log_path = os.path.join(adapter_path, "train.log")
 
-        cmd = [
-            sys.executable, "-m", "mlx_lm.lora",
-            "--model", model_name,
-            "--data", run_root,
-            "--adapter-path", adapter_path,
-            "--train",
-            "--iters", "500",
-        ]
+        if engine == "llama.cpp":
+            # Experimental pure GGUF training using llama-finetune
+            if not model_name.endswith(".gguf"):
+                return json.dumps({"status": "ERROR", "message": "llama.cpp engine requires a .gguf model_name path."})
+                
+            cmd = [
+                "llama-finetune",
+                "--model", model_name,
+                "--train-data", dataset_path,
+                "--lora-out", os.path.join(adapter_path, "adapter.gguf"),
+                "--epochs", "2"
+            ]
+        else:
+            if importlib.util.find_spec("mlx_lm") is None:
+                return json.dumps({"status": "NOT_AVAILABLE", "message": "mlx_lm is not installed in this environment. Run: pip install mlx-lm"})
+            
+            cmd = [
+                sys.executable, "-m", "mlx_lm.lora",
+                "--model", model_name,
+                "--data", run_root,
+                "--adapter-path", adapter_path,
+                "--train",
+                "--iters", "500",
+            ]
+
         with open(log_path, "a") as log_f:
             proc = subprocess.Popen(cmd, stdout=log_f, stderr=log_f, start_new_session=True)
 

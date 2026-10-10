@@ -650,7 +650,7 @@ def test_jev_train_lora_starts_training(mock_popen, tmp_path, monkeypatch):
 
     res = json.loads(server.jev_train_lora(str(ds)))
 
-    assert res["status"] == "TRAINING_STARTED"
+    assert res["status"] == "TRAINING_STARTED", res.get("message", "unknown error")
     assert res["pid"] == 4242
     cmd = mock_popen.call_args[0][0]
     assert "mlx_lm.lora" in cmd
@@ -783,3 +783,103 @@ def test_system_notice_injection(mock_provider_class, mock_load):
     res2 = json.loads(res_str2)
     assert "_system_notice" not in res2
 
+
+def test_jev_run_browser_agent_not_found(monkeypatch):
+    import os
+    monkeypatch.setattr(os.path, "exists", lambda x: False)
+    from jev_mcp.server import jev_run_browser_agent
+    res_str = jev_run_browser_agent(url="https://example.com", goal="test")
+    res = json.loads(res_str)
+    assert res["status"] == "ERROR"
+    assert "jev-ultrafast submodule not found" in res["message"]
+
+def test_jev_run_browser_agent_found(monkeypatch):
+    import os
+    monkeypatch.setattr(os.path, "exists", lambda x: True)
+    from jev_mcp.server import jev_run_browser_agent
+    res_str = jev_run_browser_agent(url="https://example.com", goal="test")
+    res = json.loads(res_str)
+    assert res["status"] == "SUCCESS"
+    assert "Browser agent dispatched" in res["message"]
+
+def test_main_setup_gas(monkeypatch):
+    import sys
+    from jev_mcp.server import main
+    monkeypatch.setattr(sys, "argv", ["jev-mcp", "setup-gas", "--webhook-url", "http://test", "--api-key", "secret"])
+    
+    called_args = {}
+    def mock_setup(webhook_url, api_key):
+        called_args["webhook_url"] = webhook_url
+        called_args["api_key"] = api_key
+        
+    import jev_mcp.email_triage.gas_setup
+    monkeypatch.setattr(jev_mcp.email_triage.gas_setup, "setup_gas_workflow", mock_setup)
+    
+    main()
+    
+    assert called_args["webhook_url"] == "http://test"
+    assert called_args["api_key"] == "secret"
+
+def test_tool_triage_email_content():
+    from jev_mcp.server import tool_triage_email_content
+    # mock triage_email_content
+    pass
+
+def test_tool_configure_triage_labels(monkeypatch):
+    import jev_mcp.server
+    monkeypatch.setattr(jev_mcp.server, "configure_triage_labels", lambda c, l: {"status": "ok"})
+    res_str = jev_mcp.server.tool_configure_triage_labels("ctx", ["label1"])
+    import json
+    assert json.loads(res_str) == {"status": "ok"}
+
+def test_tool_setup_gas_workflow(monkeypatch):
+    import jev_mcp.server
+    monkeypatch.setattr(jev_mcp.server, "setup_gas_workflow", lambda webhook_url, api_key: "setup done")
+    res = jev_mcp.server.tool_setup_gas_workflow("url", "key")
+    assert res == "setup done"
+
+def test_tool_triage_email_content(monkeypatch):
+    import jev_mcp.server
+    monkeypatch.setattr(jev_mcp.server, "triage_email_content", lambda c, s, snd, b: "triaged")
+    res = jev_mcp.server.tool_triage_email_content("ctx", "sub", "snd", "body")
+    assert res == "triaged"
+
+from unittest.mock import patch, MagicMock
+
+@patch("subprocess.Popen")
+def test_jev_train_lora_llama_cpp_engine(mock_popen, tmp_path, monkeypatch):
+    from jev_mcp.server import jev_train_lora
+    import json
+    
+    monkeypatch.setenv("HOME", str(tmp_path))
+    mock_proc = MagicMock()
+    mock_proc.pid = 4242
+    mock_popen.return_value = mock_proc
+
+    dataset = tmp_path / "train.jsonl"
+    dataset.write_text('{"text": "test"}')
+
+    res_str = jev_train_lora(str(dataset), model_name="path/to/model.gguf", engine="llama.cpp")
+    res = json.loads(res_str)
+
+    assert res["status"] == "TRAINING_STARTED", res.get("message", "unknown error")
+    assert "pid" in res
+    assert "adapter_path" in res
+    
+    assert mock_popen.called
+    cmd_args = mock_popen.call_args[0][0]
+    assert cmd_args[0] == "llama-finetune"
+    assert "--model" in cmd_args
+    assert "path/to/model.gguf" in cmd_args
+
+def test_jev_train_lora_llama_cpp_engine_rejects_non_gguf(tmp_path):
+    from jev_mcp.server import jev_train_lora
+    import json
+    dataset = tmp_path / "train.jsonl"
+    dataset.write_text('{"text": "test"}')
+
+    res_str = jev_train_lora(str(dataset), model_name="org/model-name", engine="llama.cpp")
+    res = json.loads(res_str)
+
+    assert res["status"] == "ERROR"
+    assert "llama.cpp engine requires a .gguf model_name path." in res["message"]
