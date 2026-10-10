@@ -35,6 +35,7 @@ if [ -f "$PWD/.env" ]; then
 fi
 JEV_FAST_PORT=${JEV_FAST_PORT:-8080}
 JEV_SMART_PORT=${JEV_SMART_PORT:-8081}
+JEV_BATCH_SIZE=${JEV_BATCH_SIZE:-64}
 
 PLIST_NAME="com.jev.mlx_server"
 PLIST_PATH="$HOME/Library/LaunchAgents/${PLIST_NAME}.plist"
@@ -180,7 +181,7 @@ setup_launchd_plist() {
         <string>--port</string>
         <string>$port</string>
         <string>--parallel</string>
-        <string>10</string>
+        <string>$JEV_BATCH_SIZE</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
