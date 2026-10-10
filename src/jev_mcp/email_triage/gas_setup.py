@@ -5,13 +5,13 @@ from pathlib import Path
 
 # Stub implementations to avoid heavy dependencies if not installed
 try:
-    from google_auth_oauthlib.flow import InstalledAppFlow
-    from googleapiclient.discovery import build
+    from google_auth_oauthlib.flow import InstalledAppFlow  # type: ignore[import-untyped]
+    from googleapiclient.discovery import build  # type: ignore[import-untyped]
 except ImportError:
     InstalledAppFlow = None
     build = None
 
-def setup_gas_workflow(webhook_url: str = None, api_key: str = None) -> str:
+def setup_gas_workflow(webhook_url: str | None = None, api_key: str | None = None) -> str:
     """
     Automated CLI Setup Flow for Google Apps Script.
     Prompts securely for credentials and deploys the .gs file via Google API.

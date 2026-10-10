@@ -1,6 +1,6 @@
 from typing import Dict, Any, List
 from jev_mcp.routing_provider import RoutingProvider
-from jev_mcp.provider import ChoiceQuestion
+from jev_mcp.provider import ChoiceQuestion, QuestionType
 
 def local_choose(state: Dict[str, Any], goal: str, history: List[Any], operations: Dict[str, str], targets: Dict[str, Any], controls: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -10,8 +10,8 @@ def local_choose(state: Dict[str, Any], goal: str, history: List[Any], operation
     """
     provider = RoutingProvider()
     
-    questions = []
-    
+    questions: List[QuestionType] = []
+
     # 1. Add the operation choice question
     # operations maps keys like "CLICK" to descriptions
     q_operation = ChoiceQuestion(

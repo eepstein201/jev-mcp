@@ -24,10 +24,10 @@ from jev_mcp.email_triage.core import build_triage_questions, decide_routing
 
 def evaluate_email_with_mlx(subject: str, sender: str, body: str, labels: list[str]) -> dict:
     from jev_mcp.routing_provider import RoutingProvider
-    from jev_mcp.provider import NoulQuestion, ChoiceQuestion
-    
+    from jev_mcp.provider import NoulQuestion, ChoiceQuestion, QuestionType
+
     questions = build_triage_questions(labels)
-    eval_questions = []
+    eval_questions: list[QuestionType] = []
     
     for q in questions:
         if q.type == "noul":

@@ -20,7 +20,7 @@ class CategoryConfig(BaseModel):
         default=["Follow Up", "Pending", "Receipts", "Newsletter", "Notifications", "Review"]
     )
 
-def build_triage_questions(categories: list[str] = None):
+def build_triage_questions(categories: list[str] | None = None):
     if categories is None:
         categories = CategoryConfig().categories
         
@@ -45,7 +45,7 @@ def decide_routing(
     is_important_score: float, 
     bucket: str, 
     bucket_confidence: float, 
-    config: JevMailConfig = None
+    config: JevMailConfig | None = None
 ) -> dict:
     if config is None:
         config = JevMailConfig()
