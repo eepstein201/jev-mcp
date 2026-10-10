@@ -1207,6 +1207,23 @@ if [ -f "{adapter_path}/fused.gguf" ]; then
         fi
         mv "{adapter_path}/fused.gguf" "{target_out}"
         echo "Successfully replaced inference model with fused GGUF!"
+        
+        echo "Automatically restarting inference engine (llama-server)..."
+        LLAMA_PID=$(pgrep -f "llama-server" | head -n 1)
+        if [ -n "$LLAMA_PID" ]; then
+            LLAMA_CMD=$(ps -p $LLAMA_PID -o command=)
+            echo "Found running llama-server (PID $LLAMA_PID): $LLAMA_CMD"
+            kill $LLAMA_PID
+            
+            # Wait for it to die
+            while kill -0 $LLAMA_PID 2>/dev/null; do sleep 1; done
+            
+            echo "Starting new llama-server in the background..."
+            nohup $LLAMA_CMD > /tmp/jev_llama_server.log 2>&1 &
+            echo "Inference engine restarted successfully. Logs at /tmp/jev_llama_server.log"
+        else
+            echo "No running llama-server found to restart."
+        fi
     else
         echo "Fused model saved to {adapter_path}/fused.gguf (Dynamic fallback skipped because target_gguf_path was not provided)."
     fi
