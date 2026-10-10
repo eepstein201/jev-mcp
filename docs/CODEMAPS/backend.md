@@ -1,4 +1,4 @@
-<!-- Generated: 2026-10-10 | Files scanned: server.py 1748 lines + 18 modules | Token estimate: ~900 -->
+<!-- Generated: 2026-10-10 | Files scanned: server.py 1748 lines + 18 modules (email_triage as of 4f2f356) | Token estimate: ~900 -->
 # Backend (MCP tools)
 
 ## Tools (server.py) → impl
@@ -29,6 +29,8 @@ call_fast_autofixer L120 · get_temp_notice L910 · main L1660
 ## Email triage (email_triage/)
 POST /api/v1/triage/email → api.triage_email (Depends get_auth ← auth.verify_auth_token)
   → mcp_tool.triage_email_content → evaluate_email_with_mlx → core.build_triage_questions
+      body > 2000 chars → server.jev_compact_context(goal=labels, conf 0.6) → body = compressed_context
+      (lazy import of server inside fn; any failure/empty result silently keeps original body)
   → core.decide_routing → slack.build_escalation_message / build_hitl_message
 gas_setup.setup_gas_workflow → examples/gas_triage.js (Google Apps Script)
 
