@@ -16,7 +16,7 @@ read-file          → jev_read_file L1332 (path-secured, chunked)
 compact            → jev_compact_context L1443
 scan-repo          → jev_scan_repo L1529
 run-browser-agent  → jev_run_browser_agent L1685 (checks ./jev-ultrafast; returns dispatch msg only)
-triage_email_content / configure_triage_labels / setup_gas_workflow → email_triage/* L1714-1744
+triage_email_content / configure_triage_labels / setup_gas_workflow → email_triage/* L1721-1748
 
 ## Prompts (server.py L1032-1290, 1646-1657)
 calibrate compact evaluate explain-decision generate-data handoff model-router manage-router
@@ -37,6 +37,6 @@ MAX_STATE_TOKENS=3500 · MAX_OPTIONS=10 · MAX_OPTION_LENGTH_RATIO=3.5
 
 ## Observed smells (for review, not fixed here)
 - server.py is 1748 lines (>800 guideline)
-- ultrafast_adapter builds ChoiceQuestion(key=, prompt=, options=) but provider.ChoiceQuestion uses question/instruction/choices
-- jev_run_browser_agent: unused subprocess/tempfile imports; "jev-ultrafast" path is CWD-relative; only returns a dispatch message
+- Two unrelated `ChoiceQuestion`/`NoulQuestion` classes: provider.py (prompt/options/key, used by ultrafast_adapter + server) vs email_triage/core.py (question/instruction/choices) — name clash, easy to import the wrong one
+- jev_run_browser_agent (L1685): local `import subprocess, tempfile` unused; "jev-ultrafast" path is CWD-relative; only returns a dispatch message
 - router_config defaults reference stale model names (claude-3-5-*, claude-fable)

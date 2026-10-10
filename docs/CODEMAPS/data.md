@@ -10,7 +10,8 @@
 | ~/.jev-mcp/triage_configs.json | email_triage/mcp_tool.py | {context_id: [labels]} |
 | tests/golden_dataset.json | tests/run_evals.py | calibration/eval set |
 
-## Models (pydantic, provider.py / email_triage/core.py)
-NoulQuestion{question,instruction,type="noul"} · ChoiceQuestion{...,choices} · ScoreQuestion
+## Models (pydantic)
+provider.py: NoulQuestion{prompt,key} · ChoiceQuestion{prompt,options,key} · ScoreQuestion{prompt,labels,key} · QuestionType=Union
+email_triage/core.py (separate, same names): NoulQuestion{question,instruction} · ChoiceQuestion{question,instruction,choices}
 CategoryConfig.categories = Follow Up|Pending|Receipts|Newsletter|Notifications|Review
 JevMailConfig{action_threshold=0.8, important_threshold=0.8}
