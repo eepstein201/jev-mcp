@@ -9,6 +9,10 @@ pydantic==2.13.5
 # Environment variables
 python-dotenv==1.0.1
 
+# Browser Agent
+browser-harness>=0.1.13
+h2>=4.1.0
+
 # Dev tools
 ruff
 mypy

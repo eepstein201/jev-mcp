@@ -249,6 +249,11 @@ case "$COMMAND" in
             exit 1
         fi
 
+        if [ -d ".git" ]; then
+            log_info "Initializing git submodules..."
+            git submodule update --init --recursive || log_warn "Git submodule update failed."
+        fi
+
         log_info "Setting up isolated virtual environment in .venv..."
         python3 -m venv .venv
         source "$PWD/.venv/bin/activate"
@@ -334,6 +339,7 @@ if os.path.exists(os.path.dirname(config_path)):
         
         if [ -d ".git" ]; then
             git pull origin main || log_warn "Git pull failed."
+            git submodule update --init --recursive || log_warn "Git submodule update failed."
         fi
 
         if [ -d ".venv" ]; then

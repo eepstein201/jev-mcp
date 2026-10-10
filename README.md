@@ -96,6 +96,7 @@ By bypassing traditional text generation, Jev unlocks massive performance gains 
 - **The `0.8B` Fast Profile (Kev):** Achieves lightning-fast mathematical evaluations in **~120ms**. Powered by a native pointer-head, it intercepts routing mechanics perfectly without generating text, yielding an exceptionally reliable `0.866` ROC AUC.*
 - **The `7B` Intel Profile:** Delivers evaluations in **~800ms**. While slightly slower than the 0.8B fast engine, it possesses deep inferential reasoning capabilities, achieving a mathematically perfect **1.0 ROC AUC** on edge cases. This easily outperforms standard cloud API text-generation methods in both accuracy and reliability for complex logic.
 - **Enterprise-Grade Security:** Because Jev evaluates raw, untrusted user data, all payloads are strictly sterilized via NFKC Unicode normalization and recursive Control Token stripping. For the 7B profile, prompts are additionally wrapped in strict XML sandboxing to isolate prompt injection payloads.
+- **Browser Automation Gateway:** Integrated tightly with the `jev-ultrafast` local browser agent, Jev-MCP supplies the core probabilistic evaluation engine for TypeSafe AI browser navigation, seamlessly converting DOM state and objective logic into fully-local, dual-engine MLX routing decisions without requiring external cloud API keys.
 
 
 ### 🎯 The Codebase Architect (Surgical Repository Interaction & AST Extraction)
