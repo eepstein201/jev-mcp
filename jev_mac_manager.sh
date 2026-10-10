@@ -45,8 +45,8 @@ LOG_FILE="$LOG_DIR/mlx_server.log"
 LOG_FILE_FAST="$LOG_DIR/mlx_server_fast.log"
 LOG_FILE_SMART="$LOG_DIR/mlx_server_smart.log"
 
-MODEL_05B="jaredpalmer/kev-0.8b"
-MODEL_7B="mlx-community/Qwen2.5-7B-Instruct-4bit"
+MODEL_05B="$PWD/models/Kev-0.8B-GGUF/Kev-0.8B-Q8_0.gguf"
+MODEL_7B="$PWD/models/Qwen2.5-7B-Instruct-GGUF/qwen2.5-7b-instruct-q4_k_m.gguf"
 
 resolve_model() {
     local alias=$1
@@ -70,6 +70,30 @@ check_architecture() {
     fi
 }
 
+
+check_llama_cpp() {
+    if ! command -v llama-server &> /dev/null; then
+        log_info "llama-server not found. Installing llama.cpp via Homebrew..."
+        if ! command -v brew &> /dev/null; then
+            log_error "Homebrew is required to install llama.cpp. Please install Homebrew."
+            exit 1
+        fi
+        brew install llama.cpp
+    fi
+}
+
+download_gguf() {
+    local url="$1"
+    local target_dir="$2"
+    local target_file="$target_dir/$(basename "$url")"
+    
+    if [ ! -f "$target_file" ]; then
+        log_info "Downloading $(basename "$url")..."
+        mkdir -p "$target_dir"
+        curl -L -o "$target_file" "$url"
+        log_success "Downloaded $(basename "$url")."
+    fi
+}
 
 link_mcp_configs() {
     log_info "Linking MCP configurations to local absolute path..."
@@ -126,7 +150,10 @@ setup_launchd_plist() {
     local engine="mlx_lm.server"
     local extra_args="<string>--prompt-cache-size</string><string>20</string><string>--prompt-cache-bytes</string><string>12G</string><string>--prefill-step-size</string><string>2048</string><string>--log-level</string><string>WARNING</string>"
     
-    if [[ "$model_path" == *"kev"* ]]; then
+    if [[ "$model_path" == *".gguf"* ]]; then
+        engine="llama-server"
+        extra_args=""
+    elif [[ "$model_path" == *"kev"* ]]; then
         engine="kev.serve"
         # kev.serve takes --run instead of --model, and handles its own cache logic
         extra_args=""
@@ -135,7 +162,40 @@ setup_launchd_plist() {
     log_info "Generating native macOS launchd agent for $model_path on port $port using $engine..."
     mkdir -p "$LOG_DIR"
     
-    if [[ "$engine" == "kev.serve" ]]; then
+    if [[ "$engine" == "llama-server" ]]; then
+        local llama_bin
+        llama_bin=$(command -v llama-server)
+        cat << PLIST_EOF > "$tmp_plist"
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>$label</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>$llama_bin</string>
+        <string>-m</string>
+        <string>$model_path</string>
+        <string>--port</string>
+        <string>$port</string>
+        <string>--parallel</string>
+        <string>10</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>$target_log</string>
+    <key>StandardErrorPath</key>
+    <string>$target_log</string>
+    <key>WorkingDirectory</key>
+    <string>$PWD</string>
+</dict>
+</plist>
+PLIST_EOF
+    elif [[ "$engine" == "kev.serve" ]]; then
         cat << PLIST_EOF > "$tmp_plist"
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -219,6 +279,7 @@ manage_daemon() {
         launchctl bootout gui/$(id -u) "$target_plist" 2>/dev/null || launchctl unload "$target_plist" 2>/dev/null || true
         # Force kill to handle models in flight
         pkill -9 -f "mlx_lm.server" 2>/dev/null || true
+        pkill -9 -f "llama-server" 2>/dev/null || true
         sleep 1
     fi
     if [[ "$action" == "start" || "$action" == "restart" ]]; then
@@ -242,6 +303,17 @@ case "$COMMAND" in
         SELECTED_MODEL=$(resolve_model "$TARGET_MODEL_ALIAS")
         log_info "Target Model Configuration: $TARGET_MODEL_ALIAS ($SELECTED_MODEL)"
 
+        log_info "Checking models..."
+        if [[ "$SELECTED_MODEL" == *".gguf"* ]]; then
+            if [[ "$TARGET_MODEL_ALIAS" == "0.5b" || "$TARGET_MODEL_ALIAS" == "0.5B" ]]; then
+                download_gguf "https://huggingface.co/ggml-org/Kev-0.8B-GGUF/resolve/main/Kev-0.8B-Q8_0.gguf" "$(dirname "$SELECTED_MODEL")"
+            elif [[ "$TARGET_MODEL_ALIAS" == "7b" || "$TARGET_MODEL_ALIAS" == "7B" ]]; then
+                download_gguf "https://huggingface.co/Qwen/Qwen2.5-7B-Instruct-GGUF/resolve/main/qwen2.5-7b-instruct-q4_k_m.gguf" "$(dirname "$SELECTED_MODEL")"
+            fi
+            check_llama_cpp
+        fi
+
+
         check_architecture
 
         if ! command -v python3 &> /dev/null; then
@@ -255,7 +327,7 @@ case "$COMMAND" in
         fi
 
         log_info "Setting up isolated virtual environment in .venv..."
-        python3 -m venv .venv
+        python3.12 -m venv .venv
         source "$PWD/.venv/bin/activate"
         pip install --upgrade pip wheel -q &>/dev/null
         
@@ -276,30 +348,7 @@ case "$COMMAND" in
         setup_launchd_plist "$SELECTED_MODEL" "$JEV_FAST_PORT" "$PLIST_PATH" "$LOG_FILE"
         manage_daemon start "$PLIST_PATH"
         
-        # Inject Opencode Configuration
-        log_info "Configuring Opencode integration..."
-        python3 -c '
-import json, os
-config_path = os.path.expanduser("~/.config/opencode/opencode.json")
-if os.path.exists(os.path.dirname(config_path)):
-    try:
-        if os.path.exists(config_path):
-            with open(config_path, "r") as f: config = json.load(f)
-        else:
-            config = {"$schema": "https://opencode.ai/config.json", "mcp": {}}
-        if "mcp" not in config: config["mcp"] = {}
-        if "jev-mcp" in config["mcp"]: del config["mcp"]["jev-mcp"]
-        config["mcp"]["jev-mcp"] = {
-            "type": "local",
-            "command": [os.path.join(os.getcwd(), ".venv/bin/python3"), "-m", "jev_mcp.server"],
-            "environment": {"PYTHONPATH": os.path.join(os.getcwd(), "src")},
-            "enabled": True
-        }
-        with open(config_path, "w") as f: json.dump(config, f, indent=2)
-        print("Successfully integrated with Opencode!")
-    except Exception as e:
-        pass
-'
+        link_mcp_configs
         
         echo -e "${GREEN}Installation Complete! Your native macOS daemon is running the $TARGET_MODEL_ALIAS model.${NC}"
         ;;
@@ -311,6 +360,11 @@ if os.path.exists(os.path.dirname(config_path)):
         echo -e "${BLUE}  Starting Hybrid Complexity Router Mode            ${NC}"
         echo -e "${BLUE}====================================================${NC}"
         
+        log_info "Checking models for Hybrid mode..."
+        download_gguf "https://huggingface.co/ggml-org/Kev-0.8B-GGUF/resolve/main/Kev-0.8B-Q8_0.gguf" "$(dirname "$MODEL_05B")"
+        download_gguf "https://huggingface.co/Qwen/Qwen2.5-7B-Instruct-GGUF/resolve/main/qwen2.5-7b-instruct-q4_k_m.gguf" "$(dirname "$MODEL_7B")"
+        check_llama_cpp
+
         log_info "Configuring dual-daemon setup (0.5B on $JEV_FAST_PORT, 7B on $JEV_SMART_PORT)..."
         manage_daemon stop "$PLIST_PATH"
         manage_daemon stop "$PLIST_FAST_PATH"
@@ -361,28 +415,7 @@ if os.path.exists(os.path.dirname(config_path)):
             setup_launchd_plist "$SELECTED_MODEL" "$JEV_FAST_PORT" "$PLIST_PATH" "$LOG_FILE"
             manage_daemon start "$PLIST_PATH"
             
-            # Sync Opencode Configuration
-            python3 -c '
-import json, os
-config_path = os.path.expanduser("~/.config/opencode/opencode.json")
-if os.path.exists(os.path.dirname(config_path)):
-    try:
-        if os.path.exists(config_path):
-            with open(config_path, "r") as f: config = json.load(f)
-        else:
-            config = {"$schema": "https://opencode.ai/config.json", "mcp": {}}
-        if "mcp" not in config: config["mcp"] = {}
-        if "jev-mcp" in config["mcp"]: del config["mcp"]["jev-mcp"]
-        config["mcp"]["jev-mcp"] = {
-            "type": "local",
-            "command": [os.path.join(os.getcwd(), ".venv/bin/python3"), "-m", "jev_mcp.server"],
-            "environment": {"PYTHONPATH": os.path.join(os.getcwd(), "src")},
-            "enabled": True
-        }
-        with open(config_path, "w") as f: json.dump(config, f, indent=2)
-    except Exception as e:
-        pass
-'
+            link_mcp_configs
             
             log_success "Environment updated and daemon restarted with $TARGET_MODEL_ALIAS."
         else
