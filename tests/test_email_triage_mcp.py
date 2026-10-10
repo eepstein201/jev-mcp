@@ -89,3 +89,39 @@ def test_triage_mcp_tool_execution(tmp_path, monkeypatch):
     response_2 = json.loads(response_json_2)
     assert response_2["status"] == "success"
     assert response_2["decision"] == "Review"
+
+def test_triage_mcp_tool_execution_with_long_body(tmp_path, monkeypatch):
+    """Asserts the tool executes compaction when body is long."""
+    monkeypatch.setattr("jev_mcp.email_triage.mcp_tool.get_config_path", lambda: tmp_path / "triage_configs.json")
+    configure_triage_labels("test@mailbox.com", ["Engineering", "Sales"])
+    
+    from unittest.mock import MagicMock
+    mock_provider_instance = MagicMock()
+    mock_provider_instance.evaluate_batch.return_value = {
+        "requires_action": {"probabilities": {"true": 0.9}},
+        "is_important": {"probabilities": {"true": 0.9}},
+        "bucket": {"probabilities": {"Engineering": 0.8, "Sales": 0.2}}
+    }
+    
+    monkeypatch.setattr("jev_mcp.routing_provider.RoutingProvider", lambda: mock_provider_instance)
+    
+    def mock_compact(state, goal, confidence_threshold):
+        import json
+        return json.dumps({"compressed_context": "Compressed body"})
+        
+    monkeypatch.setattr("jev_mcp.server.jev_compact_context", mock_compact)
+    
+    long_body = "A" * 2001
+    response_json = triage_email_content("test@mailbox.com", "Urgent Bug", "boss@test.com", long_body)
+    
+    response = json.loads(response_json)
+    assert response["status"] == "success"
+    
+    # Also test failure mode of jev_compact_context
+    def mock_compact_fail(state, goal, confidence_threshold):
+        raise ValueError("Failed to compact")
+        
+    monkeypatch.setattr("jev_mcp.server.jev_compact_context", mock_compact_fail)
+    response_json_2 = triage_email_content("test@mailbox.com", "Urgent Bug", "boss@test.com", long_body)
+    response_2 = json.loads(response_json_2)
+    assert response_2["status"] == "success"

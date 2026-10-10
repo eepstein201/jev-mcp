@@ -35,6 +35,23 @@ def evaluate_email_with_mlx(subject: str, sender: str, body: str, labels: list[s
         elif q.type == "choice":
             eval_questions.append(ChoiceQuestion(key=q.question, prompt=q.instruction, options=q.choices))
             
+    if len(body) > 2000:
+        from jev_mcp.server import jev_compact_context
+        import json
+        
+        try:
+            goal = f"Identify if the email requires action, is important, or fits any of these categories: {', '.join(labels)}."
+            compaction_res = jev_compact_context(
+                state={"text": body},
+                goal=goal,
+                confidence_threshold=0.6
+            )
+            parsed_res = json.loads(compaction_res)
+            if parsed_res.get("compressed_context"):
+                body = parsed_res["compressed_context"]
+        except Exception:
+            pass
+
     state = {
         "email_subject": subject,
         "email_sender": sender,
