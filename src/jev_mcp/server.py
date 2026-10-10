@@ -1129,7 +1129,7 @@ def jev_agent_handoff(task_description: str, available_agents: Dict[str, str]) -
     name="train",
     description="Instantly trains a local MLX LoRA adapter on your Apple Silicon GPU. Options: fuse=True (default) merges the adapter into a single .gguf file, and if target_gguf_path is provided, replaces it (backing up the original). fuse=False keeps a standalone adapter for dynamic loading (--lora)."
 )
-def jev_train_lora(dataset_path: str, model_name: str = "mlx-community/Qwen2.5-7B-Instruct-4bit", engine: str = "mlx", fuse: bool = True, target_gguf_path: str = None) -> str:
+def jev_train_lora(dataset_path: str, model_name: str = "mlx-community/Qwen2.5-7B-Instruct-4bit", engine: str = "mlx", fuse: bool = True, target_gguf_path: Optional[str] = None) -> str:
     """
     Launches mlx_lm.lora fine-tuning in a detached background process
     and returns the live pid plus adapter/log locations.
