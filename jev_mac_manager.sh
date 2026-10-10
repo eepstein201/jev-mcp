@@ -172,20 +172,23 @@ setup_launchd_plist() {
             mem_bytes=$(sysctl -n hw.memsize 2>/dev/null || echo 17179869184)
             local mem_gb=$(( mem_bytes / 1024 / 1024 / 1024 ))
             
-            # Base batch size on RAM
+            # Base parallel slots on RAM (more conservatively for Mac Unified Memory)
             if [ "$mem_gb" -ge 64 ]; then
-                dynamic_batch_size=256
+                dynamic_batch_size=16
             elif [ "$mem_gb" -ge 32 ]; then
-                dynamic_batch_size=128
+                dynamic_batch_size=8
             elif [ "$mem_gb" -ge 16 ]; then
-                dynamic_batch_size=64
+                dynamic_batch_size=4
             else
-                dynamic_batch_size=32
+                dynamic_batch_size=2
             fi
             
-            # If running a larger model (e.g. 7B), halve the batch size
+            # If running a larger model (e.g. 7B), halve the parallel slots
             if [[ "$model_path" == *"7b"* || "$model_path" == *"7B"* ]]; then
                 dynamic_batch_size=$(( dynamic_batch_size / 2 ))
+                if [ "$dynamic_batch_size" -lt 1 ]; then
+                    dynamic_batch_size=1
+                fi
             fi
         fi
         
@@ -205,6 +208,8 @@ setup_launchd_plist() {
         <string>$port</string>
         <string>--parallel</string>
         <string>$dynamic_batch_size</string>
+        <string>-c</string>
+        <string>8192</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
