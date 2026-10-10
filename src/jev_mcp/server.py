@@ -1182,14 +1182,41 @@ def jev_train_lora(dataset_path: str, model_name: str = "mlx-community/Qwen2.5-7
             if importlib.util.find_spec("mlx_lm") is None:
                 return json.dumps({"status": "NOT_AVAILABLE", "message": "mlx_lm is not installed in this environment. Run: pip install mlx-lm"})
             
-            cmd = [
-                sys.executable, "-m", "mlx_lm.lora",
-                "--model", model_name,
-                "--data", run_root,
-                "--adapter-path", adapter_path,
-                "--train",
-                "--iters", "500",
-            ]
+            
+            # The default approach: MLX for training, then convert to gguf via llama.cpp
+            run_script_path = os.path.join(adapter_path, "run_train.sh")
+            with open(run_script_path, "w") as f:
+                f.write(f'''#!/bin/bash
+set -e
+echo "Starting MLX LoRA training..."
+{sys.executable} -m mlx_lm.lora \
+    --model {model_name} \
+    --data {run_root} \
+    --adapter-path {adapter_path} \
+    --train \
+    --iters 500
+
+echo "Training complete. Converting adapter to GGUF format..."
+if command -v python3 &> /dev/null; then
+    # We attempt to find convert-lora-to-ggml.py if it's in PATH or download it if necessary
+    # Assuming the user has it in their PATH or it can be fetched
+    if ! command -v convert-lora-to-ggml.py &> /dev/null; then
+        echo "convert-lora-to-ggml.py not in PATH, downloading from llama.cpp..."
+        curl -sLO https://raw.githubusercontent.com/ggerganov/llama.cpp/master/convert-lora-to-ggml.py
+        chmod +x convert-lora-to-ggml.py
+        CONVERT_SCRIPT="./convert-lora-to-ggml.py"
+    else
+        CONVERT_SCRIPT="convert-lora-to-ggml.py"
+    fi
+    
+    python3 $CONVERT_SCRIPT {adapter_path}
+    echo "Adapter converted to GGUF successfully."
+else
+    echo "python3 not found. Skipping GGUF conversion."
+fi
+''')
+            os.chmod(run_script_path, 0o755)
+            cmd = ["bash", run_script_path]
 
         with open(log_path, "a") as log_f:
             proc = subprocess.Popen(cmd, stdout=log_f, stderr=log_f, start_new_session=True)

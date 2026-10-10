@@ -653,8 +653,10 @@ def test_jev_train_lora_starts_training(mock_popen, tmp_path, monkeypatch):
     assert res["status"] == "TRAINING_STARTED", res.get("message", "unknown error")
     assert res["pid"] == 4242
     cmd = mock_popen.call_args[0][0]
-    assert "mlx_lm.lora" in cmd
-    assert "mlx-community/Qwen2.5-7B-Instruct-4bit" in cmd
+    assert cmd[0] == "bash"
+    with open(cmd[1], "r") as f: script_content = f.read()
+    assert "mlx-community/Qwen2.5-7B-Instruct-4bit" in script_content
+    assert "mlx_lm.lora" in script_content
     # A train.jsonl link must exist in the run data dir passed via --data
     data_dir = res["data_dir"]
     assert os.path.exists(os.path.join(data_dir, "train.jsonl"))
