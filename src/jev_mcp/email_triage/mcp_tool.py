@@ -20,9 +20,62 @@ def configure_triage_labels(context_id: str, labels: list[str]) -> dict:
     
     return {"status": "success", "message": f"Saved {len(labels)} labels for {context_id}"}
 
+from jev_mcp.email_triage.core import build_triage_questions, decide_routing
+
 def evaluate_email_with_mlx(subject: str, sender: str, body: str, labels: list[str]) -> dict:
-    # Stub for the actual MLX evaluation call that will be implemented later
-    pass
+    from jev_mcp.routing_provider import RoutingProvider
+    from jev_mcp.provider import NoulQuestion, ChoiceQuestion
+    
+    questions = build_triage_questions(labels)
+    eval_questions = []
+    
+    for q in questions:
+        if q.type == "noul":
+            eval_questions.append(NoulQuestion(key=q.question, prompt=q.instruction))
+        elif q.type == "choice":
+            eval_questions.append(ChoiceQuestion(key=q.question, prompt=q.instruction, options=q.choices))
+            
+    state = {
+        "email_subject": subject,
+        "email_sender": sender,
+        "email_body": body
+    }
+    
+    provider = RoutingProvider()
+    results = provider.evaluate_batch(state, eval_questions)
+    
+    requires_action_score = 0.0
+    is_important_score = 0.0
+    bucket = "Review"
+    bucket_confidence = 0.0
+    
+    for key, res in results.items():
+        probs = res.get("probabilities", {})
+        if key == "requires_action":
+            requires_action_score = probs.get("true", 0.0)
+        elif key == "is_important":
+            is_important_score = probs.get("true", 0.0)
+        elif key == "bucket":
+            if probs:
+                best_choice = max(probs.items(), key=lambda x: x[1])
+                bucket = best_choice[0]
+                bucket_confidence = best_choice[1]
+            
+    decision = decide_routing(
+        requires_action_score=requires_action_score,
+        is_important_score=is_important_score,
+        bucket=bucket,
+        bucket_confidence=bucket_confidence
+    )
+    
+    return {
+        "decision": decision["decision"],
+        "suggested_routing": decision["suggested_routing"],
+        "requires_action_score": requires_action_score,
+        "is_important_score": is_important_score,
+        "bucket": bucket,
+        "bucket_confidence": bucket_confidence
+    }
 
 def triage_email_content(context_id: str, subject: str, sender: str, body: str) -> str:
     """

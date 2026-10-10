@@ -59,19 +59,33 @@ def test_triage_mcp_tool_execution(tmp_path, monkeypatch):
     monkeypatch.setattr("jev_mcp.email_triage.mcp_tool.get_config_path", lambda: tmp_path / "triage_configs.json")
     configure_triage_labels("test@mailbox.com", ["Engineering", "Sales"])
     
-    def mock_evaluate(*args, **kwargs):
-        return {
-            "decision": "Action",
-            "requires_action_score": 0.9,
-            "is_important_score": 0.9,
-            "bucket": "Engineering",
-            "suggested_routing": "escalate_to_slack"
-        }
-        
-    monkeypatch.setattr("jev_mcp.email_triage.mcp_tool.evaluate_email_with_mlx", mock_evaluate)
+    from unittest.mock import MagicMock
+    mock_provider_instance = MagicMock()
+    
+    mock_provider_instance.evaluate_batch.return_value = {
+        "requires_action": {"probabilities": {"true": 0.9}},
+        "is_important": {"probabilities": {"true": 0.9}},
+        "bucket": {"probabilities": {"Engineering": 0.8, "Sales": 0.2}}
+    }
+    
+    monkeypatch.setattr("jev_mcp.routing_provider.RoutingProvider", lambda: mock_provider_instance)
     
     response_json = triage_email_content("test@mailbox.com", "Urgent Bug", "boss@test.com", "Fix it")
     
     response = json.loads(response_json)
     assert response["status"] == "success"
     assert response["decision"] == "Action"
+    assert response["bucket"] == "Engineering"
+    assert response["requires_action_score"] == 0.9
+    
+    # Also test the Review branch for complete coverage
+    mock_provider_instance.evaluate_batch.return_value = {
+        "requires_action": {"probabilities": {"true": 0.5}}, # Between 0.3 and 0.8 -> Review
+        "is_important": {"probabilities": {"true": 0.2}},
+        "bucket": {"probabilities": {"Engineering": 0.5, "Sales": 0.2}} # Confidence < 0.6 -> Review
+    }
+    
+    response_json_2 = triage_email_content("test@mailbox.com", "Weird Bug", "boss@test.com", "Fix it maybe")
+    response_2 = json.loads(response_json_2)
+    assert response_2["status"] == "success"
+    assert response_2["decision"] == "Review"
