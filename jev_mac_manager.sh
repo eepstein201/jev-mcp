@@ -192,7 +192,7 @@ setup_launchd_plist() {
             fi
         fi
         
-        local total_ctx=$(( dynamic_batch_size * 8192 ))
+        local total_ctx=$(( dynamic_batch_size * 16384 ))
         
         cat << PLIST_EOF > "$tmp_plist"
 <?xml version="1.0" encoding="UTF-8"?>

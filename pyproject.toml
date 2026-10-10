@@ -18,6 +18,8 @@ dependencies = [
     "tree-sitter-typescript>=0.21.0",
     "browser-harness>=0.1.1",
     "h2>=4.4.1",
+    "google-api-python-client>=2.201.0",
+    "google-auth-oauthlib>=1.5.0",
 ]
 
 [project.scripts]
