@@ -46,7 +46,7 @@ LOG_FILE_FAST="$LOG_DIR/mlx_server_fast.log"
 LOG_FILE_SMART="$LOG_DIR/mlx_server_smart.log"
 
 MODEL_05B="$PWD/models/Kev-0.8B-GGUF/Kev-0.8B-Q8_0.gguf"
-MODEL_7B="$PWD/models/Qwen2.5-7B-Instruct-GGUF/qwen2.5-7b-instruct-q4_k_m.gguf"
+MODEL_7B="$PWD/models/Qwen2.5-7B-Instruct-GGUF/Qwen2.5-7B-Instruct-Q4_K_M.gguf"
 
 resolve_model() {
     local alias=$1
@@ -332,7 +332,7 @@ case "$COMMAND" in
             if [[ "$TARGET_MODEL_ALIAS" == "0.5b" || "$TARGET_MODEL_ALIAS" == "0.5B" ]]; then
                 download_gguf "https://huggingface.co/ggml-org/Kev-0.8B-GGUF/resolve/main/Kev-0.8B-Q8_0.gguf" "$(dirname "$SELECTED_MODEL")"
             elif [[ "$TARGET_MODEL_ALIAS" == "7b" || "$TARGET_MODEL_ALIAS" == "7B" ]]; then
-                download_gguf "https://huggingface.co/Qwen/Qwen2.5-7B-Instruct-GGUF/resolve/main/qwen2.5-7b-instruct-q4_k_m.gguf" "$(dirname "$SELECTED_MODEL")"
+                download_gguf "https://huggingface.co/bartowski/Qwen2.5-7B-Instruct-GGUF/resolve/main/Qwen2.5-7B-Instruct-Q4_K_M.gguf" "$(dirname "$SELECTED_MODEL")"
             fi
             check_llama_cpp
         fi
@@ -386,7 +386,7 @@ case "$COMMAND" in
         
         log_info "Checking models for Hybrid mode..."
         download_gguf "https://huggingface.co/ggml-org/Kev-0.8B-GGUF/resolve/main/Kev-0.8B-Q8_0.gguf" "$(dirname "$MODEL_05B")"
-        download_gguf "https://huggingface.co/Qwen/Qwen2.5-7B-Instruct-GGUF/resolve/main/qwen2.5-7b-instruct-q4_k_m.gguf" "$(dirname "$MODEL_7B")"
+        download_gguf "https://huggingface.co/bartowski/Qwen2.5-7B-Instruct-GGUF/resolve/main/Qwen2.5-7B-Instruct-Q4_K_M.gguf" "$(dirname "$MODEL_7B")"
         check_llama_cpp
 
         log_info "Configuring dual-daemon setup (0.5B on $JEV_FAST_PORT, 7B on $JEV_SMART_PORT)..."
