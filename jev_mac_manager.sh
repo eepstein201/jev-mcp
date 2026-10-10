@@ -35,7 +35,6 @@ if [ -f "$PWD/.env" ]; then
 fi
 JEV_FAST_PORT=${JEV_FAST_PORT:-8080}
 JEV_SMART_PORT=${JEV_SMART_PORT:-8081}
-JEV_BATCH_SIZE=${JEV_BATCH_SIZE:-64}
 
 PLIST_NAME="com.jev.mlx_server"
 PLIST_PATH="$HOME/Library/LaunchAgents/${PLIST_NAME}.plist"
@@ -166,6 +165,30 @@ setup_launchd_plist() {
     if [[ "$engine" == "llama-server" ]]; then
         local llama_bin
         llama_bin=$(command -v llama-server)
+        
+        local dynamic_batch_size="${JEV_BATCH_SIZE:-}"
+        if [ -z "$dynamic_batch_size" ]; then
+            local mem_bytes
+            mem_bytes=$(sysctl -n hw.memsize 2>/dev/null || echo 17179869184)
+            local mem_gb=$(( mem_bytes / 1024 / 1024 / 1024 ))
+            
+            # Base batch size on RAM
+            if [ "$mem_gb" -ge 64 ]; then
+                dynamic_batch_size=256
+            elif [ "$mem_gb" -ge 32 ]; then
+                dynamic_batch_size=128
+            elif [ "$mem_gb" -ge 16 ]; then
+                dynamic_batch_size=64
+            else
+                dynamic_batch_size=32
+            fi
+            
+            # If running a larger model (e.g. 7B), halve the batch size
+            if [[ "$model_path" == *"7b"* || "$model_path" == *"7B"* ]]; then
+                dynamic_batch_size=$(( dynamic_batch_size / 2 ))
+            fi
+        fi
+        
         cat << PLIST_EOF > "$tmp_plist"
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -181,7 +204,7 @@ setup_launchd_plist() {
         <string>--port</string>
         <string>$port</string>
         <string>--parallel</string>
-        <string>$JEV_BATCH_SIZE</string>
+        <string>$dynamic_batch_size</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
