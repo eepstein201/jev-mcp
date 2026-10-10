@@ -83,3 +83,4 @@ dmypy.json
 .jev/
 mlx_server.log
 models/
+.reports/
