@@ -11,7 +11,7 @@ except ImportError:
     InstalledAppFlow = None
     build = None
 
-def setup_gas_workflow() -> str:
+def setup_gas_workflow(webhook_url: str = None, api_key: str = None) -> str:
     """
     Automated CLI Setup Flow for Google Apps Script.
     Prompts securely for credentials and deploys the .gs file via Google API.
@@ -20,26 +20,27 @@ def setup_gas_workflow() -> str:
         raise ImportError("Please install google-api-python-client and google-auth-oauthlib to use the automated setup.")
         
     print("Welcome to the Jev-Mail Google Apps Script Setup Wizard.")
-    webhook_url = input("Enter your Webhook URL (e.g. https://xyz.ngrok.app/api/v1/triage/email): ").strip()
+    if webhook_url is None:
+        webhook_url = input("Enter your Webhook URL (e.g. https://xyz.ngrok.app/api/v1/triage/email): ").strip()
     
-    api_key = getpass.getpass("Create a new secure password (API Key) to protect your local webhook. Type or paste it now (input will be hidden): ").strip()
+    if api_key is None:
+        api_key = getpass.getpass("Create a new secure password (API Key) to protect your local webhook. Type or paste it now (input will be hidden): ").strip()
     
     print("\nAuthenticating with Google... (A browser window will open)")
     
-    # We require a client_secrets.json in the ~/.jev-mcp directory (or assume one exists for the stub)
+    # We require a client_secrets.json in the ~/.jev-mcp directory
     secret_path = Path.home() / ".jev-mcp" / "client_secrets.json"
     if not secret_path.exists():
-        # Stub logic for testing so it doesn't crash if the file is missing in tests
-        pass
+        raise FileNotFoundError(f"Missing OAuth credentials. Please place your Google Cloud client_secrets.json at {secret_path}")
         
-    # In a real run, this would be uncommented:
-    # flow = InstalledAppFlow.from_client_secrets_file(
-    #     str(secret_path), 
-    #     scopes=["https://www.googleapis.com/auth/script.projects"]
-    # )
-    # creds = flow.run_local_server(port=0)
-    # Instead, we just use the mocked flow for testing
-    flow = InstalledAppFlow.from_client_secrets_file("dummy.json", scopes=[])
+    flow = InstalledAppFlow.from_client_secrets_file(
+        str(secret_path), 
+        scopes=[
+            "https://www.googleapis.com/auth/script.projects",
+            "https://www.googleapis.com/auth/script.external_request",
+            "https://www.googleapis.com/auth/gmail.modify"
+        ]
+    )
     creds = flow.run_local_server(port=0)
     
     service = build('script', 'v1', credentials=creds)

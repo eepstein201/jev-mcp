@@ -5,8 +5,9 @@ from jev_mcp.email_triage.gas_setup import setup_gas_workflow
 @patch("jev_mcp.email_triage.gas_setup.getpass.getpass")
 @patch("jev_mcp.email_triage.gas_setup.input")
 @patch("jev_mcp.email_triage.gas_setup.build")
+@patch("jev_mcp.email_triage.gas_setup.Path.exists", return_value=True)
 @patch("jev_mcp.email_triage.gas_setup.InstalledAppFlow")
-def test_gas_setup_prompts(mock_flow, mock_build, mock_input, mock_getpass):
+def test_gas_setup_prompts(mock_flow, mock_exists, mock_build, mock_input, mock_getpass):
     """Asserts the CLI uses getpass to securely prompt for the API key."""
     # Mock inputs
     mock_input.return_value = "https://test.ngrok.app/api/v1/triage/email"
@@ -60,8 +61,9 @@ def test_gas_setup_missing_dependencies():
 @patch("jev_mcp.email_triage.gas_setup.getpass.getpass")
 @patch("jev_mcp.email_triage.gas_setup.input")
 @patch("jev_mcp.email_triage.gas_setup.build")
+@patch("jev_mcp.email_triage.gas_setup.Path.exists", return_value=True)
 @patch("jev_mcp.email_triage.gas_setup.InstalledAppFlow")
-def test_gas_setup_fallback_prepend(mock_flow, mock_build, mock_input, mock_getpass):
+def test_gas_setup_fallback_prepend(mock_flow, mock_exists, mock_build, mock_input, mock_getpass):
     """Asserts that code correctly prepends variables if replacement fails."""
     mock_input.return_value = "https://test.ngrok.app"
     mock_getpass.return_value = "test-secret"
@@ -91,8 +93,9 @@ def test_gas_setup_fallback_prepend(mock_flow, mock_build, mock_input, mock_getp
 @patch("jev_mcp.email_triage.gas_setup.getpass.getpass")
 @patch("jev_mcp.email_triage.gas_setup.input")
 @patch("jev_mcp.email_triage.gas_setup.build")
+@patch("jev_mcp.email_triage.gas_setup.Path.exists", return_value=True)
 @patch("jev_mcp.email_triage.gas_setup.InstalledAppFlow")
-def test_gas_setup_file_not_found(mock_flow, mock_build, mock_input, mock_getpass):
+def test_gas_setup_file_not_found(mock_flow, mock_exists, mock_build, mock_input, mock_getpass):
     """Asserts that it handles FileNotFoundError when reading the template."""
     mock_input.return_value = "https://test.ngrok.app"
     mock_getpass.return_value = "test-secret"
@@ -115,8 +118,9 @@ def test_gas_setup_file_not_found(mock_flow, mock_build, mock_input, mock_getpas
     assert "test-secret" in code_content
 
 @patch("jev_mcp.email_triage.gas_setup.build")
+@patch("jev_mcp.email_triage.gas_setup.Path.exists", return_value=True)
 @patch("jev_mcp.email_triage.gas_setup.InstalledAppFlow")
-def test_gas_setup_with_args(mock_flow, mock_build):
+def test_gas_setup_with_args(mock_flow, mock_exists, mock_build):
     """Asserts that the CLI skips prompts when arguments are provided."""
     mock_flow_instance = MagicMock()
     mock_flow_instance.run_local_server.return_value = "mock_creds"
