@@ -1127,9 +1127,9 @@ def jev_agent_handoff(task_description: str, available_agents: Dict[str, str]) -
 
 @mcp.tool(
     name="train",
-    description="Instantly trains a local MLX LoRA adapter on your Apple Silicon GPU. Accepts ANY .jsonl dataset (synthetic, human-labeled, production logs, etc)."
+    description="Instantly trains a local MLX LoRA adapter on your Apple Silicon GPU. Options: fuse=True (default) merges the adapter into a single .gguf file, and if target_gguf_path is provided, replaces it (backing up the original). fuse=False keeps a standalone adapter for dynamic loading (--lora)."
 )
-def jev_train_lora(dataset_path: str, model_name: str = "mlx-community/Qwen2.5-7B-Instruct-4bit", engine: str = "mlx") -> str:
+def jev_train_lora(dataset_path: str, model_name: str = "mlx-community/Qwen2.5-7B-Instruct-4bit", engine: str = "mlx", fuse: bool = True, target_gguf_path: str = None) -> str:
     """
     Launches mlx_lm.lora fine-tuning in a detached background process
     and returns the live pid plus adapter/log locations.
@@ -1185,6 +1185,47 @@ def jev_train_lora(dataset_path: str, model_name: str = "mlx-community/Qwen2.5-7
             
             # The default approach: MLX for training, then convert to gguf via llama.cpp
             run_script_path = os.path.join(adapter_path, "run_train.sh")
+            fuse_cmd = ""
+            if fuse:
+                target_out = target_gguf_path if target_gguf_path else os.path.join(adapter_path, "fused_model.gguf")
+                backup_cmd = f"mv '{target_out}' '{target_out}.bak'" if target_gguf_path else "echo 'No existing model to backup.'"
+                
+                fuse_cmd = f"""
+echo "Training complete. Fusing adapter into base model and exporting to GGUF..."
+{sys.executable} -m mlx_lm.fuse \
+    --model {model_name} \
+    --adapter-path {adapter_path} \
+    --export-gguf \
+    --gguf-path {adapter_path}/fused.gguf
+
+if [ -f "{adapter_path}/fused.gguf" ]; then
+    if [ "{target_gguf_path}" != "None" ]; then
+        echo "Replacing current model and providing fallback backup..."
+        if [ -f "{target_out}" ]; then
+            {backup_cmd}
+            echo "Backed up original model to {target_out}.bak"
+        fi
+        mv "{adapter_path}/fused.gguf" "{target_out}"
+        echo "Successfully replaced inference model with fused GGUF!"
+    else
+        echo "Fused model saved to {adapter_path}/fused.gguf (Dynamic fallback skipped because target_gguf_path was not provided)."
+    fi
+else
+    echo "Fuse failed!"
+fi
+"""
+            else:
+                fuse_cmd = f"""
+echo "Training complete. Converting adapter to GGUF (No Fusion)..."
+if ! command -v convert-lora-to-ggml.py &> /dev/null; then
+    curl -sLO https://raw.githubusercontent.com/ggerganov/llama.cpp/master/convert-lora-to-ggml.py
+    chmod +x convert-lora-to-ggml.py
+    python3 ./convert-lora-to-ggml.py {adapter_path}
+else
+    python3 convert-lora-to-ggml.py {adapter_path}
+fi
+"""
+
             with open(run_script_path, "w") as f:
                 f.write(f'''#!/bin/bash
 set -e
@@ -1195,25 +1236,7 @@ echo "Starting MLX LoRA training..."
     --adapter-path {adapter_path} \
     --train \
     --iters 500
-
-echo "Training complete. Converting adapter to GGUF format..."
-if command -v python3 &> /dev/null; then
-    # We attempt to find convert-lora-to-ggml.py if it's in PATH or download it if necessary
-    # Assuming the user has it in their PATH or it can be fetched
-    if ! command -v convert-lora-to-ggml.py &> /dev/null; then
-        echo "convert-lora-to-ggml.py not in PATH, downloading from llama.cpp..."
-        curl -sLO https://raw.githubusercontent.com/ggerganov/llama.cpp/master/convert-lora-to-ggml.py
-        chmod +x convert-lora-to-ggml.py
-        CONVERT_SCRIPT="./convert-lora-to-ggml.py"
-    else
-        CONVERT_SCRIPT="convert-lora-to-ggml.py"
-    fi
-    
-    python3 $CONVERT_SCRIPT {adapter_path}
-    echo "Adapter converted to GGUF successfully."
-else
-    echo "python3 not found. Skipping GGUF conversion."
-fi
+{fuse_cmd}
 ''')
             os.chmod(run_script_path, 0o755)
             cmd = ["bash", run_script_path]
