@@ -113,3 +113,36 @@ def test_gas_setup_file_not_found(mock_flow, mock_build, mock_input, mock_getpas
     update_call_args = mock_service.projects().updateContent.call_args[1]
     code_content = update_call_args["body"]["files"][0]["source"]
     assert "test-secret" in code_content
+
+@patch("jev_mcp.email_triage.gas_setup.build")
+@patch("jev_mcp.email_triage.gas_setup.InstalledAppFlow")
+def test_gas_setup_with_args(mock_flow, mock_build):
+    """Asserts that the CLI skips prompts when arguments are provided."""
+    mock_flow_instance = MagicMock()
+    mock_flow_instance.run_local_server.return_value = "mock_creds"
+    mock_flow.from_client_secrets_file.return_value = mock_flow_instance
+    
+    mock_service = MagicMock()
+    mock_build.return_value = mock_service
+    mock_create = MagicMock()
+    mock_create.execute.return_value = {"scriptId": "12345"}
+    mock_service.projects().create.return_value = mock_create
+    
+    with patch("builtins.open", side_effect=FileNotFoundError):
+        setup_gas_workflow(webhook_url="https://args.ngrok.app", api_key="args-secret")
+        
+    update_call_args = mock_service.projects().updateContent.call_args[1]
+    code_content = update_call_args["body"]["files"][0]["source"]
+    assert "https://args.ngrok.app" in code_content
+    assert "args-secret" in code_content
+
+def test_gas_setup_import_error():
+    import sys
+    import importlib
+    import jev_mcp.email_triage.gas_setup
+    
+    with patch.dict(sys.modules, {"google_auth_oauthlib.flow": None}):
+        importlib.reload(jev_mcp.email_triage.gas_setup)
+        assert jev_mcp.email_triage.gas_setup.InstalledAppFlow is None
+        
+    importlib.reload(jev_mcp.email_triage.gas_setup)
