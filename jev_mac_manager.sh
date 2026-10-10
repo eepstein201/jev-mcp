@@ -192,6 +192,8 @@ setup_launchd_plist() {
             fi
         fi
         
+        local total_ctx=$(( dynamic_batch_size * 8192 ))
+        
         cat << PLIST_EOF > "$tmp_plist"
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -209,7 +211,7 @@ setup_launchd_plist() {
         <string>--parallel</string>
         <string>$dynamic_batch_size</string>
         <string>-c</string>
-        <string>8192</string>
+        <string>$total_ctx</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
