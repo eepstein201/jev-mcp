@@ -43,3 +43,7 @@ You are an AI pair programmer operating in the Jev MCP repository. The user reli
 - Commits: conventional style (`feat:`, `fix:`, `docs:`, `security:`, `test:`, optional scope) on `main`.
 - Before committing: follow AGENTS.md — green test run + coverage thresholds (95% per modified file, 85% overall) observed before `git commit`.
 - File naming: snake_case modules, `test_*.py` mirroring the source module.
+
+## LoRA Fine-Tuning 
+- The `jev_train_lora` tool supports both `mlx` and `llama.cpp` backends. 
+- The default `mlx` option leverages `mlx_lm.lora` and dynamically automates `mlx_lm.fuse` followed by an auto-restart of the active inference daemon (`llama-server`) for zero-downtime weight updates.

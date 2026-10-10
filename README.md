@@ -261,10 +261,13 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
 *   **Command:** `/jev-mcp:train`
 *   **Underlying Tool:** `train`
 *   **Natural Language Triggers:** *"Train a custom adapter on this data,"*, *"Fine-tune a local model..."*
-*   **What it does:** Instantly trains a local MLX LoRA adapter for the **Qwen 7B Smart Engine** on your Apple Silicon GPU using your optimized dataset. *(Note: You can also explicitly pass `model_name="ggml-org/Kev-0.8B-GGUF"` to fine-tune the Kev Fast Engine for your specific company routing logic!)*
+*   **What it does:** Instantly trains a local LoRA adapter on your Apple Silicon GPU using your optimized dataset. By default (`fuse=True`), Jev will automatically merge the new adapter into your base `.gguf` model, backup the original, and dynamically restart your active `llama-server` inference daemon to instantly apply the new weights without downtime!
 *   **Arguments:**
     *   `dataset_path` *(string)*: Absolute path to the `.jsonl` dataset.
-    *   `model_name` *(string, default: "Qwen/Qwen2.5-7B-Instruct-GGUF")*: The base model to fine-tune.
+    *   `model_name` *(string, default: "mlx-community/Qwen2.5-7B-Instruct-4bit")*: The base model to fine-tune.
+    *   `engine` *(string, default: "mlx")*: The training backend. Supports `"mlx"` (Apple Silicon Native) or `"llama.cpp"` (Experimental).
+    *   `fuse` *(bool, default: True)*: Automatically fuses the adapter into a single `.gguf` file.
+    *   `target_gguf_path` *(string, optional)*: Overwrites this inference model with the newly fused `.gguf` (backs up original to `.bak`) and triggers auto-restart.
 
 
 #### ⚡ Evaluate Batch

@@ -494,6 +494,9 @@ case "$COMMAND" in
         log_info "Removing virtual environment..."
         rm -rf .venv
         
+        log_info "Removing local model adapters and training artifacts (~/.jev)..."
+        rm -rf ~/.jev
+        
         # Remove Opencode Configuration
         log_info "Removing Opencode integration..."
         python3 -c '

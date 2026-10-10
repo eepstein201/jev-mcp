@@ -1,4 +1,4 @@
-.PHONY: install test lint clean format update start stop hybrid
+.PHONY: install test lint clean format update start stop hybrid train
 
 install:
 	@echo "Installing Jev MCP Environment..."
@@ -36,3 +36,8 @@ clean:
 hybrid:
 	@echo "Starting Dual-Engine Hybrid Mode (Kev 0.8B + Qwen 7B)..."
 	./jev_mac_manager.sh hybrid
+
+train:
+	@echo "Local LoRA Training is managed via the MCP tool interface."
+	@echo "To trigger training, use the '/jev-mcp:train' command in your IDE."
+	@echo "By default, this will use MLX for training and llama.cpp for auto-fusion."
