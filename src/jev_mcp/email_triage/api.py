@@ -1,4 +1,5 @@
 import json
+import threading
 from fastapi import FastAPI, Header, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional
@@ -8,6 +9,8 @@ from jev_mcp.email_triage.mcp_tool import triage_email_content
 from jev_mcp.email_triage.slack import build_escalation_message, build_hitl_message
 
 app = FastAPI()
+triage_lock = threading.Lock()
+
 
 class EmailPayload(BaseModel):
     context_id: str
@@ -21,12 +24,13 @@ def get_auth(authorization: Optional[str] = Header(None)):
 
 @app.post("/api/v1/triage/email")
 def triage_email(payload: EmailPayload, auth: dict = Depends(get_auth)):
-    result_str = triage_email_content(
-        context_id=payload.context_id,
-        subject=payload.subject,
-        sender=payload.sender,
-        body=payload.body
-    )
+    with triage_lock:
+        result_str = triage_email_content(
+            context_id=payload.context_id,
+            subject=payload.subject,
+            sender=payload.sender,
+            body=payload.body
+        )
     
     result = json.loads(result_str)
     
