@@ -1577,6 +1577,11 @@ def read_file_prompt() -> str:
     return "I want to read a file, but I only want the parts relevant to my current task. Please ask me for the file path and my objective. Then execute the `read-file` tool with filter_by_chunk=True and report back the extracted AST blocks."
 
 def main():
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] == "setup-gas":
+        from jev_mcp.email_triage.gas_setup import setup_gas_workflow
+        setup_gas_workflow()
+        return
     mcp.run(transport='stdio')
 
 if __name__ == '__main__':
