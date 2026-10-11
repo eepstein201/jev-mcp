@@ -20,7 +20,7 @@ Both engines run side by side (`make start`); requests route between them automa
 - `src/jev_mcp/provider.py` — `JevProvider` ABC + `NoulQuestion`/`ChoiceQuestion`/`ScoreQuestion` + shared `post_json`.
 - `src/jev_mcp/kev_provider.py` (fast tier) / `daemon_provider.py` (smart tier, DCPMI math) / `routing_provider.py` (0.85 confidence gate).
 - `src/jev_mcp/linter.py`, `cli_linter.py`, `security.py`, `chunker.py`, `scanner.py`.
-- `src/jev_mcp/router_config.py` (router config load/save), `ultrafast_adapter.py` (`local_choose` for the `jev-ultrafast` submodule), `browser_agent.py` (runs that agent on the local engines for `run-browser-agent`), `email_triage/` (FastAPI webhook `api.py`, `auth.py`, `core.py` routing rules, `mcp_tool.py`, `slack.py`, `gas_setup.py`; labels persist in `~/.jev-mcp/triage_configs.json`).
+- `src/jev_mcp/router_config.py` (router config load/save), `ultrafast_adapter.py` (`local_choose` for the `jev-ultrafast` submodule), `browser_agent.py` (runs that agent on the local engines for `run-browser-agent`), `lora_training.py` (fuse/convert/swap/restore steps for `train`), `email_triage/` (FastAPI webhook `api.py`, `auth.py`, `core.py` routing rules, `mcp_tool.py`, `slack.py`, `gas_setup.py`; labels persist in `~/.jev-mcp/triage_configs.json`).
 - `docs/CODEMAPS/` — token-lean architecture maps (architecture, backend, data, dependencies).
 - `tests/` — pytest suite; `conftest.py` stubs the MCP SDK before server import.
 - Global runtime config lives OUTSIDE the repo: `~/.jev/router_config.json` (buckets, rules, fitted temperature); logs go to `~/.jev/jev.log`.
@@ -46,4 +46,4 @@ Both engines run side by side (`make start`); requests route between them automa
 
 ## LoRA Fine-Tuning 
 - The `jev_train_lora` tool supports both `mlx` and `llama.cpp` backends. 
-- The default `mlx` option leverages `mlx_lm.lora` and dynamically automates `mlx_lm.fuse` followed by an auto-restart of the active inference daemon (`llama-server`) for zero-downtime weight updates.
+- The default `mlx` option runs `mlx_lm.lora`, then (with `fuse=True`) the steps in `lora_training.py`: `mlx_lm fuse --dequantize` → llama.cpp `convert_hf_to_gguf.py` from `JEV_LLAMA_CPP_SRC` (default `~/.jev/llama.cpp-src`) → `llama-quantize` Q4_K_M. With `target_gguf_path` it keeps the original as `.bak` and restarts only the launchd agent serving that file (`launchctl kickstart -k`); `action="restore"` puts the `.bak` back.

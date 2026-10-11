@@ -23,15 +23,15 @@ Found during the 2026-10-10 documentation and benchmark review. Each item lists 
 
 ## P1: correctness and safety of training and daemon control
 
-- [ ] **`train` fuse step cannot work for the default model.** (from source)
+- [x] **`train` fuse step cannot work for the default model.** *(fixed: `lora_training.build_fuse_script` runs fuse `--dequantize` → `convert_hf_to_gguf.py` → `llama-quantize`; run end to end on Qwen 7B on 2026-10-10. The converter is a one-time manual setup, see README)*
   It runs `mlx_lm.fuse --export-gguf`, which `mlx_lm` 0.31.3 limits to unquantized `llama`/`mistral`/`mixtral`. The default base is a quantized `qwen2` model.
   - Fix: `mlx_lm.fuse --dequantize --save-path <dir>`, then llama.cpp `convert_hf_to_gguf.py`, then `llama-quantize`. The converter is not shipped by Homebrew's `llama.cpp`; pin it to the installed build's commit.
 
-- [ ] **`train` restart logic targets the wrong process.** (from source)
+- [x] **`train` restart logic targets the wrong process.** *(fixed: restarts only the launchd agent whose plist serves the replaced file, with `launchctl kickstart -k`)*
   It kills the first `llama-server` PID it finds and relaunches that command with `nohup`. With two daemons this may be Kev rather than the model being replaced, and the launchd agents use `KeepAlive`, so launchd also respawns it.
   - Fix: restart the specific launchd agent (`launchctl kickstart -k gui/$UID/<label>`); never `nohup` a second copy.
 
-- [ ] **`train` has a backup but no restore.**
+- [x] **`train` has a backup but no restore.** *(fixed: `action="restore"`; the first `.bak` is never overwritten)*
   `mv <target> <target>.bak` exists (`server.py:1191`), but nothing restores it.
   - Fix: add a restore action (move `.bak` back, restart the agent) and document it.
 
@@ -47,7 +47,7 @@ Found during the 2026-10-10 documentation and benchmark review. Each item lists 
   `jev_mac_manager.sh:312-313` runs `pkill -9 -f llama-server` after booting out one plist, so stopping one engine stops both.
   - Fix: stop only the targeted agent.
 
-- [ ] **Legacy launchd agent is still loaded and failing.** *(script fixed: `hybrid` now deletes the legacy plist. Still to do on this machine: its plist runs `kev.serve --port 8080`, competes with the fast engine, and has crash-looped 855 times; boot it out and delete `~/Library/LaunchAgents/com.jev.mlx_server.plist`.)*
+- [x] **Legacy launchd agent is still loaded and failing.** *(script fixed: `hybrid` now deletes the legacy plist; removed on this machine on 2026-10-10. Was still to do: its plist runs `kev.serve --port 8080`, competes with the fast engine, and has crash-looped 855 times; boot it out and delete `~/Library/LaunchAgents/com.jev.mlx_server.plist`.)*
   `com.jev.mlx_server` shows a changing PID with exit status 3 alongside the `_fast` and `_smart` agents.
   - Fix: boot it out and remove its plist during `hybrid`/`install`.
 

@@ -41,6 +41,6 @@ make clean     # uninstall: unload daemons, remove plists, the venv and ALL of ~
 
 ## Rollback
 
-- **LoRA fusion:** `train` with `target_gguf_path` replaces that model and backs up the original; restore the backup and run `make start`.
+- **LoRA fusion:** `train` with `target_gguf_path` replaces that model, keeps the original as `<target>.bak`, and restarts only the agent serving it. Roll back with `train` `action="restore"` and the same `target_gguf_path`.
 - **Router config:** `~/.jev/router_config.json` is plain JSON; restore a copy or delete it to return to defaults.
 - **Webhook key:** the API key is written into the deployed Apps Script by `jev-mcp setup-gas`. To rotate, change `JEV_MCP_API_KEY` and re-run `setup-gas`.

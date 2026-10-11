@@ -648,7 +648,7 @@ def test_jev_train_lora_starts_training(mock_popen, tmp_path, monkeypatch):
     ds = tmp_path / "mydata.jsonl"
     ds.write_text('{"messages": []}\n')
 
-    res = json.loads(server.jev_train_lora(str(ds)))
+    res = json.loads(server.jev_train_lora(str(ds), fuse=False))
 
     assert res["status"] == "TRAINING_STARTED", res.get("message", "unknown error")
     assert res["pid"] == 4242
@@ -672,7 +672,7 @@ def test_jev_train_lora_passes_the_requested_iteration_count(mock_popen, tmp_pat
     ds = tmp_path / "mydata.jsonl"
     ds.write_text('{"messages": []}\n')
 
-    res = json.loads(server.jev_train_lora(str(ds), iters=120))
+    res = json.loads(server.jev_train_lora(str(ds), iters=120, fuse=False))
 
     assert res["status"] == "TRAINING_STARTED", res.get("message", "unknown error")
     assert "--iters 120" in _read_train_script(mock_popen)
@@ -719,7 +719,7 @@ def test_jev_train_lora_returns_json_error_on_failure(mock_popen, tmp_path):
     ds.write_text("{}\n")
     mock_popen.side_effect = OSError("spawn failed")
 
-    res = json.loads(server.jev_train_lora(str(ds)))  # must not raise
+    res = json.loads(server.jev_train_lora(str(ds), fuse=False))  # must not raise
     assert res["status"] == "ERROR"
     assert "spawn failed" in res["message"]
 
