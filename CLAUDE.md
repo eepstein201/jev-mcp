@@ -16,7 +16,9 @@ Both engines run side by side (`make start`); requests route between them automa
 
 ## Project Structure
 
-- `src/jev_mcp/server.py` — all MCP tools & prompts, QFE compression, linter/autofixer gate, router config persistence.
+- `src/jev_mcp/app.py` — shared server state (`mcp`, `provider`, `linter`, `logger`, `_chat_completion*`, `call_fast_autofixer`, notices, model sync); tool modules reference `app.X` at call time and must never import `jev_mcp.server`.
+- `src/jev_mcp/server.py` — entry point (`python -m jev_mcp.server`): `@mcp.prompt` definitions, `main()`, and re-exports of every tool name (`tools/` registers on `app.mcp` at import).
+- `src/jev_mcp/tools/` — tool families: `evaluate` (evaluate/explain-decision/generate-data), `calibrate` (calibrate/temperature), `router` (manage-router/model-router/handoff), `training` (train), `files` (read-file/compact/scan-repo), `prompts` (optimize-prompt), `browser`, `triage`.
 - `src/jev_mcp/provider.py` — `JevProvider` ABC + `NoulQuestion`/`ChoiceQuestion`/`ScoreQuestion` + shared `post_json`.
 - `src/jev_mcp/kev_provider.py` (fast tier) / `daemon_provider.py` (smart tier, DCPMI math) / `routing_provider.py` (0.85 confidence gate).
 - `src/jev_mcp/linter.py`, `cli_linter.py`, `security.py`, `chunker.py`, `scanner.py`.

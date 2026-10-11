@@ -1,37 +1,37 @@
-<!-- Generated: 2026-10-10 | Files scanned: server.py 1772 lines + 18 modules | Token estimate: ~900 | As of: 8479025 -->
+<!-- Generated: 2026-10-11 | server.py split into app.py + tools/ (see git history) | Token estimate: ~900 -->
 # Backend (MCP tools)
 
-## Tools (server.py) → impl
-evaluate           → jev_evaluate_batch L159   (state + QuestionType[] → RoutingProvider)
-optimize-prompt    → jev_optimize_prompt L406 (dataset → prompt_selection.py picks by accuracy; single state → by confidence)
-calibrate          → jev_calibrate_threshold L526 (golden set, Platt; 5-fold StratifiedKFold when each class ≥ PLATT_CV_FOLDS=5)
-explain-decision   → jev_explain_decision L735
-generate-data      → jev_generate_synthetic_dataset L801
-manage-router      → jev_manage_router_config L952 (~/.jev/router_config.json; apply_updates / set_auto_update via model_catalog.py; main() starts start_model_sync)
-model-router       → jev_determine_best_model L991
-handoff            → jev_agent_handoff L1121
-train              → jev_train_lora L1154 (engine mlx|llama.cpp, fuse, target_gguf_path, action train|restore; steps in lora_training.py; ensure_converter syncs ~/.jev/llama.cpp-src to the llama-server commit)
-temperature        → jev_manage_temperature L1315 (view|set|reset)
-read-file          → jev_read_file L1350 (path-secured, chunked)
-compact            → jev_compact_context L1461 (confidence_threshold default 0.3)
-scan-repo          → jev_scan_repo L1555
-run-browser-agent  → jev_run_browser_agent → browser_agent.run_browser_agent (jev-ultrafast Agent loop; choose → ultrafast_adapter.local_choose, field text → smart daemon; http/https only, max_steps)
-triage_email_content / configure_triage_labels / setup_gas_workflow → email_triage/* L1738-1772
+## Layout
+server.py (~175 lines) — entry point: `python -m jev_mcp.server` → main() (`setup-gas` / `serve-webhook` / stdio), `@mcp.prompt` definitions, re-exports.
+app.py — shared state: `mcp` (MCPServer), `provider` (RoutingProvider), `linter`, `logger`, `_clean_json`/`_safe_truncate`/`_chat_completion(_json)`, `call_fast_autofixer`, `get_temp_notice`/`get_model_notice`, `start_model_sync`/`_sync_models`. Tool modules reference `app.X` AT CALL TIME (never import `jev_mcp.server`).
 
-## Prompts (server.py L1054-1114, 1297-1308, 1672-1683)
+## Tools (tools/) → impl
+evaluate           → tools/evaluate.py jev_evaluate_batch (state + QuestionType[] → RoutingProvider)
+explain-decision   → tools/evaluate.py jev_explain_decision
+generate-data      → tools/evaluate.py jev_generate_synthetic_dataset
+optimize-prompt    → tools/prompts.py jev_optimize_prompt (dataset → prompt_selection.py picks by accuracy; single state → by confidence)
+calibrate          → tools/calibrate.py jev_calibrate_threshold (golden set, Platt; 5-fold StratifiedKFold when each class ≥ PLATT_CV_FOLDS=5)
+temperature        → tools/calibrate.py jev_manage_temperature (view|set|reset)
+manage-router      → tools/router.py jev_manage_router_config (~/.jev/router_config.json; apply_updates / set_auto_update via model_catalog.py; main() starts start_model_sync)
+model-router       → tools/router.py jev_determine_best_model
+handoff            → tools/router.py jev_agent_handoff
+train              → tools/training.py jev_train_lora (engine mlx|llama.cpp, fuse, target_gguf_path, action train|restore; steps in lora_training.py; ensure_converter syncs ~/.jev/llama.cpp-src to the llama-server commit)
+read-file          → tools/files.py jev_read_file (path-secured, chunked)
+compact            → tools/files.py jev_compact_context (confidence_threshold default 0.3)
+scan-repo          → tools/files.py jev_scan_repo
+run-browser-agent  → tools/browser.py → browser_agent.run_browser_agent (jev-ultrafast Agent loop; choose → ultrafast_adapter.local_choose, field text → smart daemon; http/https only, max_steps)
+triage_email_content / configure_triage_labels / setup_gas_workflow → tools/triage.py → email_triage/*
+
+## Prompts (server.py)
 calibrate compact evaluate explain-decision generate-data handoff model-router manage-router
 optimize-prompt temperature train scan-repo read-file
-
-## Helpers
-_clean_json L37 · _safe_truncate L66 (24k chars) · _chat_completion(_json) L74/109
-call_fast_autofixer L124 · get_temp_notice L932 · main L1686
 
 ## Email triage (email_triage/)
 `jev-mcp serve-webhook` (server.main → uvicorn, 127.0.0.1:8090 by default; refuses to start with no credential)
 POST /api/v1/triage/email → api.triage_email (Depends get_auth ← auth.verify_auth_token: static key, else auth.jwt_decode via JWKS or HS256 secret)
   → mcp_tool.triage_email_content → evaluate_email_with_mlx → core.build_triage_questions
       body > 2000 chars (COMPACTION_MIN_BODY_CHARS) → server.jev_compact_context(goal=labels, conf COMPACTION_CONFIDENCE=0.3) → body = compressed_context
-      (lazy import of server inside fn; any failure/empty result silently keeps original body)
+      (lazy import of tools.files inside fn; any failure/empty result silently keeps original body)
   → core.decide_routing → slack.build_escalation_message / build_hitl_message
 gas_setup.setup_gas_workflow → examples/gas_triage.js (Google Apps Script)
 
@@ -39,4 +39,4 @@ gas_setup.setup_gas_workflow → examples/gas_triage.js (Google Apps Script)
 MAX_STATE_TOKENS=3500 · MIN_OPTIONS=2 · MAX_OPTIONS=10 · MAX_OPTION_LENGTH_RATIO=3.5
 
 ## Observed smells (for review, not fixed here)
-- server.py is 1772 lines (>800 guideline)
+- (resolved) server.py was 1772 lines; now app.py + tools/ families + a ~175-line entry point

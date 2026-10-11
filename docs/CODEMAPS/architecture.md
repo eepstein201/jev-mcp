@@ -9,7 +9,7 @@ Entry: `jev-mcp = jev_mcp.server:main` (stdio; `setup-gas` subcommand) · `jev-l
 MCP client (Claude Code / Claude Desktop / Antigravity CLI / OpenCode)
    │ JSON-RPC over stdio  (NEVER print() — use logging)
    ▼
-server.py  MCPServer  ── tools + prompts
+server.py (entry: prompts + main)  ──  app.py MCPServer + tools/* registrations
    │  linter.py (DecisionPreflightLinter gate) → call_fast_autofixer → QFE compress (> router max_tokens 8192 = min(kev 65536, daemon 8192))
    ▼
 routing_provider.RoutingProvider  (0.85 confidence gate)

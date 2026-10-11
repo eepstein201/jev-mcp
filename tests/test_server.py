@@ -5,7 +5,7 @@ import urllib.request
 import subprocess
 from unittest.mock import patch, MagicMock
 
-from jev_mcp import server
+from jev_mcp import app, server
 from jev_mcp.provider import NoulQuestion, ChoiceQuestion, ScoreQuestion
 from jev_mcp.linter import LintFinding, PreflightReport
 
@@ -151,7 +151,7 @@ def test_jev_evaluate_batch_qfe_compression_exception(mock_check_limit, mock_url
     assert "CRITICAL SYSTEM ERROR" in result_str
     assert "Network Error" in result_str
 
-@patch("jev_mcp.server.call_fast_autofixer")
+@patch("jev_mcp.app.call_fast_autofixer")
 @patch.object(server.provider, "evaluate_batch")
 @patch.object(server.provider, "check_token_limit")
 @patch.object(server.linter, "lint")
@@ -599,7 +599,7 @@ def test_jev_calibrate_threshold_platt_missing_sklearn(mock_eval_dataset):
         
         assert "scikit-learn" in res["markdown_report"]
 
-@patch("jev_mcp.server.RoutingProvider")
+@patch("jev_mcp.app.RoutingProvider")
 def test_jev_determine_best_model(mock_provider_class):
     mock_provider = MagicMock()
     mock_provider_class.return_value = mock_provider
@@ -617,7 +617,7 @@ def test_jev_determine_best_model(mock_provider_class):
     # Complexity 3 routes to bucket b3 of the default config (no config file exists in tests).
     assert res["recommended_model"] == "claude-opus-5-5"
 
-@patch("jev_mcp.server.RoutingProvider")
+@patch("jev_mcp.app.RoutingProvider")
 def test_jev_agent_handoff(mock_provider_class):
     mock_provider = MagicMock()
     mock_provider_class.return_value = mock_provider
@@ -724,13 +724,13 @@ def test_jev_train_lora_returns_json_error_on_failure(mock_popen, tmp_path):
     assert res["status"] == "ERROR"
     assert "spawn failed" in res["message"]
 
-@patch("jev_mcp.server.post_json")
+@patch("jev_mcp.app.post_json")
 def test_chat_completion_rejects_non_numeric_port(mock_post, monkeypatch):
     monkeypatch.setenv("JEV_SMART_PORT", "8081@evil.com")
     with pytest.raises(ValueError):
         server._chat_completion("user-msg")
 
-@patch("jev_mcp.server.post_json")
+@patch("jev_mcp.app.post_json")
 def test_chat_completion_sends_system_and_json_format(mock_post):
     mock_post.return_value = {"choices": [{"message": {"content": "hello"}}]}
     out = server._chat_completion(
@@ -749,7 +749,7 @@ def test_chat_completion_sends_system_and_json_format(mock_post):
     ]
     assert payload["response_format"] == {"type": "json_object"}
 
-@patch("jev_mcp.server.post_json")
+@patch("jev_mcp.app.post_json")
 def test_chat_completion_without_system_or_format(mock_post, monkeypatch):
     monkeypatch.setenv("JEV_FAST_PORT", "9999")
     mock_post.return_value = {"choices": [{"message": {"content": "raw text"}}]}
@@ -767,8 +767,8 @@ def test_chat_completion_without_system_or_format(mock_post, monkeypatch):
     assert payload["messages"] == [{"role": "user", "content": "user-msg"}]
     assert "response_format" not in payload
 
-@patch("jev_mcp.server.load_router_config")
-@patch("jev_mcp.server.save_router_config")
+@patch("jev_mcp.app.load_router_config")
+@patch("jev_mcp.app.save_router_config")
 def test_jev_manage_router_config(mock_save, mock_load):
     mock_load.return_value = {"custom_rules": [], "buckets": {}}
     
@@ -781,8 +781,8 @@ def test_jev_manage_router_config(mock_save, mock_load):
     server.jev_manage_router_config("set_bucket", bucket_id="b1", model_name="gpt-4")
     mock_save.assert_called_once()
 
-@patch("jev_mcp.server.load_router_config")
-@patch("jev_mcp.server.save_router_config")
+@patch("jev_mcp.app.load_router_config")
+@patch("jev_mcp.app.save_router_config")
 def test_jev_manage_temperature(mock_save, mock_load):
     mock_load.return_value = {"fitted_temperature": 1.5, "temperature_updated_at": "Today"}
     
@@ -802,11 +802,11 @@ def test_jev_manage_temperature(mock_save, mock_load):
     saved_cfg_reset = mock_save.call_args[0][0]
     assert saved_cfg_reset["fitted_temperature"] == 1.0
 
-@patch("jev_mcp.server.load_router_config")
-@patch("jev_mcp.server.RoutingProvider")
+@patch("jev_mcp.app.load_router_config")
+@patch("jev_mcp.app.RoutingProvider")
 def test_system_notice_injection(mock_provider_class, mock_load):
     # Reset global state for test
-    server._has_notified_temp = False
+    app._has_notified_temp = False
     
     # Mock config to have custom temp
     mock_load.return_value = {"fitted_temperature": 1.34, "temperature_updated_at": "Just now", "rules": [], "buckets": {}}
@@ -921,20 +921,20 @@ def test_tool_triage_email_content():
 
 def test_tool_configure_triage_labels(monkeypatch):
     import jev_mcp.server
-    monkeypatch.setattr(jev_mcp.server, "configure_triage_labels", lambda c, l: {"status": "ok"})
+    monkeypatch.setattr(jev_mcp.tools.triage, "configure_triage_labels", lambda c, l: {"status": "ok"})
     res_str = jev_mcp.server.tool_configure_triage_labels("ctx", ["label1"])
     import json
     assert json.loads(res_str) == {"status": "ok"}
 
 def test_tool_setup_gas_workflow(monkeypatch):
     import jev_mcp.server
-    monkeypatch.setattr(jev_mcp.server, "setup_gas_workflow", lambda webhook_url, api_key: "setup done")
+    monkeypatch.setattr(jev_mcp.tools.triage, "setup_gas_workflow", lambda webhook_url, api_key: "setup done")
     res = jev_mcp.server.tool_setup_gas_workflow("url", "key")
     assert res == "setup done"
 
 def test_tool_triage_email_content(monkeypatch):
     import jev_mcp.server
-    monkeypatch.setattr(jev_mcp.server, "triage_email_content", lambda c, s, snd, b: "triaged")
+    monkeypatch.setattr(jev_mcp.tools.triage, "triage_email_content", lambda c, s, snd, b: "triaged")
     res = jev_mcp.server.tool_triage_email_content("ctx", "sub", "snd", "body")
     assert res == "triaged"
 

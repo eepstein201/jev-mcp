@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 import pytest
 
-from jev_mcp import prompt_selection, server
+from jev_mcp import app, prompt_selection, server
 from jev_mcp.provider import ChoiceQuestion, NoulQuestion
 
 
@@ -78,7 +78,7 @@ def test_the_original_is_kept_when_no_phrasing_is_strictly_better():
 
 
 def _generator_returns(variations):
-    return patch.object(server, "_chat_completion_json", return_value={"variations": variations})
+    return patch.object(app, "_chat_completion_json", return_value={"variations": variations})
 
 
 def _scores(table):
