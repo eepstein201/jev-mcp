@@ -5,8 +5,9 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 # Bodies longer than this are compacted before evaluation, keeping chunks scored at or above the confidence.
+# 0.3 comes from measurement: the fast engine scores relevant chunks roughly 0.3-0.9, irrelevant ones below 0.35.
 COMPACTION_MIN_BODY_CHARS = 2000
-COMPACTION_CONFIDENCE = 0.6
+COMPACTION_CONFIDENCE = 0.3
 
 def get_config_path() -> Path:
     config_dir = Path.home() / ".jev-mcp"

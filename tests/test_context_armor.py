@@ -57,13 +57,10 @@ def test_scan_repo_truncation(mock_provider_class):
                     assert parsed["status"] == "SUCCESS"
                     assert len(parsed["content"]) <= 24100
 
-@patch("jev_mcp.routing_provider.RoutingProvider")
-def test_compact_truncation(mock_provider_class):
-    mock_provider = MagicMock()
-    mock_provider_class.return_value = mock_provider
-    mock_provider.evaluate_batch.return_value = {"chunk_0": {"noul": 0.99}}
-    
-    res = jev_compact_context({"text": "a" * 25000}, "test")
+def test_compact_truncation(kev_http):
+    with kev_http(0.99) as mock_urlopen:
+        res = jev_compact_context({"text": "a" * 25000}, "test", confidence_threshold=0.85)
     parsed = json.loads(res)
+    assert mock_urlopen.called
     assert "TRUNCATED" in parsed["status"]
     assert len(parsed["compacted_state"]) <= 24100

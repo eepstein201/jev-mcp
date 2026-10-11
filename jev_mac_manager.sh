@@ -302,15 +302,26 @@ PLIST_EOF
     log_success "Generated $target_plist"
 }
 
+# Prints the --port value from a launchd plist (nothing if the file or flag is absent).
+plist_port() {
+    local plist=$1
+    [ -f "$plist" ] || return 0
+    awk '/<string>--port<\/string>/ { getline; gsub(/.*<string>|<\/string>.*/, ""); print; exit }' "$plist"
+}
+
 manage_daemon() {
     local action=$1
     local target_plist=${2:-$PLIST_PATH}
     if [[ "$action" == "stop" || "$action" == "restart" ]]; then
         log_info "Unloading launchd daemon..."
+        # Read the port before unloading; only that agent's engine is force-killed.
+        local port
+        port=$(plist_port "$target_plist")
         launchctl bootout gui/$(id -u) "$target_plist" 2>/dev/null || launchctl unload "$target_plist" 2>/dev/null || true
-        # Force kill to handle models in flight
-        pkill -9 -f "mlx_lm.server" 2>/dev/null || true
-        pkill -9 -f "llama-server" 2>/dev/null || true
+        if [ -n "$port" ]; then
+            # Force kill to handle models in flight
+            pkill -9 -f "(llama-server|mlx_lm.server|kev.serve).*--port $port" 2>/dev/null || true
+        fi
         sleep 1
     fi
     if [[ "$action" == "start" || "$action" == "restart" ]]; then
@@ -398,6 +409,9 @@ case "$COMMAND" in
 
         log_info "Configuring dual-daemon setup (0.5B on $JEV_FAST_PORT, 7B on $JEV_SMART_PORT)..."
         manage_daemon stop "$PLIST_PATH"
+        # Hybrid mode never uses the single-daemon agent; leaving its plist behind
+        # makes launchd reload it at login, where it fights the fast engine for its port.
+        rm -f "$PLIST_PATH"
         manage_daemon stop "$PLIST_FAST_PATH"
         manage_daemon stop "$PLIST_SMART_PATH"
         setup_launchd_plist "$MODEL_05B" "$JEV_FAST_PORT" "$PLIST_FAST_PATH" "$LOG_FILE_FAST"
@@ -490,8 +504,10 @@ case "$COMMAND" in
             fi
         fi
         
-        manage_daemon stop
-        
+        manage_daemon stop "$PLIST_PATH"
+        manage_daemon stop "$PLIST_FAST_PATH"
+        manage_daemon stop "$PLIST_SMART_PATH"
+
         log_info "Removing launchd plist..."
         rm -f "$PLIST_PATH"
         rm -f "$PLIST_FAST_PATH"
