@@ -20,7 +20,7 @@ Both engines run side by side (`make start`); requests route between them automa
 - `src/jev_mcp/provider.py` — `JevProvider` ABC + `NoulQuestion`/`ChoiceQuestion`/`ScoreQuestion` + shared `post_json`.
 - `src/jev_mcp/kev_provider.py` (fast tier) / `daemon_provider.py` (smart tier, DCPMI math) / `routing_provider.py` (0.85 confidence gate).
 - `src/jev_mcp/linter.py`, `cli_linter.py`, `security.py`, `chunker.py`, `scanner.py`.
-- `src/jev_mcp/router_config.py` (router config load/save), `ultrafast_adapter.py` (`local_choose` for the `jev-ultrafast` submodule), `browser_agent.py` (runs that agent on the local engines for `run-browser-agent`), `lora_training.py` (fuse/convert/swap/restore steps for `train`), `email_triage/` (FastAPI webhook `api.py`, `auth.py`, `core.py` routing rules, `mcp_tool.py`, `slack.py`, `gas_setup.py`; labels persist in `~/.jev-mcp/triage_configs.json`).
+- `src/jev_mcp/router_config.py` (router config load/save), `ultrafast_adapter.py` (`local_choose` for the `jev-ultrafast` submodule), `browser_agent.py` (runs that agent on the local engines for `run-browser-agent`), `lora_training.py` (fuse/convert/swap/restore steps for `train`), `prompt_selection.py` (accuracy ranking for `optimize-prompt`), `email_triage/` (FastAPI webhook `api.py`, `auth.py`, `core.py` routing rules, `mcp_tool.py`, `slack.py`, `gas_setup.py`; labels persist in `~/.jev-mcp/triage_configs.json`).
 - `docs/CODEMAPS/` — token-lean architecture maps (architecture, backend, data, dependencies).
 - `tests/` — pytest suite; `conftest.py` stubs the MCP SDK before server import.
 - Global runtime config lives OUTSIDE the repo: `~/.jev/router_config.json` (buckets, rules, fitted temperature); logs go to `~/.jev/jev.log`.

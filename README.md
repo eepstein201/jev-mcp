@@ -338,11 +338,15 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
 *   **Command:** `/jev-mcp:optimize-prompt`
 *   **Underlying Tool:** `optimize-prompt`
 *   **Natural Language Triggers:** *"Optimize this prompt,"*, *"Help me fix my false positives..."*
-*   **What it does:** If your prompt is failing calibration (getting False Positives), this tool generates 5 recursive variations of your prompt. It runs the logit math against all 5 and mathematically determines the absolute best phrasing to use in production.
+*   **What it does:** Generates 5 variations of your prompt and scores them alongside the original.
+    *   **With `dataset` (recommended):** every phrasing is scored on every labelled row and the one with the highest accuracy wins. Ties go to the phrasing that gave the correct answers more probability, and the original is kept unless a variation is strictly better. The result lists every phrasing's accuracy.
+    *   **With only `state`:** there are no labels, so it can only return the most *confident* phrasing. Confidence is not accuracy, and the result says so (`"selected_by": "confidence"`).
+*   **Measured on 2026-10-10 (password question, 8 labelled rows from the golden set):** the single-state mode picked a phrasing that scored 62.5% on the labelled rows, the worst of the six. The dataset mode picked one scoring 100%, against 87.5% for the original. Eight rows is a small sample; confirm a new phrasing on rows it was not selected on.
 *   **Arguments:**
-    *   `state` *(object)*: Sample context state.
     *   `question` *(object)*: The draft question schema to optimize.
-*   **Example:** Pass a sample context `state` and your underperforming `question`. It will return a text report with the new mathematically optimal prompt.
+    *   `dataset` *(array, optional)*: Labelled rows, each `{"state": ..., "expected": ...}`. `expected` is `true`/`false` for a noul question, the option for a choice question, or the label for a score question.
+    *   `state` *(object, optional)*: One sample context state, used only when no `dataset` is given.
+*   **Example:** Pass your underperforming `question` and a `dataset` of labelled rows. It returns a JSON report with the best phrasing and each phrasing's accuracy. The text example below is from the single-state mode.
 
     **Example Output:**
     ```text

@@ -10,7 +10,7 @@ except ImportError:
 import json
 import logging
 import subprocess
-from typing import Any, Dict, List, Optional, Literal
+from typing import Annotated, Any, Dict, List, Optional, Literal
 from pydantic import Field
 
 # Must immediately hijack stdout to prevent ANY random library (like torch)
@@ -401,14 +401,25 @@ def jev_evaluate_batch(
 
 @mcp.tool(
     name="optimize-prompt",
-    description="Automated Prompt Engineer: Generates semantic variations of a prompt, evaluates them all via Shared-State, and returns the most mathematically confident phrasing.",
+    description="Automated Prompt Engineer: Generates semantic variations of a prompt and scores them. With `dataset` (rows of state + expected) it returns the phrasing with the highest measured accuracy. With only a single `state` it can only return the most confident phrasing, which is not the same as the most accurate.",
 )
 def jev_optimize_prompt(
-    state: Dict[str, Any] = Field(description="Sample context state."),
-    question: QuestionType = Field(description="The draft question to optimize."),
+    question: Annotated[QuestionType, Field(description="The draft question to optimize.")],
+    state: Annotated[Optional[Dict[str, Any]], Field(description="One sample context state. Used only when no dataset is given; selection is then by confidence.")] = None,
+    dataset: Annotated[Optional[List[Dict[str, Any]]], Field(description="Labelled rows, each {\"state\": ..., \"expected\": ...}: true/false for a noul question, the option for a choice question, the label for a score question. Selection is then by accuracy.")] = None,
 ) -> str:
     import json
+    from jev_mcp import prompt_selection
     from jev_mcp.security import sanitize_payload
+
+    if dataset is not None:
+        rows_ok = isinstance(dataset, list) and bool(dataset) and all(
+            isinstance(row, dict) and "state" in row and "expected" in row for row in dataset
+        )
+        if not rows_ok:
+            return json.dumps({"status": "ERROR", "message": "dataset must be a non-empty list of rows, each with \"state\" and \"expected\"."})
+    elif state is None:
+        return json.dumps({"status": "ERROR", "message": "Provide a dataset of labelled rows (preferred) or a single state."})
 
     logger.info("Starting Prompt Optimization...")
     q_dict: Dict[str, Any] = {}
@@ -474,6 +485,41 @@ def jev_optimize_prompt(
                 ScoreQuestion(key=key, prompt=var_prompt, labels=q_dict["labels"])
             )
 
+    if dataset is not None:
+        try:
+            row_results = [provider.evaluate_batch(row["state"], test_questions) for row in dataset]
+        except Exception as e:
+            return f"Optimizer Evaluation Failed: {str(e)}"
+        per_variation = [[res.get(q.key, {}) for res in row_results] for q in test_questions]
+        stats = prompt_selection.score_variations(per_variation, [row["expected"] for row in dataset])
+        best = prompt_selection.best_variation(stats)
+        gain = (stats[best]["accuracy"] - stats[0]["accuracy"]) * 100
+        return json.dumps(
+            {
+                "selected_by": "accuracy",
+                "rows": len(dataset),
+                "original_prompt": q_dict["prompt"],
+                "original_accuracy": f"{stats[0]['accuracy'] * 100:.2f}%",
+                "optimized_prompt": variations[best],
+                "optimized_accuracy": f"{stats[best]['accuracy'] * 100:.2f}%",
+                "improvement_points": f"{gain:.2f}",
+                "recommendation": (
+                    "Keep the original: no variation scored better on this dataset."
+                    if best == 0
+                    else f"Adopt the optimized prompt: it scored better on these {len(dataset)} rows. Confirm on rows it was not selected on."
+                ),
+                "variations": [
+                    {
+                        "prompt": variations[i],
+                        "accuracy": f"{s['accuracy'] * 100:.2f}%",
+                        "mean_correct_probability": round(s["mean_correct_probability"], 4),
+                    }
+                    for i, s in enumerate(stats)
+                ],
+            },
+            indent=2,
+        )
+
     try:
         results = provider.evaluate_batch(state, test_questions)
     except Exception as e:
@@ -513,7 +559,8 @@ def jev_optimize_prompt(
             "optimized_prompt": best_var["optimized_prompt"],
             "optimized_confidence": best_var["optimized_confidence"],
             "improvement_points": f"{(best_conf - original_conf) * 100:.2f}",
-            "recommendation": "Adopt the optimized prompt for highest mathematical stability.",
+            "selected_by": "confidence",
+            "recommendation": "Selected by confidence on one state, which is not accuracy: a phrasing can be more confident and wrong. Pass `dataset` (rows of state + expected) to select by measured accuracy.",
             "all_variations_tested": len(variations),
         },
         indent=2,

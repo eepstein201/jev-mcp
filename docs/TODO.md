@@ -80,7 +80,7 @@ Found during the 2026-10-10 documentation and benchmark review. Each item lists 
 
 - [x] **Tried: a dynamic `optimize-prompt` step inside `compact`.** *(result: not adopted)* On the same 24 pairs, `optimize-prompt` as shipped did not help (margin between lowest relevant and highest irrelevant score -0.09 vs -0.03 baseline) and added about 7 s per call. Choosing the rephrasing with the widest score spread did help (margin +0.08, AUC 1.000), but a static wording change, "directly relevant" instead of "strictly relevant", gave nearly the same result (margin +0.06, AUC 1.000) at no cost, so that was adopted instead.
 
-- [ ] **`optimize-prompt` selects the most confident phrasing, not the most accurate.**
+- [x] **`optimize-prompt` selects the most confident phrasing, not the most accurate.** *(fixed: with a labelled `dataset` it selects by accuracy (`prompt_selection.py`); the single-state mode still selects by confidence but now says so. Live check on 8 password rows: old mode picked a 62.5% phrasing, dataset mode picked 100% vs 87.5% for the original)*
   It scores each variation on one sample state and keeps the one with the highest `max(p, 1-p)`; it never sees labels. In the `compact` experiment this raised relevant and irrelevant scores together.
   - Fix options: accept a small labelled set and pick by accuracy or AUC; or, when unlabelled, pick by score spread across several states.
 
