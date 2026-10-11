@@ -1,14 +1,15 @@
 import os
 import json
 from unittest.mock import patch, mock_open
-from jev_mcp.router_config import load_router_config, save_router_config, ROUTER_CONFIG_PATH
+from jev_mcp import router_config
+from jev_mcp.router_config import load_router_config, save_router_config
 
 def test_load_router_config_default():
     with patch("os.path.exists", return_value=False):
         config = load_router_config()
         assert "buckets" in config
         assert "rules" in config
-        assert config["buckets"]["b1"] == "claude-3-5-haiku"
+        assert config["buckets"]["b1"] == "claude-haiku-5-5"
 
 def test_load_router_config_existing():
     mock_config = {"buckets": {"b1": "test-model"}, "rules": []}
@@ -26,8 +27,8 @@ def test_save_router_config():
         with patch("builtins.open", mock_open()) as mock_file:
             save_router_config(mock_config)
             
-            mock_makedirs.assert_called_once_with(os.path.dirname(ROUTER_CONFIG_PATH), exist_ok=True)
-            mock_file.assert_called_once_with(ROUTER_CONFIG_PATH, "w")
+            mock_makedirs.assert_called_once_with(os.path.dirname(router_config.ROUTER_CONFIG_PATH), exist_ok=True)
+            mock_file.assert_called_once_with(router_config.ROUTER_CONFIG_PATH, "w")
             
             # json.dump makes multiple write calls, so we just check if it was called
             # and the file was opened correctly

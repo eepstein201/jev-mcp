@@ -26,9 +26,22 @@ sys.modules['mcp.server.fastmcp'] = MagicMock()
 sys.modules['mcp.server'] = MagicMock()
 
 import json
+import os
 from unittest.mock import patch
 
 import pytest
+
+# No test may start the real start-up model sync (a background network call and config write).
+os.environ["JEV_SKIP_MODEL_SYNC"] = "1"
+
+
+@pytest.fixture(autouse=True)
+def isolated_jev_files(tmp_path, monkeypatch):
+    """Every test gets its own router config and model catalog cache, never the ones in ~/.jev."""
+    from jev_mcp import model_catalog, router_config
+
+    monkeypatch.setattr(router_config, "ROUTER_CONFIG_PATH", str(tmp_path / "jev_home" / "router_config.json"))
+    monkeypatch.setattr(model_catalog, "CACHE_PATH", str(tmp_path / "jev_home" / "model_catalog.json"))
 
 
 # Tests that genuinely need real HTTP (they talk to a server they start themselves).

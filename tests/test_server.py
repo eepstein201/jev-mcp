@@ -614,7 +614,8 @@ def test_jev_determine_best_model(mock_provider_class):
     res = json.loads(res_str)
     assert res["status"] in ["EVALUATED", "COMPLEXITY_EVALUATED"]
     assert res["complexity_score"] == 3
-    assert res["recommended_model"] == "claude-3-opus"
+    # Complexity 3 routes to bucket b3 of the default config (no config file exists in tests).
+    assert res["recommended_model"] == "claude-opus-5-5"
 
 @patch("jev_mcp.server.RoutingProvider")
 def test_jev_agent_handoff(mock_provider_class):

@@ -395,9 +395,17 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
 *   **Command:** `/jev-mcp:manage-router`
 *   **Underlying Tool:** `manage-router`
 *   **Natural Language Triggers:** *"Show me my router rules,"*, *"Route tasks mentioning SQL to Opus..."*
-*   **What it does:** View, add, or remove custom rule overrides for the Multi-Class Logit Router.
+*   **What it does:** View, add, or remove custom rule overrides for the Multi-Class Logit Router, and keep the bucket models current.
+*   **Keeping models current:**
+    *   **At start-up** the server fetches the public model catalog at `models.dev/api.json` in the background (at most once a day) and caches a reduced copy in `~/.jev/model_catalog.json`. It is a plain download of a public file; nothing about you or your prompts is sent. Set `JEV_SKIP_MODEL_SYNC=1` to turn it off.
+    *   **Your models always win.** A bucket is only ever moved to a newer model in the *same family* (for example `claude-sonnet-5` to `claude-sonnet-5-5`), never to a different tier. Previews, voice models and dated snapshots are not suggested. Models the catalog does not recognise are left alone.
+    *   **Alerts.** When a newer model exists, `view_all` lists it under `available_model_updates`, and `model-router` mentions it once per session. The notice tells your agent to ask you whether to switch (`apply_updates`).
+    *   **Automatic updates are opt-in.** The first notice also asks whether Jev should do this automatically from now on; the answer is saved with `set_auto_update`. If you say yes, buckets are updated at each start-up. If you say no, you keep getting alerts and nothing changes without you.
+    *   **New installs** get the newest model of each Anthropic tier, cheapest first, from the catalog (or a built-in set when offline).
+    *   Covers Anthropic, OpenAI and Google models. The Anthropic results were checked by hand; OpenAI and Google suggestions come from the same rule and were only spot-checked.
 *   **Arguments:**
-    *   `action` *(string)*: One of `"view_all"`, `"add_rule"`, `"remove_rule"`, or `"set_bucket"`.
+    *   `action` *(string)*: One of `"view_all"`, `"add_rule"`, `"remove_rule"`, `"set_bucket"`, `"apply_updates"`, or `"set_auto_update"`.
+    *   `enabled` *(boolean, optional)*: `true` or `false`, used with `"set_auto_update"`.
     *   `bucket_id` *(string, optional)*: The bucket to modify (`"b1"`–`"b4"`), used with `"set_bucket"`.
     *   `model_name` *(string, optional)*: The model name to assign to that bucket, used with `"set_bucket"`.
     *   `condition` *(string, optional)*: The natural-language condition for a new rule (e.g., `"Task mentions SQL"`).

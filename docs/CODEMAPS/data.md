@@ -3,7 +3,8 @@
 
 | Path | Owner | Contents |
 |------|-------|----------|
-| ~/.jev/router_config.json | router_config.py | buckets b1-b4 → model names, rules[], fitted temperature |
+| ~/.jev/router_config.json | router_config.py | buckets b1-b4 → model names, rules[], fitted temperature, auto_update |
+| ~/.jev/model_catalog.json | model_catalog.py | reduced models.dev catalog (id, family, release date, price), refreshed daily at start-up |
 | ~/.jev/jev.log | server logging | runtime log |
 | ~/.jev/adapters/{run_id} | jev_train_lora | LoRA adapters |
 | ~/.jev/training | jev_train_lora | training data/artifacts |
