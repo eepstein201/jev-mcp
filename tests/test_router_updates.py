@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from jev_mcp import model_catalog, router_config, server
+from jev_mcp import app, model_catalog, router_config, server
 
 
 def _entry(model_id, family, released, cost):
@@ -31,7 +31,7 @@ def cached_catalog():
 
 @pytest.fixture(autouse=True)
 def fresh_notice_state(monkeypatch):
-    monkeypatch.setattr(server, "_has_notified_models", False)
+    monkeypatch.setattr(app, "_has_notified_models", False)
 
 
 def _write_config(**extra):

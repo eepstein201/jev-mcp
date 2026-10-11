@@ -5,7 +5,7 @@ import urllib.request
 import subprocess
 from unittest.mock import patch, MagicMock
 
-from jev_mcp import server
+from jev_mcp import app, server
 from jev_mcp.provider import NoulQuestion, ChoiceQuestion, ScoreQuestion
 from jev_mcp.linter import LintFinding, PreflightReport
 
@@ -724,13 +724,13 @@ def test_jev_train_lora_returns_json_error_on_failure(mock_popen, tmp_path):
     assert res["status"] == "ERROR"
     assert "spawn failed" in res["message"]
 
-@patch("jev_mcp.server.post_json")
+@patch("jev_mcp.app.post_json")
 def test_chat_completion_rejects_non_numeric_port(mock_post, monkeypatch):
     monkeypatch.setenv("JEV_SMART_PORT", "8081@evil.com")
     with pytest.raises(ValueError):
         server._chat_completion("user-msg")
 
-@patch("jev_mcp.server.post_json")
+@patch("jev_mcp.app.post_json")
 def test_chat_completion_sends_system_and_json_format(mock_post):
     mock_post.return_value = {"choices": [{"message": {"content": "hello"}}]}
     out = server._chat_completion(
@@ -749,7 +749,7 @@ def test_chat_completion_sends_system_and_json_format(mock_post):
     ]
     assert payload["response_format"] == {"type": "json_object"}
 
-@patch("jev_mcp.server.post_json")
+@patch("jev_mcp.app.post_json")
 def test_chat_completion_without_system_or_format(mock_post, monkeypatch):
     monkeypatch.setenv("JEV_FAST_PORT", "9999")
     mock_post.return_value = {"choices": [{"message": {"content": "raw text"}}]}
@@ -802,11 +802,11 @@ def test_jev_manage_temperature(mock_save, mock_load):
     saved_cfg_reset = mock_save.call_args[0][0]
     assert saved_cfg_reset["fitted_temperature"] == 1.0
 
-@patch("jev_mcp.server.load_router_config")
+@patch("jev_mcp.app.load_router_config")
 @patch("jev_mcp.server.RoutingProvider")
 def test_system_notice_injection(mock_provider_class, mock_load):
     # Reset global state for test
-    server._has_notified_temp = False
+    app._has_notified_temp = False
     
     # Mock config to have custom temp
     mock_load.return_value = {"fitted_temperature": 1.34, "temperature_updated_at": "Just now", "rules": [], "buckets": {}}
