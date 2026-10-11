@@ -36,7 +36,7 @@ def evaluate_email_with_mlx(subject: str, sender: str, body: str, labels: list[s
     eval_questions = build_triage_questions(labels)
 
     if len(body) > COMPACTION_MIN_BODY_CHARS:
-        from jev_mcp.server import jev_compact_context
+        from jev_mcp.tools.files import jev_compact_context
         import json
 
         try:

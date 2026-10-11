@@ -109,7 +109,7 @@ def test_triage_mcp_tool_execution_with_long_body(tmp_path, monkeypatch):
         import json
         return json.dumps({"compacted_state": "Compressed body"})
         
-    monkeypatch.setattr("jev_mcp.server.jev_compact_context", mock_compact)
+    monkeypatch.setattr("jev_mcp.tools.files.jev_compact_context", mock_compact)
     
     long_body = "A" * 2001
     response_json = triage_email_content("test@mailbox.com", "Urgent Bug", "boss@test.com", long_body)
@@ -121,7 +121,7 @@ def test_triage_mcp_tool_execution_with_long_body(tmp_path, monkeypatch):
     def mock_compact_fail(state, goal, confidence_threshold):
         raise ValueError("Failed to compact")
         
-    monkeypatch.setattr("jev_mcp.server.jev_compact_context", mock_compact_fail)
+    monkeypatch.setattr("jev_mcp.tools.files.jev_compact_context", mock_compact_fail)
     response_json_2 = triage_email_content("test@mailbox.com", "Urgent Bug", "boss@test.com", long_body)
     response_2 = json.loads(response_json_2)
     assert response_2["status"] == "success"
@@ -144,7 +144,7 @@ def test_triage_evaluates_the_compacted_body_returned_by_the_compact_tool(tmp_pa
     def mock_compact(state, goal, confidence_threshold):
         return json.dumps({"status": "COMPACTION_COMPLETE", "compacted_state": "Compressed body"})
 
-    monkeypatch.setattr("jev_mcp.server.jev_compact_context", mock_compact)
+    monkeypatch.setattr("jev_mcp.tools.files.jev_compact_context", mock_compact)
 
     # Act
     triage_email_content("test@mailbox.com", "Urgent Bug", "boss@test.com", "A" * 2001)
@@ -204,7 +204,7 @@ def test_triage_logs_a_warning_when_compaction_fails(tmp_path, monkeypatch, capl
     def mock_compact_fail(state, goal, confidence_threshold):
         raise ValueError("boom")
 
-    monkeypatch.setattr("jev_mcp.server.jev_compact_context", mock_compact_fail)
+    monkeypatch.setattr("jev_mcp.tools.files.jev_compact_context", mock_compact_fail)
 
     # Act
     with caplog.at_level(logging.WARNING, logger="jev_mcp.email_triage.mcp_tool"):
