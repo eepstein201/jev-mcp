@@ -208,6 +208,8 @@ Once installed, Jev exposes the following specialized tools to your MCP client (
     *   `dataset` *(array of objects)*: Array of dicts representing the edge cases: `[{"state": {...}, "expected": True/False/String}]`.
     *   `question` *(object)*: The question object schema to calibrate.
     *   `apply_platt_scaling` *(string, default: "auto")*: Whether to apply Platt Scaling Logistic Calibration (`"auto"`, `"always"`, or `"never"`).
+    *   `save_to_config` *(boolean, default: false)*: Save the fitted temperature to `~/.jev/router_config.json`. Off by default because the temperature is global: it changes the scores of every question the smart engine answers, not only the one you calibrated.
+*   **Returns:** `markdown_report`, plus `fitted_temperature` (the current temperature divided by the Platt slope; `null` when Platt scaling was not applied) and `temperature_saved`.
 *   **Example:** Pass it a synthetic JSON dataset. It will rapidly output your ROC AUC metrics and a calibration table.
 
     **Example Output (Calibration Markdown Table):**
@@ -225,7 +227,7 @@ Once installed, Jev exposes the following specialized tools to your MCP client (
 Occasionally, larger RLHF-tuned models (like 7B) exhibit "Mode Collapse" or "Logit Sharpening." Because they are trained to be highly decisive assistants, they may assign >99% epistemic certainty to the argmax token, causing all standard thresholds to fail.
 
 `calibrate` features native **Automated Platt Scaling (Logistic Calibration)**. 
-By default (`apply_platt_scaling="auto"`), Jev actively monitors for extreme overconfidence. If triggered, it automatically extracts the raw log-odds (`log(P_A) - log(P_B)`) and uses `scikit-learn` to fit a Logistic Regression model against your expected dataset outcomes—mathematically squishing the >99% confidence scores back down to their true fractional uncertainty. The calibrated probabilities are used for the returned report only; `calibrate` does not write anything to your config.
+By default (`apply_platt_scaling="auto"`), Jev actively monitors for extreme overconfidence. If triggered, it automatically extracts the raw log-odds (`log(P_A) - log(P_B)`) and uses `scikit-learn` to fit a Logistic Regression model against your expected dataset outcomes—mathematically squishing the >99% confidence scores back down to their true fractional uncertainty. The calibrated probabilities are used for the returned report only. The report also states the fitted temperature; `calibrate` writes it to your config only when you pass `save_to_config=True`.
 
 *Note: The global calibration temperature for the **Qwen 7B Smart Engine** (`fitted_temperature` in `~/.jev/router_config.json`) is a separate setting that you view, set, or reset with the `/jev-mcp:temperature` command. Furthermore, if you want to permanently bake this calibrated statistical distribution directly into the model's weights, use the `/jev-mcp:train` command to instantly fine-tune a native LoRA adapter for the 7B model on the dataset you just used to calibrate.*
 
@@ -431,12 +433,16 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
     *   otherwise → the predicted label, routed to `archive_and_label`.
 
 #### ⚡ Email Triage Webhook & Apps Script
-*   **Webhook:** `jev_mcp.email_triage.api:app` is a FastAPI app exposing `POST /api/v1/triage/email` (body: `context_id`, `subject`, `sender`, `body`, `id`). It requires `Authorization: Bearer <JEV_MCP_API_KEY>`, returns the triage result plus a Slack Block Kit `slack_payload` for escalations and human-in-the-loop reviews, and answers `400` when the mailbox has no labels yet. The repository does not ship a launcher; serve the app yourself, e.g. `uvicorn jev_mcp.email_triage.api:app --port 8000`.
+*   **Webhook:** `jev_mcp.email_triage.api:app` is a FastAPI app exposing `POST /api/v1/triage/email` (body: `context_id`, `subject`, `sender`, `body`, `id`). It returns the triage result plus a Slack Block Kit `slack_payload` for escalations and human-in-the-loop reviews, and answers `400` when the mailbox has no labels yet.
+*   **Launcher:** `jev-mcp serve-webhook [--host 127.0.0.1] [--port 8090]`. It binds to localhost unless you pass `--host`, and refuses to start when no credential is configured. It serves plain HTTP, so put it behind a TLS-terminating proxy or tunnel before exposing it.
+*   **Authentication:** every request needs `Authorization: Bearer <token>`. The token is accepted if it equals `JEV_MCP_API_KEY`, or if it is a valid JWT. JWTs are verified against the identity provider's published keys (`JEV_MCP_JWKS_URL`, RS256/ES256) or, when that is unset, a shared secret (`JEV_MCP_JWT_SECRET`, HS256). A JWT must carry an unexpired `exp`; `JEV_MCP_JWT_AUDIENCE` and `JEV_MCP_JWT_ISSUER` are enforced when set. Any failure returns `401` and the reason is written to the server log only.
 *   **Google Apps Script:** `setup_gas_workflow(webhook_url, api_key)` (also available as `jev-mcp setup-gas --webhook-url ... --api-key ...`) deploys `examples/gas_triage.js` to your Google account with your webhook URL and key filled in. It prompts interactively for any value you don't pass.
 
 #### ⚡ Run Browser Agent
-*   **Tool:** `run-browser-agent(url, goal)`.
-*   **What it does:** Entry point for the `jev-ultrafast` browser agent. It currently only validates that the `jev-ultrafast` submodule directory exists in the working directory and returns a dispatch message; the agent itself is not launched from this tool. The probabilistic engine that `jev-ultrafast` calls into lives in `ultrafast_adapter.py` (`local_choose`).
+*   **Tool:** `run-browser-agent(url, goal, max_steps=20)`.
+*   **What it does:** Runs the `jev-ultrafast` browser agent in a background tab of your Chrome, starting at `url`, until the goal is `done`, the agent is `blocked`, or `max_steps` actions have run (`step_limit`). Each step the local engines choose one operation and one target from the elements actually observed on the page (`ultrafast_adapter.local_choose`); text for a field is written by the smart engine. Nothing is sent to a hosted API.
+*   **Returns:** `status`, `result`, `final_url`, `elapsed_ms`, and `steps` (the action, element label, and any typed text for each step).
+*   **Requirements and limits:** the `jev-ultrafast` submodule (`git submodule update --init`; found next to the package, or at `JEV_ULTRAFAST_PATH`), Chrome reachable through `browser-harness`, and both daemons running. Only `http://` and `https://` URLs are opened. An answer that is not one of the offered choices stops the run without acting. Page content is untrusted input to the models, so do not point the agent at a site where a wrong click or typed value would be costly.
 
 ### 3. First-Class Response Types (Question Schemas)
 Jev MCP strongly enforces structured response types to guarantee deterministic mathematics. When defining questions for `evaluate`, you must use one of the following three first-class schemas:
@@ -743,6 +749,10 @@ Ports come from `JEV_FAST_PORT` (default `8080`) and `JEV_SMART_PORT` (default `
 | `JEV_DAEMON_PORT` | unset | `daemon_provider.py` | Optional override for a `DaemonProvider` built without an explicit URL; when unset it follows `JEV_SMART_PORT`. The router always passes explicit URLs built from `JEV_FAST_PORT` / `JEV_SMART_PORT`. |
 | `JEV_BATCH_SIZE` | RAM-based | manager | Number of `llama-server` parallel slots. |
 | `JEV_MCP_API_KEY` | none | `email_triage/auth.py` | Bearer token accepted by the email-triage webhook. |
+| `JEV_MCP_JWKS_URL` | none | `email_triage/auth.py` | Identity provider's JWKS URL; webhook JWTs are verified against it (RS256/ES256). |
+| `JEV_MCP_JWT_SECRET` | none | `email_triage/auth.py` | Shared HS256 secret for webhook JWTs, used when `JEV_MCP_JWKS_URL` is unset. |
+| `JEV_MCP_JWT_AUDIENCE` / `JEV_MCP_JWT_ISSUER` | none | `email_triage/auth.py` | When set, a webhook JWT must carry this `aud` / `iss`. |
+| `JEV_ULTRAFAST_PATH` | `<repo>/jev-ultrafast` | `browser_agent.py` | Location of the `jev-ultrafast` checkout used by `run-browser-agent`. |
 
 ---
 

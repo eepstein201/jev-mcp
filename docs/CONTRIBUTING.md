@@ -4,7 +4,7 @@
 
 - Apple Silicon Mac. `jev_mac_manager.sh` exits on anything other than `arm64`.
 - `llama-server` (llama.cpp); the manager checks for it before starting daemons.
-- Python ≥3.12 (`requires-python` in `pyproject.toml`; matches CI and `kev` in `requirements.txt`).
+- Python ≥3.12 (`requires-python` in `pyproject.toml`; matches CI and `kev` in the `engines` extra). `pyproject.toml` is the only dependency list: runtime packages under `dependencies`, the pinned local engines under the `engines` extra, and tooling under `dev`. For a manual setup run `pip install -e ".[dev,engines]"`.
 - Git with submodules: `git clone --recurse-submodules https://github.com/eepstein201/jev-mcp.git`. The `jev-ultrafast` submodule is required by `tests/test_browser_agent_e2e.py`.
 
 ## Setup
@@ -60,7 +60,7 @@ CI enforces only the 85% overall threshold; the 95% per-file rule is a local gat
 
 `.github/workflows/ci.yml` runs on pushes and PRs to `main` (macos-latest, Python 3.12, submodules checked out):
 
-1. `pip install -r requirements.txt`, `pip install mypy pytest`, `pip install -e .`
+1. `pip install -e ".[dev,engines]"`
 2. `mypy src/jev_mcp/`
 3. `pytest --cov=src --cov-report=term --cov-fail-under=85 tests/`
 

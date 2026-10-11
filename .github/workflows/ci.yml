@@ -23,9 +23,7 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install mypy pytest
-        pip install -e .
+        pip install -e ".[dev,engines]"
         
     - name: Strict Static Type Checking
       run: mypy src/jev_mcp/

@@ -828,23 +828,72 @@ def test_system_notice_injection(mock_provider_class, mock_load):
     assert "_system_notice" not in res2
 
 
-def test_jev_run_browser_agent_not_found(monkeypatch):
-    import os
-    monkeypatch.setattr(os.path, "exists", lambda x: False)
+def test_jev_run_browser_agent_passes_url_goal_and_step_limit_to_the_runner(monkeypatch):
+    # The agent loop itself is covered in tests/test_browser_agent_runner.py.
+    from jev_mcp import browser_agent
     from jev_mcp.server import jev_run_browser_agent
-    res_str = jev_run_browser_agent(url="https://example.com", goal="test")
-    res = json.loads(res_str)
-    assert res["status"] == "ERROR"
-    assert "jev-ultrafast submodule not found" in res["message"]
+    seen = {}
 
-def test_jev_run_browser_agent_found(monkeypatch):
-    import os
-    monkeypatch.setattr(os.path, "exists", lambda x: True)
-    from jev_mcp.server import jev_run_browser_agent
-    res_str = jev_run_browser_agent(url="https://example.com", goal="test")
-    res = json.loads(res_str)
+    def fake_run(url, goal, max_steps):
+        seen.update(url=url, goal=goal, max_steps=max_steps)
+        return {"status": "SUCCESS", "result": "done", "steps": []}
+
+    monkeypatch.setattr(browser_agent, "run_browser_agent", fake_run)
+
+    res = json.loads(jev_run_browser_agent(url="https://example.com", goal="test", max_steps=7))
+
     assert res["status"] == "SUCCESS"
-    assert "Browser agent dispatched" in res["message"]
+    assert seen == {"url": "https://example.com", "goal": "test", "max_steps": 7}
+
+
+def test_jev_run_browser_agent_never_raises(monkeypatch):
+    from jev_mcp import browser_agent
+    from jev_mcp.server import jev_run_browser_agent
+
+    def boom(url, goal, max_steps):
+        raise RuntimeError("unexpected")
+
+    monkeypatch.setattr(browser_agent, "run_browser_agent", boom)
+
+    res = json.loads(jev_run_browser_agent(url="https://example.com", goal="test"))
+
+    assert res["status"] == "ERROR"
+    assert "unexpected" in res["message"]
+
+
+def test_main_serve_webhook_starts_the_triage_app_on_localhost_by_default(monkeypatch):
+    import sys
+    import uvicorn
+    from jev_mcp.email_triage.api import app
+    from jev_mcp.server import main
+    started = {}
+    monkeypatch.setattr(sys, "argv", ["jev-mcp", "serve-webhook", "--port", "9001"])
+    monkeypatch.setattr(uvicorn, "run", lambda target, **kwargs: started.update(target=target, **kwargs))
+    monkeypatch.setenv("JEV_MCP_API_KEY", "fake-static-key-for-tests")
+
+    main()
+
+    assert started["target"] is app
+    assert started["host"] == "127.0.0.1"
+    assert started["port"] == 9001
+
+
+def test_main_serve_webhook_refuses_to_start_without_any_credential_configured(monkeypatch):
+    # With no API key and no JWT key every request would be rejected; fail loudly instead.
+    import sys
+    import uvicorn
+    from jev_mcp.server import main
+    started = []
+    monkeypatch.setattr(sys, "argv", ["jev-mcp", "serve-webhook"])
+    monkeypatch.setattr(uvicorn, "run", lambda target, **kwargs: started.append(target))
+    for name in ("JEV_MCP_API_KEY", "JEV_MCP_JWT_SECRET", "JEV_MCP_JWKS_URL"):
+        monkeypatch.delenv(name, raising=False)
+
+    with pytest.raises(SystemExit) as exc:
+        main()
+
+    assert "JEV_MCP_API_KEY" in str(exc.value)
+    assert started == []
 
 def test_main_setup_gas(monkeypatch):
     import sys

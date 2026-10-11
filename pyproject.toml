@@ -18,11 +18,32 @@ dependencies = [
     "tree-sitter-python>=0.21.0",
     "tree-sitter-javascript>=0.21.0",
     "tree-sitter-typescript>=0.21.0",
-    "browser-harness>=0.1.1",
+    "browser-harness>=0.1.13",
     "h2>=4.4.1",
     "google-api-python-client>=2.201.0",
     "google-auth-oauthlib>=1.5.0",
+    "pyjwt[crypto]>=2.8.0",
+    "uvicorn>=0.30.0",
 ]
+
+[project.optional-dependencies]
+# Local engines and training (pinned for Apple Silicon reproducibility). Not imported by the
+# server: the daemons and `mlx_lm` run as separate processes.
+engines = [
+    "mlx==0.32.2",
+    "mlx-lm==0.31.3",
+    "kev @ git+https://github.com/jaredpalmer/kev.git",
+]
+dev = [
+    "ruff",
+    "mypy",
+    "pytest",
+    "pytest-cov",
+]
+
+[tool.hatch.metadata]
+# `kev` is installed from its git repository.
+allow-direct-references = true
 
 [project.scripts]
 jev-mcp = "jev_mcp.server:main"

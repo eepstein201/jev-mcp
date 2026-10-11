@@ -23,9 +23,14 @@ def local_choose(state: Dict[str, Any], goal: str, history: List[Any], operation
     
     # 2. Add target choice questions for each operation
     for op, candidates in targets.items():
+        # The options are bare indices, so the prompt has to say which element each one is.
+        listing = "\n".join(
+            f"[{index}] {candidate.get('label', candidate.get('element', ''))}"
+            for index, candidate in candidates.items()
+        )
         q_target = ChoiceQuestion(
             key=f"{op.lower()}_target",
-            prompt=f"Goal: {goal}\nOperation: {op}\nChoose the target index.",
+            prompt=f"Goal: {goal}\nOperation: {op}\nChoose the target index.\nElements:\n{listing}",
             options=list(candidates.keys())
         )
         questions.append(q_target)

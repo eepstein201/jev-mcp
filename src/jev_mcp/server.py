@@ -531,6 +531,10 @@ def jev_calibrate_threshold(
     apply_platt_scaling: Literal["auto", "always", "never"] = Field(
         default="auto",
         description="Whether to apply Platt Scaling (Logistic Calibration) to mathematically fix overconfident >99% logits."
+    ),
+    save_to_config: bool = Field(
+        default=False,
+        description="Save the fitted temperature to ~/.jev/router_config.json. It is global: it changes the scores of every question, not only this one."
     )
 ) -> str:
     logger.info(f"Starting Threshold Calibration for {len(dataset)} rows...")
@@ -631,8 +635,9 @@ def jev_calibrate_threshold(
     
     platt_applied = False
     platt_cross_validated = False
+    fitted_temperature: float | None = None
     final_table = initial_table
-    
+
     if apply_platt_scaling == "always" or (apply_platt_scaling == "auto" and auto_rate_99 > 0.5):
         try:
             from sklearn.linear_model import LogisticRegression  # type: ignore[import-untyped]
@@ -686,6 +691,13 @@ def jev_calibrate_threshold(
                     calibrated_probs = clf.predict_proba(X_arr)
                     classes = list(clf.classes_)
 
+                # The slope of a fit on every row is the temperature correction: scores were
+                # produced under the current temperature, so dividing it by the slope composes them.
+                slope = float(clf.fit(X_arr, y_arr).coef_[0][0])
+                if slope > 0:
+                    current_temperature = float(load_router_config().get("fitted_temperature", 1.0))
+                    fitted_temperature = round(current_temperature / slope, 3)
+
                 # Update the results inline
                 for j, idx in enumerate(valid_indices):
                     keys = list(results[idx]["probabilities"].keys())
@@ -719,10 +731,31 @@ def jev_calibrate_threshold(
         else:
             final_table += f"\nThe model was fitted and scored on the same rows (fewer than {PLATT_CV_FOLDS} rows in one class), so this table is optimistic."
 
+    temperature_saved = False
+    if fitted_temperature is not None:
+        if save_to_config is True:
+            from datetime import datetime
+            try:
+                save_router_config({
+                    **load_router_config(),
+                    "fitted_temperature": fitted_temperature,
+                    "temperature_updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                })
+                temperature_saved = True
+            except Exception as e:
+                logger.error(f"Could not save the fitted temperature: {e}")
+        final_table += f"\n\n### 🌡️ Fitted Temperature: {fitted_temperature}\n"
+        if temperature_saved:
+            final_table += "Saved to the router config. It now applies to every question the smart engine scores; undo it with the `temperature` tool (`action='reset'`)."
+        else:
+            final_table += "Not saved. It was fitted on this dataset only and would change the scores of every question, so apply it deliberately: re-run with `save_to_config=True`, or use the `temperature` tool."
+
     return json.dumps(
         {
             "status": "CALIBRATION_COMPLETE",
             "dataset_size": len(dataset),
+            "fitted_temperature": fitted_temperature,
+            "temperature_saved": temperature_saved,
             "markdown_report": final_table,
         },
         indent=2,
@@ -1698,7 +1731,22 @@ def main():
         from jev_mcp.email_triage.gas_setup import setup_gas_workflow
         setup_gas_workflow(webhook_url=args.webhook_url, api_key=args.api_key)
         return
-        
+
+    if len(sys.argv) > 1 and sys.argv[1] == "serve-webhook":
+        parser = argparse.ArgumentParser(prog="jev-mcp serve-webhook")
+        parser.add_argument("--host", type=str, default="127.0.0.1", help="Interface to bind. The default is local only.")
+        parser.add_argument("--port", type=int, default=8090, help="Port for POST /api/v1/triage/email.")
+        args = parser.parse_args(sys.argv[2:])
+
+        credential_vars = ("JEV_MCP_API_KEY", "JEV_MCP_JWT_SECRET", "JEV_MCP_JWKS_URL")
+        if not any(os.environ.get(name) for name in credential_vars):
+            sys.exit(f"Refusing to start: set one of {', '.join(credential_vars)} so the webhook can authenticate callers.")
+
+        import uvicorn
+        from jev_mcp.email_triage.api import app
+        uvicorn.run(app, host=args.host, port=args.port)
+        return
+
     mcp.run(transport='stdio')
 
 if __name__ == '__main__':
@@ -1710,26 +1758,21 @@ if __name__ == '__main__':
 )
 def jev_run_browser_agent(
     url: str = Field(description="The starting URL for the browser agent."),
-    goal: str = Field(description="The natural language objective for the agent to complete.")
+    goal: str = Field(description="The natural language objective for the agent to complete."),
+    max_steps: int = Field(default=20, description="Stop after this many browser actions if the goal is not reached.")
 ) -> str:
     """
-    Spawns the jev-ultrafast agent to achieve a goal.
-    This runs completely locally by utilizing the Jev-MCP Dual-Engine router via ultrafast_adapter.
+    Runs the jev-ultrafast agent in the user's Chrome until the goal is done, blocked, or the step limit.
+    Every choice is made locally by the Jev-MCP Dual-Engine router via ultrafast_adapter.
     """
-    import os
-    import json
+    from jev_mcp import browser_agent
 
-    # Check if jev-ultrafast is available
-    if not os.path.exists("jev-ultrafast"):
-        return json.dumps({
-            "status": "ERROR",
-            "message": "jev-ultrafast submodule not found in the current directory."
-        })
-        
-    return json.dumps({
-        "status": "SUCCESS",
-        "message": f"Browser agent dispatched for URL {url} with goal: {goal}"
-    })
+    try:
+        steps = max_steps if isinstance(max_steps, int) else browser_agent.DEFAULT_MAX_STEPS
+        return json.dumps(browser_agent.run_browser_agent(url, goal, max_steps=steps), indent=2)
+    except Exception as e:
+        logger.error(f"Browser agent failed: {e}")
+        return json.dumps({"status": "ERROR", "message": str(e)})
 
 # --- Email Triage Tools ---
 from jev_mcp.email_triage.mcp_tool import triage_email_content, configure_triage_labels
