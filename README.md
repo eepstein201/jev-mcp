@@ -203,7 +203,7 @@ Once installed, Jev exposes the following specialized tools to your MCP client (
 *   **Natural Language Triggers:** *"Can you calibrate my dataset?"*, *"Help me fit the threshold for..."*
 *   **What it does:** The core feature of Jev. It takes your dataset and evaluates every single case against the local daemon by extracting direct `get_logprobs` mathematical arrays. It subtracts statistical bias and returns a beautiful Markdown Confusion Matrix, showing exactly what Probability Threshold (`>0.95`) you need to achieve 100% Precision.
 *   **Which engine it calibrates:** `calibrate` scores through the same hybrid router as `evaluate` (Kev first, escalating to Qwen when Kev's confidence is below 0.85 or the state exceeds 4,000 tokens), so the report describes the cascade you run in production rather than a single engine. A threshold that automates decisions without ever catching a positive is marked `❌ Unusable`.
-*   **Scope of the report:** one `question` per call, and the table (including any Platt fit) is computed on the same rows you pass in, so treat it as an optimistic, in-sample estimate.
+*   **Scope of the report:** one `question` per call, though any dataset row may carry its own `"question"` string to override the prompt for that row. When Platt scaling is applied and every class has at least 5 rows, the calibrated scores are 5-fold cross-validated (each row is scored by a model fitted without it); with fewer rows the model is fitted and scored on the same rows, and the report says so.
 *   **Arguments:**
     *   `dataset` *(array of objects)*: Array of dicts representing the edge cases: `[{"state": {...}, "expected": True/False/String}]`.
     *   `question` *(object)*: The question object schema to calibrate.
@@ -416,13 +416,14 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
 *   **Arguments:**
     *   `state` *(object)*: The massive JSON state or text to compress.
     *   `goal` *(string)*: The user's current goal or the objective the context is needed for.
-    *   `confidence_threshold` *(float, default: 0.85)*: The logit probability threshold required to keep a chunk.
+    *   `confidence_threshold` *(float, default: 0.3)*: The relevance score a chunk needs to be kept. On a 24-pair labelled check the fast engine scored relevant chunks 0.32–0.90 and irrelevant ones 0.04–0.35, so 0.3 kept every relevant chunk while values above about 0.4 started discarding them.
+*   **Output:** besides `compacted_state`, the result includes `chunk_scores` (one score per chunk, `null` when scoring failed and the chunk was kept), so you can see what was close to the threshold. Dict states are scored one top-level key at a time.
 
 
 
 #### ⚡ Triage Email
 *   **Tools:** `triage_email_content` and `configure_triage_labels` (tool-only; there are no slash-command prompts for these).
-*   **What it does:** Classifies an incoming email into one of the labels you configured for a mailbox. `triage_email_content(context_id, subject, sender, body)` asks the local engines whether the email requires action, whether it is important, and which label fits, then returns a decision plus a suggested routing. Bodies over 2000 characters are first compacted with `compact` (confidence 0.6); if compaction fails, the original body is used.
+*   **What it does:** Classifies an incoming email into one of the labels you configured for a mailbox. `triage_email_content(context_id, subject, sender, body)` asks the local engines whether the email requires action, whether it is important, and which label fits, then returns a decision plus a suggested routing. Bodies over 2000 characters are first compacted with `compact` (relevance threshold 0.3); if compaction fails or keeps nothing, the original body is used.
 *   **First use:** if no labels exist for the `context_id`, the tool returns `{"status": "needs_config", ...}`. Call `configure_triage_labels(context_id, labels)` to save them (stored in `~/.jev-mcp/triage_configs.json`).
 *   **Routing rules** (`core.decide_routing`, defaults `action_threshold=0.8`, `important_threshold=0.8`):
     *   `requires_action` score above `0.8` → `Action`, routed to `escalate_to_slack`.

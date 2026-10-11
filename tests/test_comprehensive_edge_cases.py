@@ -54,11 +54,13 @@ def test_cascade_network_timeout():
     ({"nested": {"deep": "code"}}, "COMPACTION_COMPLETE"),
     ([], "COMPACTION_COMPLETE"),                      # Unexpected shape: Array (but stringified properly)
 ])
-def test_compact_context_payload_shapes(payload, expected_status):
-    with patch("jev_mcp.routing_provider.RoutingProvider.evaluate_batch", return_value={"chunk_0": {"probabilities": {"true": 1.0}}}):
+def test_compact_context_payload_shapes(payload, expected_status, kev_http):
+    with kev_http(1.0) as mock_urlopen:
         res_str = jev_compact_context(state=payload, goal="Test", confidence_threshold=0.5)
-        res = json.loads(res_str)
-        assert res["status"] == expected_status
+    res = json.loads(res_str)
+    assert mock_urlopen.called
+    assert res["status"] == expected_status
+    assert res["kept_chunks"] == res["original_chunks"]
 
 # ---------------------------------------------------------
 # 4. Testing the Boot Loop (__main__)

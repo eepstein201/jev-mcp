@@ -118,6 +118,9 @@ mcp = MCPServer("jev-mcp")
 provider = RoutingProvider()
 linter = DecisionPreflightLinter()
 
+# Platt scaling is cross-validated when every class has at least this many rows.
+PLATT_CV_FOLDS = 5
+
 def call_fast_autofixer(state, questions, errors):
     """Hits the persistent local llama-server to fix prompts in <300ms using Constrained Decoding."""
     system_prompt = (
@@ -627,6 +630,7 @@ def jev_calibrate_threshold(
     initial_table, auto_rate_99 = evaluate_thresholds(results)
     
     platt_applied = False
+    platt_cross_validated = False
     final_table = initial_table
     
     if apply_platt_scaling == "always" or (apply_platt_scaling == "auto" and auto_rate_99 > 0.5):
@@ -669,17 +673,27 @@ def jev_calibrate_threshold(
             
             if len(X_raw) > 1 and len(set(y_true)) > 1:
                 clf = LogisticRegression(C=np.inf, solver="lbfgs")  # C=inf ≡ unregularized (penalty=None is removed in sklearn 1.10)
-                clf.fit(np.array(X_raw), np.array(y_true))
-                calibrated_probs = clf.predict_proba(np.array(X_raw))
-                
+                X_arr, y_arr = np.array(X_raw), np.array(y_true)
+                if min(y_true.count(0), y_true.count(1)) >= PLATT_CV_FOLDS:
+                    # Score each row with a model that never saw it, so the table is not optimistic.
+                    from sklearn.model_selection import StratifiedKFold, cross_val_predict  # type: ignore[import-untyped]
+                    folds = StratifiedKFold(n_splits=PLATT_CV_FOLDS, shuffle=True, random_state=0)
+                    calibrated_probs = cross_val_predict(clf, X_arr, y_arr, cv=folds, method="predict_proba")
+                    classes = [0, 1]
+                    platt_cross_validated = True
+                else:
+                    clf.fit(X_arr, y_arr)
+                    calibrated_probs = clf.predict_proba(X_arr)
+                    classes = list(clf.classes_)
+
                 # Update the results inline
                 for j, idx in enumerate(valid_indices):
                     keys = list(results[idx]["probabilities"].keys())
-                    # LogisticRegression predicts prob of class 0 and class 1
+                    # Column order follows the class labels (0, 1).
                     # We assigned y=1 if expected matches keys[0], so class 1 is keys[0]
-                    idx_1 = list(clf.classes_).index(1)
-                    idx_0 = list(clf.classes_).index(0)
-                    
+                    idx_1 = classes.index(1)
+                    idx_0 = classes.index(0)
+
                     results[idx]["probabilities"][keys[0]] = calibrated_probs[j][idx_1]
                     results[idx]["probabilities"][keys[1]] = calibrated_probs[j][idx_0]
                 
@@ -700,6 +714,10 @@ def jev_calibrate_threshold(
     if platt_applied:
         final_table += "\n### 🛠️ Platt Scaling Applied\n"
         final_table += "Logit overconfidence was detected. A Logistic Regression model was automatically fit against the raw log-odds of the dataset to squish the >99% confidence scores back down to objective reality. The table above reflects the calibrated thresholds."
+        if platt_cross_validated:
+            final_table += f"\nThe calibrated scores are {PLATT_CV_FOLDS}-fold cross-validated: each row was scored by a model fitted without it."
+        else:
+            final_table += f"\nThe model was fitted and scored on the same rows (fewer than {PLATT_CV_FOLDS} rows in one class), so this table is optimistic."
 
     return json.dumps(
         {
@@ -1448,8 +1466,8 @@ def jev_compact_context(
         description="The user's current goal or the objective the context is needed for."
     ),
     confidence_threshold: float = Field(
-        default=0.85,
-        description="The logit probability threshold required to keep a chunk."
+        default=0.3,
+        description="The relevance score (0-1) a chunk needs to be kept. The fast engine scores relevant chunks roughly 0.3-0.9 and irrelevant ones below 0.35, so values above about 0.4 discard relevant context."
     )
 ) -> str:
     import json
@@ -1480,13 +1498,14 @@ def jev_compact_context(
     kept_chunks = []
     total_chunks = len(chunks)
     dropped_chunks = 0
+    chunk_scores: List[Optional[float]] = []
     
     # We will evaluate these in batches if needed, but for now sequentially 
     # to avoid context overflow on the provider.
     for i, chunk in enumerate(chunks):
         q = NoulQuestion(
             key=f"chunk_{i}",
-            prompt=f"Does this text snippet contain information strictly relevant to achieving the goal: '{goal}'?"
+            prompt=f"Is the information in this text snippet directly relevant to achieving the goal: '{goal}'?"
         )
         
         try:
@@ -1499,6 +1518,7 @@ def jev_compact_context(
                 
             chunk_res = res.get(q.key, {})
             score = chunk_res.get("noul", 0.0)
+            chunk_scores.append(round(score, 3))
             
             if score >= confidence_threshold:
                 kept_chunks.append(chunk)
@@ -1508,6 +1528,7 @@ def jev_compact_context(
         except Exception as e:
             logger.warning(f"Failed to evaluate chunk {i}: {e}. Keeping chunk by default.")
             kept_chunks.append(chunk)
+            chunk_scores.append(None)
 
     raw_text = "\n\n".join(kept_chunks)
     safe_text, was_truncated = _safe_truncate(raw_text)
@@ -1523,6 +1544,7 @@ def jev_compact_context(
         "kept_chunks": len(kept_chunks),
         "dropped_chunks": dropped_chunks,
         "compression_ratio": f"{compression_ratio:.1f}%",
+        "chunk_scores": chunk_scores,
         "compacted_state": safe_text
     }, indent=2)
 

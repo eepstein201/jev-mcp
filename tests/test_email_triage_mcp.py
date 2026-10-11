@@ -153,6 +153,40 @@ def test_triage_evaluates_the_compacted_body_returned_by_the_compact_tool(tmp_pa
     evaluated_state = mock_provider_instance.evaluate_batch.call_args[0][0]
     assert evaluated_state["email_body"] == "Compressed body"
 
+def test_triage_compaction_keeps_a_paragraph_the_fast_engine_scores_as_moderately_relevant(tmp_path, monkeypatch):
+    # Measured: relevant chunks score roughly 0.32-0.90 on the fast engine and irrelevant ones
+    # 0.04-0.35, so a paragraph at 0.4 must survive while one at 0.1 is dropped.
+    from unittest.mock import MagicMock, patch
+    monkeypatch.setattr("jev_mcp.email_triage.mcp_tool.get_config_path", lambda: tmp_path / "triage_configs.json")
+    configure_triage_labels("test@mailbox.com", ["Engineering", "Sales"])
+    mock_provider_instance = MagicMock()
+    mock_provider_instance.evaluate_batch.return_value = {
+        "requires_action": {"probabilities": {"true": 0.9}},
+        "is_important": {"probabilities": {"true": 0.9}},
+        "bucket": {"probabilities": {"Engineering": 0.8, "Sales": 0.2}}
+    }
+    monkeypatch.setattr("jev_mcp.routing_provider.RoutingProvider", lambda: mock_provider_instance)
+
+    def fake_kev(req, timeout=None):
+        body = json.loads(req.data)
+        noul = 0.4 if "REFUND" in body["state"] else 0.1
+        response = MagicMock()
+        response.read.return_value = json.dumps({"answers": {k: {"noul": noul} for k in body["questions"]}}).encode("utf-8")
+        context = MagicMock()
+        context.__enter__.return_value = response
+        return context
+
+    long_body = ("REFUND " * 200).strip() + "\n\n" + ("NEWSLETTER " * 150).strip()
+
+    # Act
+    with patch("urllib.request.urlopen", side_effect=fake_kev):
+        triage_email_content("test@mailbox.com", "Order issue", "customer@test.com", long_body)
+
+    # Assert
+    evaluated_body = mock_provider_instance.evaluate_batch.call_args[0][0]["email_body"]
+    assert "REFUND" in evaluated_body
+    assert "NEWSLETTER" not in evaluated_body
+
 def test_triage_logs_a_warning_when_compaction_fails(tmp_path, monkeypatch, caplog):
     # Arrange
     import logging

@@ -71,16 +71,26 @@ class JevProvider(ABC):
         return len(state_str) // 4
 
     def evaluate_dataset(self, dataset: List[dict], question: Any) -> List[dict]:
-        """Evaluate one question against every row's state (used by calibration)."""
+        """Evaluate one question against every row's state (used by calibration).
+
+        A row may carry its own "question" string, which replaces the prompt for that row only.
+        """
         return [
             {
                 "expected": row.get("expected"),
-                "probabilities": self.evaluate_batch(row.get("state", {}), [question])
+                "probabilities": self.evaluate_batch(row.get("state", {}), [_question_for_row(row, question)])
                 .get(question.key, {})
                 .get("probabilities", {}),
             }
             for row in dataset
         ]
+
+
+def _question_for_row(row: dict, question: Any) -> Any:
+    row_prompt = row.get("question")
+    if isinstance(row_prompt, str) and row_prompt:
+        return question.model_copy(update={"prompt": row_prompt})
+    return question
 
 def post_json(url: str, payload: dict, timeout: int = 45) -> Any:
     """POST JSON to a local daemon and return the parsed response.

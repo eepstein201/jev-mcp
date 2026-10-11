@@ -49,6 +49,99 @@ def test_compact_scores_each_top_level_key_of_a_dict_state_separately():
     assert result["original_chunks"] == 2
     assert "mlx_lm.lora" in result["compacted_state"]
     assert "oat milk" not in result["compacted_state"]
+    # Callers can see how close each dropped chunk was to the threshold.
+    assert result["chunk_scores"] == [0.9, 0.1]
+
+
+def test_compact_default_threshold_matches_the_fast_engines_measured_score_range():
+    # On a 24-pair labelled set the fast engine scored relevant chunks 0.32-0.90 and
+    # irrelevant ones 0.04-0.35; 0.3 kept 12/12 relevant and 1/12 irrelevant, 0.85 kept 1/12 relevant.
+    import inspect
+
+    default = inspect.signature(server.jev_compact_context).parameters["confidence_threshold"].default
+
+    assert default.default == 0.3
+
+
+def test_compact_asks_whether_a_chunk_is_directly_relevant_to_the_goal():
+    # Measured on 24 labelled pairs: "directly relevant" separated relevant from irrelevant
+    # chunks cleanly (margin +0.06), while the earlier "strictly relevant" overlapped (-0.03).
+    with patch.object(server.provider.fast_provider, "evaluate_batch", return_value={"chunk_0": {"noul": 0.9}}) as mock_batch:
+        server.jev_compact_context(state={"text": "some context"}, goal="ship the release", confidence_threshold=0.3)
+
+    prompt = mock_batch.call_args[0][1][0].prompt
+    assert "directly relevant" in prompt
+    assert "ship the release" in prompt
+
+
+def test_compact_keeps_a_chunk_and_records_no_score_when_scoring_fails():
+    # Losing context because the engine errored would be worse than keeping it.
+    with patch.object(server.provider.fast_provider, "evaluate_batch", side_effect=RuntimeError("engine down")):
+        result = json.loads(
+            server.jev_compact_context(state={"text": "important context"}, goal="g", confidence_threshold=0.5)
+        )
+
+    assert result["kept_chunks"] == 1
+    assert result["compacted_state"] == "important context"
+    assert result["chunk_scores"] == [None]
+
+
+def test_evaluate_dataset_uses_a_rows_own_question_when_it_has_one():
+    # Arrange
+    provider = RoutingProvider()
+    question = NoulQuestion(key="k", prompt="default?")
+    dataset = [
+        {"state": "s1", "expected": True, "question": "row specific?"},
+        {"state": "s2", "expected": False},
+    ]
+
+    # Act
+    with patch.object(provider, "evaluate_batch", return_value={"k": {"probabilities": {"true": 1.0}}}) as mock_batch:
+        provider.evaluate_dataset(dataset, question)
+
+    # Assert
+    first_question = mock_batch.call_args_list[0][0][1][0]
+    second_question = mock_batch.call_args_list[1][0][1][0]
+    assert (first_question.key, first_question.prompt) == ("k", "row specific?")
+    assert second_question.prompt == "default?"
+    assert question.prompt == "default?"  # the caller's question is not mutated
+
+
+def _overconfident_results(n_pos, n_neg):
+    sure_true = {"probabilities": {"true": 0.999, "false": 0.001}}
+    sure_false = {"probabilities": {"true": 0.001, "false": 0.999}}
+    wrong_true = {"probabilities": {"true": 0.97, "false": 0.03}}
+    wrong_false = {"probabilities": {"true": 0.02, "false": 0.98}}
+    dataset = [{"state": "x", "expected": True}] * n_pos + [{"state": "x", "expected": False}] * n_neg
+    results = [dict(sure_true) for _ in range(n_pos - 1)] + [dict(wrong_false)]
+    results += [dict(sure_false) for _ in range(n_neg - 1)] + [dict(wrong_true)]
+    return dataset, results
+
+
+def _calibrate_always(dataset, results):
+    question = NoulQuestion(key="k", prompt="p?")
+    with patch.object(server.provider, "evaluate_dataset", return_value=results):
+        return json.loads(
+            server.jev_calibrate_threshold(dataset=dataset, question=question, apply_platt_scaling="always")
+        )["markdown_report"]
+
+
+def test_calibrate_cross_validates_platt_scaling_when_each_class_has_enough_rows():
+    dataset, results = _overconfident_results(n_pos=10, n_neg=10)
+
+    report = _calibrate_always(dataset, results)
+
+    assert "Platt Scaling Applied" in report
+    assert "cross-validated" in report
+
+
+def test_calibrate_says_when_platt_scaling_was_fitted_and_scored_on_the_same_rows():
+    dataset, results = _overconfident_results(n_pos=2, n_neg=2)
+
+    report = _calibrate_always(dataset, results)
+
+    assert "Platt Scaling Applied" in report
+    assert "same rows" in report
 
 
 def test_calibrate_marks_threshold_unusable_when_no_positive_is_ever_predicted():
