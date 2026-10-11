@@ -3,7 +3,7 @@
 
 ## Tools (server.py) → impl
 evaluate           → jev_evaluate_batch L159   (state + QuestionType[] → RoutingProvider)
-optimize-prompt    → jev_optimize_prompt L406
+optimize-prompt    → jev_optimize_prompt L406 (dataset → prompt_selection.py picks by accuracy; single state → by confidence)
 calibrate          → jev_calibrate_threshold L526 (golden set, Platt; 5-fold StratifiedKFold when each class ≥ PLATT_CV_FOLDS=5)
 explain-decision   → jev_explain_decision L735
 generate-data      → jev_generate_synthetic_dataset L801
