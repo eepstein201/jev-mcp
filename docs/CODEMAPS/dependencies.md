@@ -15,7 +15,7 @@ Submodule: jev-ultrafast (github.com/browser-use/jev-ultrafast)
 
 ## Env vars
 JEV_FAST_PORT JEV_SMART_PORT JEV_DAEMON_PORT JEV_FAST_ENGINE JEV_BATCH_SIZE
-JEV_MCP_JWKS_URL JEV_MCP_JWT_SECRET JEV_MCP_JWT_AUDIENCE JEV_MCP_JWT_ISSUER (webhook JWTs) · JEV_ULTRAFAST_PATH (run-browser-agent)
+JEV_MCP_JWKS_URL JEV_MCP_JWT_SECRET JEV_MCP_JWT_AUDIENCE JEV_MCP_JWT_ISSUER (webhook JWTs) · JEV_SKIP_MODEL_SYNC (no models.dev fetch at start-up) · JEV_ULTRAFAST_PATH (run-browser-agent)
 JEV_MCP_API_KEY (webhook bearer token; JEV_MCP_WEBHOOK_URL / JEV_MCP_API_KEY are also constants inside the generated Apps Script, not process env)
 
 ## Build / CI

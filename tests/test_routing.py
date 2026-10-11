@@ -1,6 +1,6 @@
 import json
 
-from jev_mcp import server
+from jev_mcp import router_config
 from jev_mcp.server import (
     jev_determine_best_model,
     jev_manage_router_config,
@@ -8,14 +8,10 @@ from jev_mcp.server import (
 )
 
 
-def test_manage_config(tmp_path, monkeypatch):
-    # Route all router-config I/O to a temp file — never touch ~/.jev.
-    config_path = tmp_path / "router_config.json"
-    monkeypatch.setattr(server, "ROUTER_CONFIG_PATH", str(config_path))
-    config_path.write_text(json.dumps({
-        "buckets": {"b1": "claude-3-5-haiku"},
-        "rules": [],
-    }))
+def test_manage_config():
+    # conftest points router_config.ROUTER_CONFIG_PATH at a temp file, so ~/.jev is never touched.
+    save_router_config({"buckets": {"b1": "claude-3-5-haiku"}, "rules": []})
+    assert "jev_home" in router_config.ROUTER_CONFIG_PATH
 
     # Test viewing
     res = json.loads(jev_manage_router_config(action="view_all"))
@@ -32,11 +28,6 @@ def test_manage_config(tmp_path, monkeypatch):
     res3 = json.loads(jev_manage_router_config(action="view_all"))
     assert len(res3["rules"]) > 0
     assert res3["rules"][-1]["condition"] == "test rule"
-
-    # Restore defaults
-    res3["buckets"]["b1"] = "claude-3-5-haiku"
-    res3["rules"].pop()
-    save_router_config(res3)
 
 
 def test_determine_model_massive_context():

@@ -17,7 +17,8 @@ from pydantic import Field
 # from printing warnings that would corrupt the JSON-RPC stream.
 
 from mcp.server.mcpserver import MCPServer
-from jev_mcp.router_config import load_router_config, save_router_config
+from jev_mcp import model_catalog, router_config
+from jev_mcp.router_config import apply_model_updates, load_router_config, pending_model_updates, save_router_config
 from jev_mcp.provider import QuestionType, NoulQuestion, ChoiceQuestion, ScoreQuestion, post_json
 from jev_mcp.linter import DecisionPreflightLinter
 from jev_mcp.routing_provider import RoutingProvider
@@ -1004,10 +1005,70 @@ Once you have generated this JSON array, you must immediately pass it into the `
 import os
 from pathlib import Path
 
-ROUTER_CONFIG_PATH = os.path.expanduser("~/.jev/router_config.json")
-
-
 _has_notified_temp = False
+_has_notified_models = False
+
+SKIP_MODEL_SYNC_ENV = "JEV_SKIP_MODEL_SYNC"
+
+
+def model_update_notice(config: Dict[str, Any], updates: Dict[str, Dict[str, str]]) -> str | None:
+    """What to tell the user about newer models, and the questions to put to them."""
+    if not updates:
+        return None
+    listed = "; ".join(f"{bucket}: {u['current']} -> {u['newer']} (released {u['released']})" for bucket, u in sorted(updates.items()))
+    notice = (
+        f"NOTICE: Newer models are available for these router buckets: {listed}. "
+        "The current models are kept until the user decides. Ask the user whether to switch; "
+        "if yes, call manage-router with action=apply_updates."
+    )
+    if config.get("auto_update") is None:
+        notice += (
+            " Also ask whether Jev should move buckets to the newest model in the same family automatically "
+            "from now on, and record the answer with manage-router action=set_auto_update, enabled=true or false."
+        )
+    return notice
+
+
+def get_model_notice() -> str | None:
+    """The model update notice, at most once per server process."""
+    global _has_notified_models
+    if _has_notified_models:
+        return None
+    try:
+        config = load_router_config()
+        notice = model_update_notice(config, pending_model_updates(config))
+        if notice:
+            _has_notified_models = True
+        return notice
+    except Exception as e:
+        logger.warning(f"Could not check for newer router models: {e}")
+        return None
+
+
+def _sync_models() -> None:
+    """Refresh the model catalog; move buckets to newer models only if the user turned that on."""
+    try:
+        model_catalog.refresh()
+        if not os.path.exists(router_config.ROUTER_CONFIG_PATH):
+            return
+        config = load_router_config()
+        if config.get("auto_update") is not True:
+            return
+        updates = pending_model_updates(config)
+        if updates:
+            save_router_config(apply_model_updates(config, updates))
+            logger.info(f"Router buckets updated automatically: {updates}")
+    except Exception as e:
+        logger.warning(f"Model sync failed: {e}")
+
+
+def start_model_sync() -> None:
+    """Run the model sync in the background so server start-up never waits on the network."""
+    if os.getenv(SKIP_MODEL_SYNC_ENV, ""):
+        return
+    import threading
+    threading.Thread(target=_sync_models, name="jev-model-sync", daemon=True).start()
+
 
 def get_temp_notice() -> str | None:
     global _has_notified_temp
@@ -1027,21 +1088,44 @@ def get_temp_notice() -> str | None:
 
 @mcp.tool(
     name="manage-router",
-    description="Interactive configuration manager for Jev's Model Router. Use this to view, add, or remove custom bucket models and exception rules.",
+    description="Interactive configuration manager for Jev's Model Router. Use this to view, add, or remove custom bucket models and exception rules. view_all also reports newer models available for each bucket; apply_updates switches to them; set_auto_update (enabled=true/false) records whether Jev should do that automatically at start-up.",
 )
 def jev_manage_router_config(
-    action: Literal["view_all", "add_rule", "remove_rule", "set_bucket"] = Field(description="The action to perform."),
+    action: Literal["view_all", "add_rule", "remove_rule", "set_bucket", "apply_updates", "set_auto_update"] = Field(description="The action to perform."),
     bucket_id: Optional[str] = Field(default=None, description="The bucket (b1, b2, b3, b4) to modify."),
     model_name: Optional[str] = Field(default=None, description="The model name to assign to the bucket."),
     condition: Optional[str] = Field(default=None, description="The natural language condition for the rule (e.g., 'Touches > 10 files')."),
     target: Optional[str] = Field(default=None, description="The target bucket or model if the condition is met."),
-    rule_id: Optional[int] = Field(default=None, description="The index of the rule to remove.")
+    rule_id: Optional[int] = Field(default=None, description="The index of the rule to remove."),
+    enabled: Optional[bool] = None,
 ) -> str:
     config = load_router_config()
     
     if action == "view_all":
-        return json.dumps(config, indent=2)
-        
+        updates = pending_model_updates(config)
+        if not updates:
+            return json.dumps(config, indent=2)
+        return json.dumps({
+            **config,
+            "available_model_updates": updates,
+            "_model_update_notice": model_update_notice(config, updates),
+        }, indent=2)
+
+    if action == "apply_updates":
+        updates = pending_model_updates(config)
+        if not updates:
+            return json.dumps({"status": "UP_TO_DATE", "message": "Every bucket already holds the newest model in its family."})
+        save_router_config(apply_model_updates(config, updates))
+        return json.dumps({"status": "UPDATED", "updated": {bucket: u["newer"] for bucket, u in updates.items()}}, indent=2)
+
+    if action == "set_auto_update":
+        if not isinstance(enabled, bool):
+            return "Error: enabled (true or false) required."
+        updates = pending_model_updates(config) if enabled else {}
+        new_config = apply_model_updates(config, updates) if updates else config
+        save_router_config({**new_config, "auto_update": enabled})
+        return json.dumps({"status": "SAVED", "auto_update": enabled, "updated": {bucket: u["newer"] for bucket, u in updates.items()}}, indent=2)
+
     if action == "set_bucket":
         if not bucket_id or not model_name:
             return "Error: bucket_id and model_name required."
@@ -1080,7 +1164,7 @@ def jev_determine_best_model(
             "status": "MASSIVE_CONTEXT_DETECTED",
             "warning": "Massive context detected (>100k tokens). Please ensure your client enables extra token context flags or select a specialized 1M+ context model. Provide the custom model name if you wish to override.",
             "recommended_tier": "b3",
-            "recommended_model": config["buckets"].get("b3", "claude-3-opus")
+            "recommended_model": config["buckets"].get("b3", router_config.FALLBACK_BUCKETS["b3"])
         }, indent=2)
         
     # 2. Evaluate Custom Rules (Hybrid Evidence-Based)
@@ -1114,7 +1198,7 @@ def jev_determine_best_model(
         probs = res.get("complexity", {}).get("probabilities", {})
         
         bucket = f"b{score}"
-        recommended_model = config["buckets"].get(bucket, "claude-3-haiku")
+        recommended_model = config["buckets"].get(bucket, router_config.FALLBACK_BUCKETS["b1"])
         
         res_dict = {
             "status": "EVALUATED",
@@ -1126,6 +1210,9 @@ def jev_determine_best_model(
         notice = get_temp_notice()
         if notice:
             res_dict["_system_notice"] = notice
+        model_notice = get_model_notice()
+        if model_notice:
+            res_dict["_model_update_notice"] = model_notice
             
         return json.dumps(res_dict, indent=2)
     except Exception as e:
@@ -1777,6 +1864,7 @@ def main():
         uvicorn.run(app, host=args.host, port=args.port)
         return
 
+    start_model_sync()
     mcp.run(transport='stdio')
 
 if __name__ == '__main__':

@@ -7,7 +7,7 @@ optimize-prompt    → jev_optimize_prompt L406 (dataset → prompt_selection.py
 calibrate          → jev_calibrate_threshold L526 (golden set, Platt; 5-fold StratifiedKFold when each class ≥ PLATT_CV_FOLDS=5)
 explain-decision   → jev_explain_decision L735
 generate-data      → jev_generate_synthetic_dataset L801
-manage-router      → jev_manage_router_config L952 (~/.jev/router_config.json)
+manage-router      → jev_manage_router_config L952 (~/.jev/router_config.json; apply_updates / set_auto_update via model_catalog.py; main() starts start_model_sync)
 model-router       → jev_determine_best_model L991
 handoff            → jev_agent_handoff L1121
 train              → jev_train_lora L1154 (engine mlx|llama.cpp, fuse, target_gguf_path, action train|restore; steps in lora_training.py; ensure_converter syncs ~/.jev/llama.cpp-src to the llama-server commit)
@@ -40,5 +40,3 @@ MAX_STATE_TOKENS=3500 · MIN_OPTIONS=2 · MAX_OPTIONS=10 · MAX_OPTION_LENGTH_RA
 
 ## Observed smells (for review, not fixed here)
 - server.py is 1772 lines (>800 guideline)
-- ROUTER_CONFIG_PATH is defined twice (router_config.py L4, server.py L927)
-- router_config defaults reference stale model names (claude-3-5-*, claude-3-opus, claude-fable)
