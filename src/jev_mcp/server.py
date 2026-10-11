@@ -1182,18 +1182,31 @@ def jev_agent_handoff(task_description: str, available_agents: Dict[str, str]) -
 
 @mcp.tool(
     name="train",
-    description="Instantly trains a local MLX LoRA adapter on your Apple Silicon GPU. Options: fuse=True (default) merges the adapter into a single .gguf file, and if target_gguf_path is provided, replaces it (backing up the original). fuse=False keeps the standalone MLX adapter. iters sets the number of training iterations (default 500)."
+    description="Trains a local MLX LoRA adapter on your Apple Silicon GPU. Options: fuse=True (default) merges the adapter into a Q4_K_M .gguf file (needs llama.cpp's converter, see README), and if target_gguf_path is provided, replaces that model (keeping the original as <target>.bak) and restarts the launchd agent serving it. fuse=False keeps the standalone MLX adapter. iters sets the number of training iterations (default 500). action='restore' with target_gguf_path puts the .bak back and restarts that agent."
 )
-def jev_train_lora(dataset_path: str, model_name: str = "mlx-community/Qwen2.5-7B-Instruct-4bit", engine: str = "mlx", fuse: bool = True, target_gguf_path: Optional[str] = None, iters: int = 500) -> str:
+def jev_train_lora(dataset_path: str = "", model_name: str = "mlx-community/Qwen2.5-7B-Instruct-4bit", engine: str = "mlx", fuse: bool = True, target_gguf_path: Optional[str] = None, iters: int = 500, action: Literal["train", "restore"] = "train") -> str:
     """
     Launches mlx_lm.lora fine-tuning in a detached background process
     and returns the live pid plus adapter/log locations.
     """
     import importlib.util
     import time
+    from jev_mcp import lora_training
     from jev_mcp.security import is_safe_path
 
     try:
+        if target_gguf_path:
+            if not is_safe_path(target_gguf_path):
+                return json.dumps({"status": "BLOCKED", "message": f"Access denied: '{target_gguf_path}' resolves to a sensitive system or credential location."})
+            if not target_gguf_path.endswith(".gguf"):
+                return json.dumps({"status": "ERROR", "message": f"target_gguf_path must be a .gguf file: {target_gguf_path}"})
+            target_gguf_path = os.path.abspath(os.path.expanduser(target_gguf_path))
+
+        if action == "restore":
+            if not target_gguf_path:
+                return json.dumps({"status": "ERROR", "message": "restore needs target_gguf_path (the model whose .bak should be put back)."})
+            return json.dumps(lora_training.restore_model(target_gguf_path), indent=2)
+
         if not is_safe_path(dataset_path):
             return json.dumps({"status": "BLOCKED", "message": f"Access denied: '{dataset_path}' resolves to a sensitive system or credential location."})
 
@@ -1220,6 +1233,7 @@ def jev_train_lora(dataset_path: str, model_name: str = "mlx-community/Qwen2.5-7
 
         # Adapters and logs get a fresh per-run directory instead of the CWD.
         run_id = time.strftime("%Y%m%d-%H%M%S")
+        restart_label: Optional[str] = None
         adapter_path = os.path.expanduser(f"~/.jev/adapters/{run_id}")
         os.makedirs(adapter_path, exist_ok=True)
         log_path = os.path.join(adapter_path, "train.log")
@@ -1243,52 +1257,19 @@ def jev_train_lora(dataset_path: str, model_name: str = "mlx-community/Qwen2.5-7
             
             # The default approach: MLX for training, then convert to gguf via llama.cpp
             run_script_path = os.path.join(adapter_path, "run_train.sh")
-            fuse_cmd = ""
             if fuse:
-                target_out = target_gguf_path if target_gguf_path else os.path.join(adapter_path, "fused_model.gguf")
-                backup_cmd = f"mv '{target_out}' '{target_out}.bak'" if target_gguf_path else "echo 'No existing model to backup.'"
-                
-                fuse_cmd = f"""
-echo "Training complete. Fusing adapter into base model and exporting to GGUF..."
-{sys.executable} -m mlx_lm.fuse \
-    --model {model_name} \
-    --adapter-path {adapter_path} \
-    --export-gguf \
-    --gguf-path {adapter_path}/fused.gguf
-
-if [ -f "{adapter_path}/fused.gguf" ]; then
-    if [ "{target_gguf_path}" != "None" ]; then
-        echo "Replacing current model and providing fallback backup..."
-        if [ -f "{target_out}" ]; then
-            {backup_cmd}
-            echo "Backed up original model to {target_out}.bak"
-        fi
-        mv "{adapter_path}/fused.gguf" "{target_out}"
-        echo "Successfully replaced inference model with fused GGUF!"
-        
-        echo "Automatically restarting inference engine (llama-server)..."
-        LLAMA_PID=$(pgrep -f "llama-server" | head -n 1)
-        if [ -n "$LLAMA_PID" ]; then
-            LLAMA_CMD=$(ps -p $LLAMA_PID -o command=)
-            echo "Found running llama-server (PID $LLAMA_PID): $LLAMA_CMD"
-            kill $LLAMA_PID
-            
-            # Wait for it to die
-            while kill -0 $LLAMA_PID 2>/dev/null; do sleep 1; done
-            
-            echo "Starting new llama-server in the background..."
-            nohup $LLAMA_CMD > /tmp/jev_llama_server.log 2>&1 &
-            echo "Inference engine restarted successfully. Logs at /tmp/jev_llama_server.log"
-        else
-            echo "No running llama-server found to restart."
-        fi
-    else
-        echo "Fused model saved to {adapter_path}/fused.gguf (Dynamic fallback skipped because target_gguf_path was not provided)."
-    fi
-else
-    echo "Fuse failed!"
-fi
-"""
+                problem = lora_training.converter_problem()
+                if problem:
+                    return json.dumps({"status": "NOT_AVAILABLE", "message": f"{problem} Or pass fuse=False to train the adapter only."})
+                restart_label = lora_training.find_launchd_label(target_gguf_path) if target_gguf_path else None
+                fuse_cmd = lora_training.build_fuse_script(
+                    python=sys.executable,
+                    model_name=model_name,
+                    adapter_path=adapter_path,
+                    converter_src=str(lora_training.llama_cpp_src()),
+                    target_gguf_path=target_gguf_path,
+                    label=restart_label,
+                )
             else:
                 fuse_cmd = f"""
 echo "Training complete. Adapter saved to {adapter_path} (fusion skipped)."
@@ -1320,6 +1301,7 @@ echo "Starting MLX LoRA training..."
             "base_model": model_name,
             "pid": proc.pid,
             "log": log_path,
+            "restart_agent": restart_label,
             "command": " ".join(cmd),
             "note": f"Training runs in a detached background process. Monitor with: tail -f {log_path}",
         }, indent=2)

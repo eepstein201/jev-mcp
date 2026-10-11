@@ -10,7 +10,7 @@ generate-data      → jev_generate_synthetic_dataset L801
 manage-router      → jev_manage_router_config L952 (~/.jev/router_config.json)
 model-router       → jev_determine_best_model L991
 handoff            → jev_agent_handoff L1121
-train              → jev_train_lora L1154 (engine mlx|llama.cpp, fuse, target_gguf_path)
+train              → jev_train_lora L1154 (engine mlx|llama.cpp, fuse, target_gguf_path, action train|restore; steps in lora_training.py)
 temperature        → jev_manage_temperature L1315 (view|set|reset)
 read-file          → jev_read_file L1350 (path-secured, chunked)
 compact            → jev_compact_context L1461 (confidence_threshold default 0.3)

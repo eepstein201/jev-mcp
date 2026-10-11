@@ -26,7 +26,7 @@ routing_provider.RoutingProvider  (0.85 confidence gate)
 - Tests: tests/conftest.py stubs the MCP SDK; autouse `no_real_daemon_http` fails any unmocked daemon HTTP call
 - Email triage: email_triage/* (FastAPI webhook + MCP tools + Slack HITL + Google Apps Script)
 - Browser agent: ultrafast_adapter.py ↔ jev-ultrafast submodule (stub dispatch in server)
-- LoRA training: jev_train_lora (mlx_lm.lora → fuse → restart llama-server)
+- LoRA training: jev_train_lora → lora_training.py (mlx_lm.lora → fuse --dequantize → convert_hf_to_gguf.py → llama-quantize → launchctl kickstart of the serving agent; restore action)
 
 ## Antigravity touchpoints (takeover checklist)
 - jev_mac_manager.sh:134 writes MCP entry to `~/.gemini/config/mcp_config.json`

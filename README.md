@@ -266,21 +266,35 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
 *   **Command:** `/jev-mcp:train`
 *   **Underlying Tool:** `train`
 *   **Natural Language Triggers:** *"Train a custom adapter on this data,"*, *"Fine-tune a local model..."*
-*   **What it does:** Starts a detached `mlx_lm.lora` run (`iters` iterations, default 500) on your Apple Silicon GPU and returns the process id, adapter directory (`~/.jev/adapters/<run_id>`), and log path. With `fuse=True` it then runs `mlx_lm.fuse --export-gguf`; if a fused GGUF is produced and `target_gguf_path` is set, it moves the existing model to `<target>.bak`, installs the new file, and restarts a running `llama-server`.
-*   **Current limitations (read from the code and `mlx_lm` 0.31.3, not yet exercised end to end):**
-    *   `mlx_lm.fuse --export-gguf` only supports unquantized `llama`, `mistral`, and `mixtral` models, so with the default base (`mlx-community/Qwen2.5-7B-Instruct-4bit`, a quantized `qwen2` model) the fuse step cannot produce a GGUF. The adapter itself is still written. A working route for Qwen is `mlx_lm.fuse --dequantize --save-path <dir>` followed by llama.cpp's `convert_hf_to_gguf.py` and `llama-quantize`; the converter script is not shipped with the Homebrew `llama.cpp` package.
-    *   The restart step kills the first `llama-server` process it finds, which is not necessarily the one serving `target_gguf_path` when both engines are running, and the launchd agents use `KeepAlive`. After a replacement, prefer `make start` to restart both daemons cleanly.
-    *   There is a backup (`<target>.bak`) but no restore command: to roll back, move the `.bak` file back and run `make start`.
-    *   On a 16 GB machine, stop the daemons before training a 7B model; training and both `llama-server` processes do not fit in memory together.
+*   **What it does:** Starts a detached `mlx_lm.lora` run (`iters` iterations, default 500) on your Apple Silicon GPU and returns the process id, adapter directory (`~/.jev/adapters/<run_id>`), and log path. With `fuse=True` it then:
+    1.  runs `mlx_lm fuse --dequantize` to write a full-precision copy of the base model with the adapter merged in (about 14 GB for a 7B model),
+    2.  converts that copy to a Q8_0 GGUF with llama.cpp's `convert_hf_to_gguf.py`, then deletes the copy,
+    3.  quantizes to `Q4_K_M` with `llama-quantize` and leaves `fused-Q4_K_M.gguf` in the adapter directory.
+
+    If `target_gguf_path` is set, the existing model is kept as `<target>.bak` (only the first time, so the backup is always the original), the new file takes its place, and the one launchd agent whose plist serves that file is restarted with `launchctl kickstart -k`. The other engine is not touched. Any failed step stops the run before the served model is changed.
+*   **Converter setup (once, needed for `fuse=True`):** Homebrew's `llama.cpp` does not ship the converter. Extract it from the commit your `llama-server` was built from, and read it before use:
+    ```bash
+    COMMIT=$(llama-server --version 2>&1 | rg -o "commit ([0-9a-f]+)" -r '$1')
+    mkdir -p ~/.jev/llama.cpp-src
+    curl -sL "https://github.com/ggml-org/llama.cpp/archive/$COMMIT.tar.gz" | tar -xz --strip-components=1 -C ~/.jev/llama.cpp-src '*/convert_hf_to_gguf.py' '*/conversion' '*/gguf-py'
+    ```
+    Set `JEV_LLAMA_CPP_SRC` to use another directory. The converter runs in the project environment and needs `torch` and `transformers` from the `engines` extra. Without the converter, `train` returns `NOT_AVAILABLE` instead of starting.
+*   **Restore:** `train` with `action="restore"` and `target_gguf_path` moves `<target>.bak` back over the fine-tuned model and restarts that agent.
+*   **Measured on 2026-10-10 (Qwen2.5-7B, M2 Pro 16 GB, `mlx_lm` 0.31.3, llama.cpp `d81235049`):**
+    *   The route works end to end. 120 iterations on 56 rows took about 3.5 minutes at 6.3 GB peak memory; fuse, convert and quantize took about 5 minutes more.
+    *   The adapter did not improve the classifier. On 24 held-out rows from three unseen question groups, scored five times each, the stock model got 115/120 and the fine-tuned model 110/120; both ranked every row correctly (ROC AUC 1.0). The sample is small and the fused model was quantized from Q8_0, not from 16-bit floats, so treat this as "no evidence of benefit", not as proof of harm.
+    *   Disk: allow about 25 GB free. The 14 GB copy and the 7.5 GB Q8_0 file exist together briefly.
+    *   Memory: the smart daemon was stopped during training and fusing. Running them alongside it on 16 GB is untested.
 *   **Arguments:**
-    *   `dataset_path` *(string)*: Absolute path to the `.jsonl` dataset.
+    *   `dataset_path` *(string)*: Absolute path to the `.jsonl` dataset. Not needed for `action="restore"`.
     *   `model_name` *(string, default: "mlx-community/Qwen2.5-7B-Instruct-4bit")*: The base model to fine-tune.
     *   `engine` *(string, default: "mlx")*: The training backend. Supports `"mlx"` (Apple Silicon Native) or `"llama.cpp"` (Experimental).
-    *   `fuse` *(bool, default: True)*: Attempts to fuse the adapter and export a single `.gguf` file (see the limitations above).
-    *   `target_gguf_path` *(string, optional)*: If a fused GGUF is produced, replaces this inference model with it (moving the original to `.bak`) and restarts `llama-server`.
+    *   `fuse` *(bool, default: True)*: Fuse the adapter and produce a `Q4_K_M` `.gguf` file (needs the converter setup above).
+    *   `target_gguf_path` *(string, optional)*: A `.gguf` model to replace with the fused result, or to restore.
     *   `iters` *(integer, default: 500)*: Number of training iterations. Lower it for small datasets to limit overfitting.
+    *   `action` *(string, default: "train")*: `"train"` or `"restore"`.
 
-    With `fuse=False` the run stops after training and leaves the MLX adapter in the adapter directory; nothing is downloaded or converted.
+    With `fuse=False` the run stops after training and leaves the MLX adapter in the adapter directory; nothing is converted.
 
 
 #### ⚡ Evaluate Batch
