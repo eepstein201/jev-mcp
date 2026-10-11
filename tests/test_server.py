@@ -151,7 +151,7 @@ def test_jev_evaluate_batch_qfe_compression_exception(mock_check_limit, mock_url
     assert "CRITICAL SYSTEM ERROR" in result_str
     assert "Network Error" in result_str
 
-@patch("jev_mcp.server.call_fast_autofixer")
+@patch("jev_mcp.app.call_fast_autofixer")
 @patch.object(server.provider, "evaluate_batch")
 @patch.object(server.provider, "check_token_limit")
 @patch.object(server.linter, "lint")

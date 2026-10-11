@@ -23,8 +23,8 @@ def test_model_based_linting_exception(mock_ctl, mock_eval):
     import traceback
     assert "SUCCESS" in res_str
     
-@patch("jev_mcp.server.linter")
-@patch("jev_mcp.server.provider")
+@patch("jev_mcp.app.linter")
+@patch("jev_mcp.app.provider")
 def test_unknown_question_type_and_semantic_dedupe(mock_provider, mock_linter):
     class UnknownQuestion:
         def __init__(self):
@@ -51,7 +51,7 @@ def test_unknown_question_type_and_semantic_dedupe(mock_provider, mock_linter):
         {"u1": {"noul": 0.9}}
     ]
     mock_provider.check_token_limit.return_value = 0
-    server.provider.max_tokens = 1000
+    mock_provider.max_tokens = 1000
     mock_provider.name = "mock"
     mock_provider.model_id = "mock"
     
@@ -100,7 +100,7 @@ def test_calibrate_threshold_score_question_and_else_branch():
     q = ScoreQuestion(key="sq", prompt="score?", labels=["1", "2"])
     states = [{"state": i, "expected": "1"} for i in range(11)]
     
-    with patch("jev_mcp.server.provider") as mock_provider:
+    with patch("jev_mcp.app.provider") as mock_provider:
         results = [{"sq": {"probabilities": {"2": 1.0}}}] + [{"sq": {}}] * 10
         mock_provider.evaluate_dataset.return_value = results
         
@@ -192,7 +192,7 @@ def test_coverage_231(mock_ctl, mock_eval):
     res_str = server.jev_evaluate_batch(state={"text": "t"}, questions=[q])
     assert "SUCCESS" in res_str
 
-@patch("jev_mcp.server.call_fast_autofixer")
+@patch("jev_mcp.app.call_fast_autofixer")
 @patch.object(server.provider, "evaluate_batch")
 @patch.object(server.provider, "check_token_limit")
 @patch.object(server.linter, "lint")
