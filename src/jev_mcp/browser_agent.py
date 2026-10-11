@@ -152,6 +152,15 @@ def _error(message: str) -> dict[str, Any]:
     return {"status": "ERROR", "message": message}
 
 
+def _is_stuck_in_waits(history: list[Any]) -> bool:
+    """True when the last three actions were all no-effect waits — waiting stopped paying."""
+    tail = history[-3:]
+    return len(tail) == 3 and all(
+        isinstance(h, dict) and h.get("kind") == "wait" and h.get("page_changed") is False
+        for h in tail
+    )
+
+
 def run_browser_agent(url: str, goal: str, max_steps: int = DEFAULT_MAX_STEPS) -> dict[str, Any]:
     """Drive a browser toward `goal`, starting at `url`, until done, blocked, or `max_steps` actions."""
     parsed = urlparse(url or "")
@@ -173,6 +182,8 @@ def run_browser_agent(url: str, goal: str, max_steps: int = DEFAULT_MAX_STEPS) -
                 for snapshot in agent.run():
                     if len(snapshot["history"]) >= max_steps:
                         break
+                    if _is_stuck_in_waits(snapshot["history"]):
+                        break  # three no-effect waits in a row: stop burning the step budget
                 state = agent.state
                 return {
                     "status": "SUCCESS",

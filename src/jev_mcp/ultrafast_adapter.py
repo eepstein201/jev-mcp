@@ -7,6 +7,11 @@ from jev_mcp.provider import ChoiceQuestion, QuestionType
 # all-caps token only, so ordinary prose after "shows" never matches.
 _MARKER_RE = re.compile(r"\bshows?\s+[\"'“']?([A-Z][A-Z0-9_\-]{3,40})")
 
+# Target groups larger than this get a second, focused pass over the top-k
+# candidates: one-word discrimination works over five options, not fifty.
+NARROW_MIN_CANDIDATES = 12
+SHORTLIST_K = 5
+
 
 def success_marker(goal: str) -> str | None:
     """The success token the goal says the page will show, or None if none is stated."""
@@ -56,6 +61,21 @@ def local_choose(state: Dict[str, Any], goal: str, history: List[Any], operation
         notes.append(
             "You are alternating between the same two actions without completing the goal; "
             "choose a different target, or DONE if the goal is visibly satisfied.")
+    if history and isinstance(history[-1], dict) and history[-1].get("kind") == "fill":
+        notes.append(
+            "A field was just filled; waiting rarely completes a form — click the goal's "
+            "next element (e.g. Submit) if the goal names one.")
+    recent_labels = [h.get("action") for h in history[-5:] if isinstance(h, dict)]
+    if recent_labels:
+        common = max(set(recent_labels), key=recent_labels.count)
+        if recent_labels.count(common) >= 4:
+            notes.append(
+                f"You have chosen '{common}' {recent_labels.count(common)} of the last "
+                f"{len(recent_labels)} times in a row without completing the goal; choose a different operation.")
+    if any(len(candidates) > NARROW_MIN_CANDIDATES for candidates in targets.values()):
+        notes.append(
+            "If no listed element clearly matches the goal, scroll to reveal more elements "
+            "instead of clicking a poor match.")
     note_suffix = (" " + " ".join(notes)) if notes else ""
 
     # 1. Add the operation choice question
@@ -97,6 +117,34 @@ def local_choose(state: Dict[str, Any], goal: str, history: List[Any], operation
     
     # Run evaluation
     results = provider.evaluate_batch(slim_state, questions)
+
+    # Dense listings get a second, focused pass: re-ask over only the top-k
+    # candidates from the first pass, where one-word discrimination is easy.
+    for op, candidates in targets.items():
+        if op not in ("CLICK", "SELECT") or len(candidates) <= NARROW_MIN_CANDIDATES:
+            continue
+        answer = results.get(f"{op.lower()}_target")
+        if not answer or len(answer.get("probabilities", {})) < 2:
+            continue
+        top = sorted(candidates, key=lambda i: answer["probabilities"].get(i, 0.0), reverse=True)[:SHORTLIST_K]
+        if len(top) < 2:
+            continue
+        short = {i: candidates[i] for i in top}
+        listing = "\n".join(f"[{i}] {short[i].get('label', short[i].get('element', ''))}" for i in top)
+        q_shortlist = ChoiceQuestion(
+            key=f"{op.lower()}_target",
+            prompt=(f"Goal: {goal}\nOperation: {op}\nChoose the target index.{note_suffix}\n"
+                    f"Shortlist — the most likely candidates:\n{listing}"),
+            options=top,
+        )
+        refined = provider.evaluate_batch(slim_state, [q_shortlist]).get(f"{op.lower()}_target")
+        if refined:
+            # validate_choice requires probabilities over exactly the offered ids,
+            # so expand the shortlist answer back over every candidate (zeros elsewhere).
+            expanded = {index: 0.0 for index in candidates}
+            for index, probability in refined.get("probabilities", {}).items():
+                expanded[index] = probability
+            results[f"{op.lower()}_target"] = {**refined, "probabilities": expanded}
     
     # Map back to the TypeSafe "answers" dict format
     answers = {}

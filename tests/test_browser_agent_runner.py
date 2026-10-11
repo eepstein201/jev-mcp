@@ -149,6 +149,98 @@ def test_alternating_picks_add_a_warning_to_the_operation_prompt(fake_agent):
     assert operation_prompts and "alternating" in operation_prompts[-1]
 
 
+def _dense_targets(n=15):
+    return {"CLICK": {str(i): {"label": f"Select — part {i}", "element": f"part {i}"} for i in range(1, n + 1)}}
+
+
+def test_dense_target_listings_are_narrowed_to_a_shortlist(fake_agent):
+    from jev_mcp import ultrafast_adapter
+
+    ScriptedRouter.prompts = []
+    operations = {"CLICK": "Click an element.", "DONE": "Every requirement is visibly satisfied."}
+    out = ultrafast_adapter.local_choose(
+        {"page": {"url": "u", "title": "t", "text": "x"}}, "goal", [], operations, _dense_targets(), {})
+
+    shortlist_prompts = [p for p in ScriptedRouter.prompts if "Shortlist" in p]
+    assert shortlist_prompts, "dense listing was never narrowed"
+    assert shortlist_prompts[0].count("[") <= 5
+    assert out["answers"]["click_target"]["choice"] in {"1", "2", "3", "4", "5"}
+
+
+def test_small_target_listings_are_not_narrowed(fake_agent):
+    from jev_mcp import ultrafast_adapter
+
+    ScriptedRouter.prompts = []
+    operations = {"CLICK": "Click an element.", "DONE": "Every requirement is visibly satisfied."}
+    targets = {"CLICK": {"1": {"label": "A", "element": "A"}, "2": {"label": "B", "element": "B"},
+               "3": {"label": "C", "element": "C"}, "4": {"label": "D", "element": "D"}}}
+    ultrafast_adapter.local_choose(
+        {"page": {"url": "u", "title": "t", "text": "x"}}, "goal", [], operations, targets, {})
+
+    assert not [p for p in ScriptedRouter.prompts if "Shortlist" in p]
+
+
+def test_consecutive_repeated_picks_get_a_break_the_loop_note(fake_agent):
+    from jev_mcp import ultrafast_adapter
+
+    ScriptedRouter.prompts = []
+    history = [{"action": "Wait for the page to update", "kind": "wait", "text": None,
+                "page_changed": False}] * 5
+    operations = {"CLICK": "Click an element.", "WAIT": "Wait for the page to update.",
+                  "DONE": "Every requirement is visibly satisfied."}
+    ultrafast_adapter.local_choose(
+        {"page": {"url": "u", "title": "t", "text": "x"}}, "goal", history, operations,
+        {"CLICK": {"1": {"label": "A", "element": "A"}}}, {})
+
+    operation_prompts = [p for p in ScriptedRouter.prompts if "Choose the best operation" in p]
+    assert operation_prompts and "in a row" in operation_prompts[-1]
+
+
+def test_a_just_filled_field_gets_a_progression_note(fake_agent):
+    from jev_mcp import ultrafast_adapter
+
+    ScriptedRouter.prompts = []
+    history = [{"action": "Search", "kind": "fill", "text": "blue orchid 42", "page_changed": True}]
+    operations = {"CLICK": "Click an element.", "TYPE_TEXT": "Enter text.", "WAIT": "Wait.",
+                  "DONE": "Every requirement is visibly satisfied."}
+    ultrafast_adapter.local_choose(
+        {"page": {"url": "u", "title": "t", "text": "x"}}, "goal", history, operations,
+        {"CLICK": {"1": {"label": "Submit", "element": "Submit"}}}, {})
+
+    operation_prompts = [p for p in ScriptedRouter.prompts if "Choose the best operation" in p]
+    assert operation_prompts and "waiting rarely completes a form" in operation_prompts[-1]
+
+
+def test_wait_loop_detector():
+    from jev_mcp.browser_agent import _is_stuck_in_waits
+
+    waits = [{"kind": "wait", "page_changed": False}] * 3
+    assert _is_stuck_in_waits(waits)
+    assert not _is_stuck_in_waits(waits[:2])
+    assert not _is_stuck_in_waits([{"kind": "fill", "page_changed": False}] + waits[:2])
+    assert not _is_stuck_in_waits([{"kind": "wait", "page_changed": True}] + waits[:2])
+
+
+def test_narrowed_answers_cover_the_full_candidate_set_again(fake_agent):
+    # The submodule's validate_choice requires probabilities over exactly the
+    # offered ids, so a shortlist answer must be expanded back to all candidates.
+    _, model_module = browser_agent.load_ultrafast()
+
+    class FakeModel:
+        @staticmethod
+        def action_space(actions):
+            targets = {"CLICK": {str(i + 1): {"id": f"e{i + 1}", "label": f"part {i}"} for i in range(15)}}
+            return [], targets, {}
+
+        validate_choice = staticmethod(model_module.validate_choice)
+
+    page = {"actions": [], "title": "t", "text": "x"}
+    decision = browser_agent.choose_locally(FakeModel, page, "goal", [])
+
+    assert decision["operation"] == "CLICK"
+    assert decision["probabilities"]["e1"] > 0.5
+
+
 def test_agent_clicks_the_chosen_element_then_reports_done(fake_agent):
     result = browser_agent.run_browser_agent("https://example.test/form", "Click the Submit button.")
 
