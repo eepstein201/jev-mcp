@@ -25,9 +25,21 @@ def load_router_config():
         return json.load(f)
 
 def save_router_config(config):
+    # Write to a sibling temp file and rename over the target, so a write that
+    # dies partway through never leaves a truncated config behind.
     os.makedirs(os.path.dirname(ROUTER_CONFIG_PATH), exist_ok=True)
-    with open(ROUTER_CONFIG_PATH, "w") as f:
-        json.dump(config, f, indent=2)
+    tmp_path = ROUTER_CONFIG_PATH + ".tmp"
+    try:
+        with open(tmp_path, "w") as f:
+            json.dump(config, f, indent=2)
+        os.replace(tmp_path, ROUTER_CONFIG_PATH)
+    except OSError:
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+        raise
 
 def seed_defaults_for_client(client_name: str) -> dict[str, Any] | None:
     """Seed router buckets from the connecting client when the user hasn't chosen them.

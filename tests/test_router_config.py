@@ -4,6 +4,23 @@ from unittest.mock import patch, mock_open
 from jev_mcp import router_config
 from jev_mcp.router_config import load_router_config, save_router_config
 
+def test_save_router_config_is_atomic_on_failure(monkeypatch, tmp_path):
+    # The live config survives a write that dies partway through.
+    save_router_config({"buckets": {"b1": "original"}, "rules": []})
+    target = router_config.ROUTER_CONFIG_PATH
+    before = open(target).read()
+
+    import json as _json
+    def exploding_dump(*args, **kwargs):
+        raise OSError("disk full")
+    monkeypatch.setattr(_json, "dump", exploding_dump)
+
+    import pytest
+    with pytest.raises(OSError):
+        save_router_config({"buckets": {"b1": "clobbered"}, "rules": []})
+    assert open(target).read() == before
+
+
 def test_load_router_config_default():
     with patch("os.path.exists", return_value=False):
         config = load_router_config()
@@ -21,16 +38,8 @@ def test_load_router_config_existing():
             assert config["buckets"]["b1"] == "test-model"
 
 def test_save_router_config():
+    # Runs against the conftest-provided temp config path.
     mock_config = {"buckets": {"b1": "test-model"}, "rules": []}
-    
-    with patch("os.makedirs") as mock_makedirs:
-        with patch("builtins.open", mock_open()) as mock_file:
-            save_router_config(mock_config)
-            
-            mock_makedirs.assert_called_once_with(os.path.dirname(router_config.ROUTER_CONFIG_PATH), exist_ok=True)
-            mock_file.assert_called_once_with(router_config.ROUTER_CONFIG_PATH, "w")
-            
-            # json.dump makes multiple write calls, so we just check if it was called
-            # and the file was opened correctly
-            handle = mock_file()
-            assert handle.write.called
+    save_router_config(mock_config)
+    assert load_router_config() == mock_config
+    assert not os.path.exists(router_config.ROUTER_CONFIG_PATH + ".tmp")
