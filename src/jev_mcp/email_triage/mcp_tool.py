@@ -47,8 +47,8 @@ def evaluate_email_with_mlx(subject: str, sender: str, body: str, labels: list[s
                 confidence_threshold=0.6
             )
             parsed_res = json.loads(compaction_res)
-            if parsed_res.get("compressed_context"):
-                body = parsed_res["compressed_context"]
+            if parsed_res.get("compacted_state"):
+                body = parsed_res["compacted_state"]
         except Exception:
             pass
 

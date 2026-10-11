@@ -293,17 +293,3 @@ class DaemonProvider(JevProvider):
 
         return results
 
-    def evaluate_dataset(self, dataset: List[dict], question: Any) -> List[dict]:
-        results = []
-        for row in dataset:
-            state = row.get("state", {})
-            expected = row.get("expected")
-            res = self.evaluate_batch(state, [question])
-            results.append(
-                {
-                    "expected": expected,
-                    "probabilities": res.get(question.key, {}).get("probabilities", {}),
-                }
-            )
-        return results
-

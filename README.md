@@ -3,7 +3,7 @@
 Jev MCP is a high-performance, mathematically rigorous FastMCP server designed for macOS Apple Silicon. It replaces slow, error-prone generative API calls by wrapping two local AI models in a unified **Dual-Engine Architecture**.
 
 Instead of asking a cloud LLM to blindly generate text for routing or classification, Jev runs a hybrid local pipeline:
-1. **The Fast Engine (Kev 0.8B):** Instantly intercepts simple boolean, multiple-choice, and multi-agent routing logic. By utilizing a native pointer-head to extract raw mathematical probability distributions (logit extraction) without generating text, it subtracts statistical bias and yields calibrated confidence scores in ~120ms that can be strictly thresholded for 100% precision automation.
+1. **The Fast Engine (Kev 0.8B):** Instantly intercepts simple boolean, multiple-choice, and multi-agent routing logic. By utilizing a native pointer-head to extract raw mathematical probability distributions (logit extraction) without generating text, it subtracts statistical bias and yields calibrated confidence scores in roughly 40 ms per warm request (see [Performance Benchmarks](#-performance-benchmarks)) that you can threshold (use `calibrate`) to trade automation rate against precision.
 2. **The Smart Engine (Qwen2.5 7B):** When tasks require deep inferential reasoning, synthetic edge-case generation, or massive context compression, Jev dynamically escalates the request to a powerful 7B reasoning model running on Apple's `mlx_lm` C++ backend.
 
 By combining the strict mathematical safety of Kev with the reasoning depth of Qwen, Jev provides your downstream MCP clients (like Claude Desktop or Antigravity) with the ultimate local safety gate and dynamic task router.
@@ -91,10 +91,10 @@ class node_fastservice,node_smartservice toneIndigo
 - **Parallelized AST Analysis**: Thread-safe, multi-worker chunking allows instantaneous evaluation of massive codebases without triggering MCP request timeouts.
 - **Enterprise Reliability**: Adheres strictly to SOLID programming principles (SRP, OCP), enforcing 95%+ mathematical unit test coverage and DRY architectural patterns across the Python codebase.
 
-### ⚡ Legacy Highlights
-By bypassing traditional text generation, Jev unlocks massive performance gains on Apple Silicon using two distinct model profiles:
-- **The `0.8B` Fast Profile (Kev):** Achieves lightning-fast mathematical evaluations in **~120ms**. Powered by a native pointer-head, it intercepts routing mechanics perfectly without generating text, yielding an exceptionally reliable `0.866` ROC AUC.*
-- **The `7B` Intel Profile:** Delivers evaluations in **~800ms**. While slightly slower than the 0.8B fast engine, it possesses deep inferential reasoning capabilities, achieving a mathematically perfect **1.0 ROC AUC** on edge cases. This easily outperforms standard cloud API text-generation methods in both accuracy and reliability for complex logic.
+### ⚡ Engine Highlights
+By bypassing traditional text generation, Jev unlocks large latency gains on Apple Silicon using two distinct model profiles (measured figures and caveats: [Performance Benchmarks](#-performance-benchmarks)):
+- **The `0.8B` Fast Profile (Kev):** Evaluates in roughly **40 ms** per warm request. Powered by a native pointer-head, it scores without generating text, reaching `0.93` ROC AUC and 90% accuracy at a 0.5 threshold on the 88-row golden set.
+- **The `7B` Smart Profile:** Evaluates in roughly **245 ms** per warm request. It reached `0.98` ROC AUC on the same set but, at a 0.5 threshold, the same 90% accuracy as Kev; its scores are close to hard 0/1 (80% saturated), so use thresholds with care.
 - **Enterprise-Grade Security:** Because Jev evaluates raw, untrusted user data, all payloads are strictly sterilized via NFKC Unicode normalization and recursive Control Token stripping. For the 7B profile, prompts are additionally wrapped in strict XML sandboxing to isolate prompt injection payloads.
 - **Browser Automation Gateway:** Integrated tightly with the `jev-ultrafast` local browser agent, Jev-MCP supplies the core probabilistic evaluation engine for TypeSafe AI browser navigation, seamlessly converting DOM state and objective logic into fully-local, dual-engine llama.cpp routing decisions without requiring external cloud API keys.
 
@@ -202,6 +202,8 @@ Once installed, Jev exposes the following specialized tools to your MCP client (
 *   **Underlying Tool:** `calibrate`
 *   **Natural Language Triggers:** *"Can you calibrate my dataset?"*, *"Help me fit the threshold for..."*
 *   **What it does:** The core feature of Jev. It takes your dataset and evaluates every single case against the local daemon by extracting direct `get_logprobs` mathematical arrays. It subtracts statistical bias and returns a beautiful Markdown Confusion Matrix, showing exactly what Probability Threshold (`>0.95`) you need to achieve 100% Precision.
+*   **Which engine it calibrates:** `calibrate` scores through the same hybrid router as `evaluate` (Kev first, escalating to Qwen when Kev's confidence is below 0.85 or the state exceeds 4,000 tokens), so the report describes the cascade you run in production rather than a single engine. A threshold that automates decisions without ever catching a positive is marked `❌ Unusable`.
+*   **Scope of the report:** one `question` per call, and the table (including any Platt fit) is computed on the same rows you pass in, so treat it as an optimistic, in-sample estimate.
 *   **Arguments:**
     *   `dataset` *(array of objects)*: Array of dicts representing the edge cases: `[{"state": {...}, "expected": True/False/String}]`.
     *   `question` *(object)*: The question object schema to calibrate.
@@ -223,9 +225,9 @@ Once installed, Jev exposes the following specialized tools to your MCP client (
 Occasionally, larger RLHF-tuned models (like 7B) exhibit "Mode Collapse" or "Logit Sharpening." Because they are trained to be highly decisive assistants, they may assign >99% epistemic certainty to the argmax token, causing all standard thresholds to fail.
 
 `calibrate` features native **Automated Platt Scaling (Logistic Calibration)**. 
-By default (`apply_platt_scaling="auto"`), Jev actively monitors for extreme overconfidence. If triggered, it automatically extracts the raw log-odds (`log(P_A) - log(P_B)`) and uses `scikit-learn` to fit a Logistic Regression model against your expected dataset outcomes—mathematically squishing the >99% confidence scores back down to their true fractional uncertainty. It achieves this by automatically deriving a new Global Calibration Temperature specifically for the **Qwen 7B Smart Engine**, which it saves to your config.
+By default (`apply_platt_scaling="auto"`), Jev actively monitors for extreme overconfidence. If triggered, it automatically extracts the raw log-odds (`log(P_A) - log(P_B)`) and uses `scikit-learn` to fit a Logistic Regression model against your expected dataset outcomes—mathematically squishing the >99% confidence scores back down to their true fractional uncertainty. The calibrated probabilities are used for the returned report only; `calibrate` does not write anything to your config.
 
-*Note: You can manually inspect or reset this newly fitted temperature using the `/jev-mcp:temperature` command! Furthermore, if you want to permanently bake this calibrated statistical distribution directly into the model's weights, use the `/jev-mcp:train` command to instantly fine-tune a native LoRA adapter for the 7B model on the dataset you just used to calibrate.*
+*Note: The global calibration temperature for the **Qwen 7B Smart Engine** (`fitted_temperature` in `~/.jev/router_config.json`) is a separate setting that you view, set, or reset with the `/jev-mcp:temperature` command. Furthermore, if you want to permanently bake this calibrated statistical distribution directly into the model's weights, use the `/jev-mcp:train` command to instantly fine-tune a native LoRA adapter for the 7B model on the dataset you just used to calibrate.*
 
 **Real-World Example:**
 Imagine an unfair coin weighted to land Heads 75% of the time. When asked to predict 100 flips without context, the 7B model accurately deduces that Heads is the optimal guess, but erroneously assigns >99% confidence to *every single guess*.
@@ -262,13 +264,18 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
 *   **Command:** `/jev-mcp:train`
 *   **Underlying Tool:** `train`
 *   **Natural Language Triggers:** *"Train a custom adapter on this data,"*, *"Fine-tune a local model..."*
-*   **What it does:** Instantly trains a local LoRA adapter on your Apple Silicon GPU using your optimized dataset. By default (`fuse=True`), Jev will automatically merge the new adapter into your base `.gguf` model, backup the original, and dynamically restart your active `llama-server` inference daemon to instantly apply the new weights without downtime!
+*   **What it does:** Starts a detached `mlx_lm.lora` run (500 iterations) on your Apple Silicon GPU and returns the process id, adapter directory (`~/.jev/adapters/<run_id>`), and log path. With `fuse=True` it then runs `mlx_lm.fuse --export-gguf`; if a fused GGUF is produced and `target_gguf_path` is set, it moves the existing model to `<target>.bak`, installs the new file, and restarts a running `llama-server`.
+*   **Current limitations (read from the code and `mlx_lm` 0.31.3, not yet exercised end to end):**
+    *   `mlx_lm.fuse --export-gguf` only supports unquantized `llama`, `mistral`, and `mixtral` models, so with the default base (`mlx-community/Qwen2.5-7B-Instruct-4bit`, a quantized `qwen2` model) the fuse step cannot produce a GGUF. The adapter itself is still written. A working route for Qwen is `mlx_lm.fuse --dequantize --save-path <dir>` followed by llama.cpp's `convert_hf_to_gguf.py` and `llama-quantize`; the converter script is not shipped with the Homebrew `llama.cpp` package.
+    *   The restart step kills the first `llama-server` process it finds, which is not necessarily the one serving `target_gguf_path` when both engines are running, and the launchd agents use `KeepAlive`. After a replacement, prefer `make start` to restart both daemons cleanly.
+    *   There is a backup (`<target>.bak`) but no restore command: to roll back, move the `.bak` file back and run `make start`.
+    *   On a 16 GB machine, stop the daemons before training a 7B model; training and both `llama-server` processes do not fit in memory together.
 *   **Arguments:**
     *   `dataset_path` *(string)*: Absolute path to the `.jsonl` dataset.
     *   `model_name` *(string, default: "mlx-community/Qwen2.5-7B-Instruct-4bit")*: The base model to fine-tune.
     *   `engine` *(string, default: "mlx")*: The training backend. Supports `"mlx"` (Apple Silicon Native) or `"llama.cpp"` (Experimental).
-    *   `fuse` *(bool, default: True)*: Automatically fuses the adapter into a single `.gguf` file.
-    *   `target_gguf_path` *(string, optional)*: Overwrites this inference model with the newly fused `.gguf` (backs up original to `.bak`) and triggers auto-restart.
+    *   `fuse` *(bool, default: True)*: Attempts to fuse the adapter and export a single `.gguf` file (see the limitations above).
+    *   `target_gguf_path` *(string, optional)*: If a fused GGUF is produced, replaces this inference model with it (moving the original to `.bak`) and restarts `llama-server`.
 
 
 #### ⚡ Evaluate Batch
@@ -288,7 +295,7 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
        - **Arithmetic/Chronological Intent:** *"Count the number of items"* or *"Did this happen after Tuesday?"* (LLMs struggle with math and time).
        - **Missing Fallback:** Multiple choice questions lacking an *"Unknown"*, *"Other"*, or *"N/A"* fallback option (which forces the model to hallucinate if the answer isn't in the text).
     2. **Auto-Fixer:** Automatically repairs broken questions and returns the fixed JSON.
-    3. **QFE Compression Middleware:** If `state` exceeds the active provider's `max_tokens` (65,536 for the default Kev fast engine, 8,192 for a `DaemonProvider` fast engine), Query-Focused Extraction (QFE) compresses it before the math runs; if the compressed state still doesn't fit, the tool returns a `CRITICAL SYSTEM ERROR` message instead of evaluating. The tool description asks callers to keep `state` under 2048 tokens as a guideline.
+    3. **QFE Compression Middleware:** If `state` exceeds the router's token limit (8,192: the smart engine's limit, because large states are routed to it), Query-Focused Extraction (QFE) compresses it before the math runs; if the compressed state still doesn't fit, the tool returns a `CRITICAL SYSTEM ERROR` message instead of evaluating. The tool description asks callers to keep `state` under 2048 tokens as a guideline.
     
     **Example Input & Output:**
     ```json
@@ -478,10 +485,39 @@ Jev MCP fundamentally changes the speed and reliability of local AI decision-mak
 | :--- | :--- | :--- | :--- | :--- |
 | **Standard Text Prompting** (e.g., Ollama) | ~2,000ms | 0.65 - 0.70 | Extreme (Recency/Position) | Free |
 | **Cloud APIs** (e.g., GPT-4o) | ~1,500ms+ | 0.85 - 0.90 | High | $$$ |
-| **Jev MCP (`0.8B` Kev Profile)** | **~120ms** | 0.866 | Neutralized (DCPMI) | Free |
-| **Jev MCP (`7B` Intel Profile)** | ~800ms | **1.00 (Perfect)** | Neutralized (DCPMI) | Free |
+| **Jev MCP (`0.8B` Kev Profile)** | **~44 ms** | 0.93 (CI 0.87–0.98) | Neutralized (DCPMI) | Free |
+| **Jev MCP (`7B` Smart Profile)** | ~244 ms | **0.98** (CI 0.94–0.99) | Neutralized (DCPMI) | Free |
 
-*(Benchmarks run on an Apple Silicon M-series unified memory architecture against the Golden Edge-Case Dataset).*
+**Measured on the 88-row golden set** (`tests/golden_dataset.json`: 43 positive, 45 negative, 12 question groups; Apple M2 Pro, 16 GB; 2026-10-10)
+
+| Engine | ROC AUC (95% bootstrap CI) | Accuracy @ 0.5 | Saturated scores | Warm latency / sample |
+| :--- | :--- | :--- | :--- | :--- |
+| Kev 0.8B | 0.928 (0.866–0.979) | 89.8% | 0% | 44 ms |
+| Qwen 2.5 7B | 0.977 (0.944–0.995) | 89.8% | 80% | 244 ms |
+| Claude Sonnet (reference) | 1.000 | 100% | n/a (verbalized) | not measured |
+| Claude Opus (reference) | 1.000 | 100% | n/a (verbalized) | not measured |
+
+**What is measured, and what is not**
+- The two Jev rows are reproducible: `make start && make eval` runs `tests/run_evals.py`, which does one untimed warm-up pass per engine (so model loading and cache priming are excluded), then times a second pass and reports ROC AUC with a bootstrap interval, accuracy at 0.5, the share of saturated scores, and a per-kind accuracy breakdown. The first run after a daemon restart is several times slower because of model load.
+- **Read Qwen's AUC with care.** 80% of its scores sit within 1e-6 of 0 or 1, and 26 are exactly 0.0 (the `true` token fell outside the top-11 log-probs). Its AUC therefore ranks differences in the far tails, while at the practical 0.5 threshold it is no more accurate than Kev. The per-kind breakdown shows where each engine fails (Kev is weakest on `hypothetical`, Qwen on `implicit`).
+- The Claude rows are one-off references, not part of `make eval`: Sonnet and Opus were each given the label-free cases (`id`, `question`, `state`) once as a Claude Code subagent task and asked for an answer plus a confidence in 0.5–1.0, which was converted to P(true) and scored with `python tests/run_evals.py --scores FILE NAME`. Claude exposes no token log-probs, so these confidences are verbalized, not calibrated probabilities, and both models hit the ceiling, so this set cannot separate them. Latency was not measured.
+- Dataset caveats: the 80 non-legacy rows were written for this benchmark in a single pass by an LLM and may be easier than real traffic (frontier models score 100%); treat the figures as a regression and smoke benchmark, and extend `golden_dataset.json` with real, hard cases before drawing conclusions.
+- The "Standard Text Prompting" and "Cloud APIs" rows above are illustrative ranges that this repository does not measure.
+
+**Calibration on the same 88 rows** (run with the `calibrate` threshold logic pointed at each engine; in-sample unless noted)
+
+| Engine | Threshold | Automation | Precision | Recall | False positives |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| Kev 0.8B | > 0.50 | 100% | 85.4% | 95.3% | 7 |
+| Kev 0.8B | > 0.90 | 35.2% | 90.0% | 41.9% | 2 |
+| Kev 0.8B | > 0.95 | 13.6% | 100% | 14.0% | 0 |
+| Qwen 7B (raw) | > 0.50 to > 0.90 | 100% | 92.5% | 86.0% | 3 |
+| Qwen 7B (Platt) | > 0.90 | 86.4% | 94.1% | 74.4% | 2 |
+| Qwen 7B (Platt) | > 0.95 | 36.4% | 100% | 74.4% | 0 |
+
+- Kev's scores are graded, so raising the threshold trades automation for precision as intended; Platt scaling did not improve it under 5-fold cross-validation (AUC 0.928 to 0.922).
+- Qwen's raw scores are saturated, so thresholds from 0.50 to 0.90 behave identically. Platt scaling does not make it more accurate (held-out accuracy 89.8% to 90.9%) but it makes the probabilities usable: held-out log-loss falls from 0.894 to 0.278, and a 0.95 gate then reaches 100% precision at 36% automation.
+- These are small-sample figures on a set written for this benchmark; re-run them on your own data before choosing a production threshold.
 
 ---
 
@@ -490,7 +526,7 @@ Jev MCP fundamentally changes the speed and reliability of local AI decision-mak
 Under the hood, Jev MCP employs several highly specialized mathematical and systems-engineering techniques to achieve its performance:
 
 *   **Empty-Payload Bias Extraction**: LLMs suffer from severe "Recency Bias" (preferring the last option shown) and "Vocabulary Bias" (preferring the token "A" over "B"). Jev MCP evaluates your prompt twice: once normally, and once with an *empty payload*. By measuring the baseline probabilities of the empty payload, we extract the model's pure statistical bias.
-*   **DCPMI Subtraction**: Uses Domain Conditional Pointwise Mutual Information (DCPMI) to mathematically subtract the extracted bias from the active evaluation. This isolates the model's *true conditional intent*, pushing models that natively perform at 0.66 ROC AUC up to a perfect 1.0 ROC AUC.
+*   **DCPMI Subtraction**: Uses Domain Conditional Pointwise Mutual Information (DCPMI) to mathematically subtract the extracted bias from the active evaluation. This isolates the model's conditional intent from position and vocabulary bias.
 *   **Laplace Horizon Smoothing**: Local engines natively truncate logprobs at a hard horizon of `top_logprobs=11`. If a target option falls out of the top 11, it yields zero probability, which ordinarily causes catastrophic $log(0)$ math explosions. Implemented a $+1/K$ Laplace smoothing factor (pseudo-counts) to gracefully absorb probability mass beyond the hardware truncation limit.
 *   **Log-Sum-Exp Token Aggregation**: LLM tokenizers fragment answers unexpectedly. The concept of "True" might be split across the tokens `"True"`, `" True"`, `" T"`, and `"T"`. Jev MCP aggregates these fragmented probability masses using rigorous `Log-Sum-Exp` mathematics to ensure no confidence is lost.
 *   **Absolute Confidence Gating**: If the total sum of all target token probabilities is $< 5\%$, Jev MCP instantly recognizes that the model is confused or hallucinating due to out-of-distribution context, and forces a `0.0` confidence score.
@@ -634,6 +670,7 @@ The easiest way to interact with Jev MCP locally. It wraps the core bash script.
 *   **`make format`**: Runs `ruff format .` inside `.venv`.
 *   **`make lint`**: Runs `mypy src/jev_mcp/` inside `.venv`. This is also the CI type-check step.
 *   **`make test`**: Runs pytest with `--cov=src --cov-fail-under=85`.
+*   **`make eval`**: Benchmarks both engines on `tests/golden_dataset.json` (warm-up pass, then a timed pass; daemons must be running).
 *   **`make train`**: Informational only; training is triggered through the `train` MCP tool.
 
 ### 2. The Core Engine Manager (`jev_mac_manager.sh`)

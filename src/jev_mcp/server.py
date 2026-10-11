@@ -112,9 +112,10 @@ def _chat_completion_json(**kwargs: Any) -> Any:
 
 # Initialize MCP and Provider
 mcp = MCPServer("jev-mcp")
-from jev_mcp.daemon_provider import DaemonProvider
 
-provider = DaemonProvider()
+# The hybrid router, not a bare DaemonProvider: a bare one falls back to
+# JEV_DAEMON_PORT (8080), which is the Kev daemon in the dual-engine setup.
+provider = RoutingProvider()
 linter = DecisionPreflightLinter()
 
 def call_fast_autofixer(state, questions, errors):
@@ -605,7 +606,10 @@ def jev_calibrate_threshold(
             recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
 
             rec = "⚠️ Risky"
-            if precision > 0.98 and auto_rate > 0.4:
+            if tp == 0 and fn > 0 and auto_rate >= 0.1:
+                # Decisions are being automated but no positive is ever caught.
+                rec = "❌ Unusable"
+            elif precision > 0.98 and auto_rate > 0.4:
                 rec = "✅ Optimal"
             elif precision == 1.0:
                 rec = "✅ Safe (Low Volume)"
