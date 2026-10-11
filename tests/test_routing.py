@@ -34,3 +34,59 @@ def test_determine_model_massive_context():
     res = json.loads(jev_determine_best_model(task_description="test", estimated_tokens=150000))
     assert res["status"] == "MASSIVE_CONTEXT_DETECTED"
     assert "warning" in res
+
+
+def _routing_provider():
+    from jev_mcp.routing_provider import RoutingProvider
+    return RoutingProvider()
+
+
+def test_routing_raises_when_no_engine_answers():
+    import pytest
+    from unittest.mock import patch
+    from jev_mcp.provider import EngineUnavailableError, NoulQuestion
+
+    provider = _routing_provider()
+    with patch.object(provider.fast_provider, "evaluate_batch", return_value={}), \
+         patch.object(provider.smart_provider, "evaluate_batch", return_value={}):
+        with pytest.raises(EngineUnavailableError, match="q1"):
+            provider.evaluate_batch("state", [NoulQuestion(key="q1", prompt="p")])
+
+
+def test_routing_raises_when_a_large_state_goes_unanswered():
+    import pytest
+    from unittest.mock import patch
+    from jev_mcp.provider import EngineUnavailableError, NoulQuestion
+
+    provider = _routing_provider()
+    with patch.object(provider.smart_provider, "evaluate_batch", return_value={}):
+        with pytest.raises(EngineUnavailableError):
+            provider.evaluate_batch("x" * 20000, [NoulQuestion(key="q1", prompt="p")])
+
+
+def test_routing_accepts_a_zero_confidence_answer_from_the_smart_tier():
+    from unittest.mock import patch
+    from jev_mcp.provider import NoulQuestion
+
+    # The confidence gate answering "no signal" is an answer; only silence is an outage.
+    gated = {"q1": {"probabilities": {"true": 0.0, "false": 0.0}, "noul": 0.0}}
+    provider = _routing_provider()
+    with patch.object(provider.fast_provider, "evaluate_batch", return_value={}), \
+         patch.object(provider.smart_provider, "evaluate_batch", return_value=gated):
+        results = provider.evaluate_batch("state", [NoulQuestion(key="q1", prompt="p")])
+
+    assert results["q1"]["noul"] == 0.0
+
+
+def test_routing_marks_escalation_without_changing_the_engines_result():
+    from unittest.mock import patch
+    from jev_mcp.provider import NoulQuestion
+
+    smart_answer = {"q1": {"probabilities": {"true": 0.9, "false": 0.1}, "noul": 0.9}}
+    provider = _routing_provider()
+    with patch.object(provider.fast_provider, "evaluate_batch", return_value={}), \
+         patch.object(provider.smart_provider, "evaluate_batch", return_value=smart_answer):
+        results = provider.evaluate_batch("state", [NoulQuestion(key="q1", prompt="p")])
+
+    assert results["q1"]["escalated"] is True
+    assert "escalated" not in smart_answer["q1"]

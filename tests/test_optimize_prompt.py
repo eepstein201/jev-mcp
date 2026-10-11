@@ -178,3 +178,30 @@ def test_tool_returns_an_error_when_scoring_a_dataset_row_fails():
         out = server.jev_optimize_prompt(question=question, dataset=DATASET)
 
     assert "Optimizer Evaluation Failed" in out and "engine down" in out
+
+
+def test_optimize_prompt_reports_a_generator_failure_as_json():
+    from unittest.mock import patch
+    from jev_mcp import server
+    from jev_mcp.provider import NoulQuestion
+
+    with patch("jev_mcp.app._chat_completion_json", side_effect=RuntimeError("smart tier down")):
+        out = json.loads(server.jev_optimize_prompt(question=NoulQuestion(key="q", prompt="Is it on?"), state={"a": 1}, dataset=None))
+
+    assert out["status"] == "ERROR"
+    assert "smart tier down" in out["message"]
+
+
+def test_optimize_prompt_reports_an_evaluation_failure_as_json():
+    from unittest.mock import MagicMock, patch
+    from jev_mcp import server
+    from jev_mcp.provider import NoulQuestion
+
+    provider = MagicMock()
+    provider.evaluate_batch.side_effect = RuntimeError("engine down")
+    with patch("jev_mcp.app._chat_completion_json", return_value={"variations": ["Is it running?"]}), \
+         patch("jev_mcp.app.provider", provider):
+        out = json.loads(server.jev_optimize_prompt(question=NoulQuestion(key="q", prompt="Is it on?"), state={"a": 1}, dataset=None))
+
+    assert out["status"] == "ERROR"
+    assert "engine down" in out["message"]

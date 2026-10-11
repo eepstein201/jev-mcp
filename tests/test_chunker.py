@@ -70,3 +70,21 @@ def test_chunker_fallback_on_parse_error(monkeypatch):
     # It should fallback to text wrap
     assert len(chunks) == 1
     assert "def a(): pass" in chunks[0]
+
+
+def test_fallback_chunker_splits_a_long_block_without_changing_its_text():
+    from jev_mcp.chunker import fallback_chunker
+
+    block = "\n".join(f"        value_{i} = compute(  {i}  )" for i in range(200)).strip()
+
+    chunks = fallback_chunker(block, chunk_size=500)
+
+    assert len(chunks) > 1
+    assert all(len(c) <= 500 for c in chunks)
+    assert "".join(chunks) == block
+
+
+def test_fallback_chunker_returns_nothing_for_blank_text():
+    from jev_mcp.chunker import fallback_chunker
+
+    assert fallback_chunker("  \n \n  ") == []

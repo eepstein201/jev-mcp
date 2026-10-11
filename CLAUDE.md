@@ -38,7 +38,7 @@ Both engines run side by side (`make start`); requests route between them automa
 
 - Daemons: `make start` / `./jev_mac_manager.sh hybrid` · stop: `make stop`.
 - Tests: `make test` (pytest with coverage) · Type check: `make lint` (mypy) · Format: `make format` (ruff).
-- Live tool calls require the daemons running; without them providers return empty results and log "PLEASE ENSURE THE DAEMON IS RUNNING".
+- Live tool calls require the daemons running; without them the router raises `EngineUnavailableError`, tools answer `{"status": "ERROR"}` (`compact` answers `ENGINE_UNAVAILABLE` and keeps every chunk), and the log says "PLEASE ENSURE THE DAEMON IS RUNNING".
 
 ## Conventions
 

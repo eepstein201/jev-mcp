@@ -42,3 +42,30 @@ def test_handoff_injects_temperature_notice(mock_provider_class, monkeypatch):
     res = json.loads(server.jev_agent_handoff("task", {"A": "does things"}))
     assert res["status"] == "HANDOFF_RECOMMENDATION"
     assert "1.4" in res["_system_notice"]
+
+
+@patch("jev_mcp.app.RoutingProvider")
+def test_handoff_reports_an_unavailable_engine_instead_of_recommending_an_agent(mock_provider_class):
+    from jev_mcp.provider import EngineUnavailableError
+
+    mock_provider_class.return_value.evaluate_batch.side_effect = EngineUnavailableError("No engine answered: best_agent")
+
+    res = json.loads(server.jev_agent_handoff("task", {"A": "does things", "B": "does other things"}))
+
+    assert res["status"] == "ERROR"
+    assert "recommended_agent" not in res
+
+
+def test_manage_router_answers_every_action_with_json():
+    save_router_config({"buckets": {"b1": "m"}, "rules": []})
+
+    missing = json.loads(server.jev_manage_router_config(action="set_bucket", bucket_id=None, model_name=None))
+    bucket = json.loads(server.jev_manage_router_config(action="set_bucket", bucket_id="b1", model_name="new-model"))
+    added = json.loads(server.jev_manage_router_config(action="add_rule", condition="touches auth", target="b3"))
+    removed = json.loads(server.jev_manage_router_config(action="remove_rule", rule_id=0))
+    bad_rule = json.loads(server.jev_manage_router_config(action="remove_rule", rule_id=9))
+    no_flag = json.loads(server.jev_manage_router_config(action="set_auto_update", enabled=None))
+    unknown = json.loads(server.jev_manage_router_config(action="nonsense"))
+
+    assert [missing["status"], bad_rule["status"], no_flag["status"], unknown["status"]] == ["ERROR"] * 4
+    assert [bucket["status"], added["status"], removed["status"]] == ["SAVED"] * 3

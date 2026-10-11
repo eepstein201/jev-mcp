@@ -24,7 +24,6 @@ def test_save_router_config_is_atomic_on_failure(monkeypatch, tmp_path):
 def test_save_router_config_cleans_up_temp_on_rename_failure(monkeypatch):
     save_router_config({"buckets": {"b1": "original"}, "rules": []})
     target = router_config.ROUTER_CONFIG_PATH
-    tmp = target + ".tmp"
     before = open(target).read()
 
     def failing_replace(src, dst):
@@ -35,7 +34,7 @@ def test_save_router_config_cleans_up_temp_on_rename_failure(monkeypatch):
     with pytest.raises(OSError):
         save_router_config({"buckets": {"b1": "clobbered"}, "rules": []})
     assert open(target).read() == before
-    assert not os.path.exists(tmp)
+    assert not [n for n in os.listdir(os.path.dirname(target)) if n.endswith(".tmp")]
 
 
 def test_seed_returns_none_for_corrupt_config():
@@ -68,3 +67,23 @@ def test_save_router_config():
     save_router_config(mock_config)
     assert load_router_config() == mock_config
     assert not os.path.exists(router_config.ROUTER_CONFIG_PATH + ".tmp")
+
+
+def test_save_router_config_uses_a_fresh_temp_file_for_every_write(monkeypatch):
+    # Two writers sharing one temp name would interleave and rename a mixed file.
+    real_replace = os.replace
+    temp_names = []
+
+    def recording_replace(src, dst):
+        temp_names.append(src)
+        real_replace(src, dst)
+
+    monkeypatch.setattr(router_config.os, "replace", recording_replace)
+
+    save_router_config({"buckets": {"b1": "one"}, "rules": []})
+    save_router_config({"buckets": {"b1": "two"}, "rules": []})
+
+    assert len(set(temp_names)) == 2
+    folder = os.path.dirname(router_config.ROUTER_CONFIG_PATH)
+    assert os.path.basename(router_config.ROUTER_CONFIG_PATH) in os.listdir(folder)
+    assert not [n for n in os.listdir(folder) if n.endswith(".tmp")]

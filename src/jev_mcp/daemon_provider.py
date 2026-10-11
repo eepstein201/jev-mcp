@@ -13,6 +13,17 @@ from jev_mcp.security import sanitize_payload
 logger = logging.getLogger(__name__)
 
 SMALL_MODEL_MARKER = "0.5b"
+DEFAULT_TEMPERATURE = 1.0
+
+
+def _saved_temperature() -> float:
+    """The calibration temperature in the router config, or the default when it cannot be read."""
+    try:
+        from jev_mcp.router_config import load_router_config
+        return float(load_router_config().get("fitted_temperature", DEFAULT_TEMPERATURE))
+    except Exception as e:
+        logger.warning(f"Could not read the fitted temperature; using {DEFAULT_TEMPERATURE}: {e}")
+        return DEFAULT_TEMPERATURE
 
 
 class DaemonProvider(JevProvider):
@@ -46,13 +57,7 @@ class DaemonProvider(JevProvider):
         self.max_tokens = 8192
         self.current_model_id = "unknown_model"
         
-        self.fitted_temperature = 1.0
-        try:
-            from jev_mcp.router_config import load_router_config
-            cfg = load_router_config()
-            self.fitted_temperature = cfg.get("fitted_temperature", 1.0)
-        except Exception:
-            pass
+        self.fitted_temperature = _saved_temperature()
 
     def _get_daemon_pid(self) -> str:
         try:
@@ -203,6 +208,9 @@ class DaemonProvider(JevProvider):
         self, state: Any, questions: List[Any]
     ) -> dict[str, dict[str, Any]]:
         results = {}
+        # Re-read on every batch: the temperature tool and calibrate can change it
+        # while this provider (built once at server start) is still in use.
+        self.fitted_temperature = _saved_temperature()
 
         MAX_STATE_CHARS = 16000
         state_str = json.dumps(state) if not isinstance(state, str) else state
@@ -265,6 +273,10 @@ class DaemonProvider(JevProvider):
             lps, model_id = self.get_logprobs(user_prompt, expected_keys)
             if model_id != "unknown_model":
                 self.current_model_id = model_id
+            if not lps:
+                # No answer (daemon down or a reply without logprobs). Leaving the question
+                # out keeps that distinct from a real answer of all-zero probabilities.
+                continue
 
             # 2. Extract Prior (Cache Hit or Fetch)
             # Key on format_hint, not the full empty prompt: the 7B sandbox
@@ -272,14 +284,17 @@ class DaemonProvider(JevProvider):
             # cache key unique and refetch the prior on every question.
             style = "plain" if is_small_model else "sandbox"
             cache_key = f"{daemon_pid}::{model_id}::{style}::{format_hint}"
-            if cache_key not in self._prior_cache:
-                if len(self._prior_cache) > 256:
-                    # Bound process-lifetime growth (pid churn mints new key families).
-                    self._prior_cache.clear()
+            cached_prior = self._prior_cache.get(cache_key)
+            if cached_prior is None:
                 prior_lps, _ = self.get_logprobs(empty_payload_prompt, expected_keys)
-                self._prior_cache[cache_key] = prior_lps
-
-            prior_lps = self._prior_cache[cache_key]
+                # A failed fetch is not cached, or its flat prior would skew every later score.
+                if prior_lps:
+                    if len(self._prior_cache) > 256:
+                        # Bound process-lifetime growth (pid churn mints new key families).
+                        self._prior_cache.clear()
+                    self._prior_cache[cache_key] = prior_lps
+            else:
+                prior_lps = cached_prior
 
             # 3. Math
             probs = self._normalize_logprobs(lps, expected_keys, prior_lps)
@@ -299,8 +314,10 @@ class DaemonProvider(JevProvider):
                 confidence = mapped_probs.get(best_opt, 0.0) if best_opt else 0.0
                 results[q.key] = {"probabilities": mapped_probs, "choice": best_opt, "confidence": confidence}
             elif isinstance(q, ScoreQuestion):
-                best_opt = max(probs.items(), key=lambda x: x[1])[0] if probs else None
-                results[q.key] = {"probabilities": probs, "score": best_opt}
+                # The model answers with an index; report the label, as the fast tier does.
+                label_probs = {label: probs.get(str(idx), 0.0) for idx, label in enumerate(q.labels)}
+                best_label = max(label_probs.items(), key=lambda x: x[1])[0] if label_probs else None
+                results[q.key] = {"probabilities": label_probs, "score": best_label}
 
         return results
 

@@ -77,7 +77,7 @@ def jev_optimize_prompt(
         if not isinstance(variations, list):
             variations = []
     except Exception as e:
-        return f"Optimizer Generator Failed: {str(e)}"
+        return json.dumps({"status": "ERROR", "message": f"Optimizer Generator Failed: {str(e)}"})
 
     variations.insert(0, q_dict["prompt"])  # include original
     test_questions: List[QuestionType] = []
@@ -99,7 +99,7 @@ def jev_optimize_prompt(
         try:
             row_results = [app.provider.evaluate_batch(row["state"], test_questions) for row in dataset]
         except Exception as e:
-            return f"Optimizer Evaluation Failed: {str(e)}"
+            return json.dumps({"status": "ERROR", "message": f"Optimizer Evaluation Failed: {str(e)}"})
         per_variation = [[res.get(q.key, {}) for res in row_results] for q in test_questions]
         stats = prompt_selection.score_variations(per_variation, [row["expected"] for row in dataset])
         best = prompt_selection.best_variation(stats)
@@ -133,7 +133,7 @@ def jev_optimize_prompt(
     try:
         results = app.provider.evaluate_batch(state, test_questions)
     except Exception as e:
-        return f"Optimizer Evaluation Failed: {str(e)}"
+        return json.dumps({"status": "ERROR", "message": f"Optimizer Evaluation Failed: {str(e)}"})
 
     best_var: Dict[str, Any] | None = None
     best_conf = -1.0

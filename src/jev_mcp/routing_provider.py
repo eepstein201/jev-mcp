@@ -2,7 +2,7 @@ import json
 import logging
 from typing import Any, List, Dict
 
-from jev_mcp.provider import JevProvider, QuestionType, NoulQuestion, ScoreQuestion
+from jev_mcp.provider import EngineUnavailableError, JevProvider, QuestionType, NoulQuestion, ScoreQuestion
 from jev_mcp.daemon_provider import DaemonProvider
 from jev_mcp.kev_provider import KevProvider
 import os
@@ -42,7 +42,7 @@ class RoutingProvider(JevProvider):
         if tokens > 4000:
             logger.info(f"State size {tokens} exceeds fast-routing limit. Bypassing 0.5B and routing directly to 7B.")
             self.current_model_id = self.smart_provider.current_model_id
-            return self.smart_provider.evaluate_batch(state, questions)
+            return self._require_answers(questions, self.smart_provider.evaluate_batch(state, questions))
 
         logger.info(f"Evaluating {len(questions)} questions on Fast 0.5B model...")
         fast_results = self.fast_provider.evaluate_batch(state, questions)
@@ -73,10 +73,18 @@ class RoutingProvider(JevProvider):
         logger.info(f"Escalating {len(uncertain_questions)} uncertain questions to Smart 7B model...")
         smart_results = self.smart_provider.evaluate_batch(state, uncertain_questions)
         
-        # Merge results
-        for q_key, res in smart_results.items():
-            fast_results[q_key] = res
-            fast_results[q_key]["escalated"] = True
-            
+        # Merge results. A question the smart engine did not answer keeps its fast answer.
+        escalated = {q_key: {**res, "escalated": True} for q_key, res in smart_results.items()}
+
         self.current_model_id = "hybrid_routed"
-        return fast_results
+        return self._require_answers(questions, {**fast_results, **escalated})
+
+    @staticmethod
+    def _require_answers(questions: List[QuestionType], results: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+        """Raise when a question got no answer, so callers cannot mistake silence for a score of zero."""
+        unanswered = [q.key for q in questions if not results.get(q.key, {}).get("probabilities")]
+        if unanswered:
+            raise EngineUnavailableError(
+                f"No engine answered: {', '.join(unanswered)}. Start the daemons with `make start`."
+            )
+        return results

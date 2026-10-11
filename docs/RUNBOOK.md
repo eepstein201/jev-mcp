@@ -33,7 +33,7 @@ make clean     # uninstall: unload daemons, remove plists, the venv and ALL of ~
 
 | Symptom | Likely cause | Fix |
 |---------|--------------|-----|
-| Tools return empty results; log says "PLEASE ENSURE THE DAEMON IS RUNNING" | Daemons not running | `make start`, then check `~/.jev/mlx_server_*.log` |
+| Tools return `{"status": "ERROR", "message": "No engine answered: ..."}` (`compact`: `ENGINE_UNAVAILABLE`); log says "PLEASE ENSURE THE DAEMON IS RUNNING" | Daemons not running | `make start`, then check `~/.jev/mlx_server_*.log` |
 | Port already in use | Another service on 8080/8081 | Set `JEV_FAST_PORT` / `JEV_SMART_PORT` in `.env`, then `make start` |
 | Daemon killed or Mac swaps heavily | Too many parallel slots for your RAM | Set a lower `JEV_BATCH_SIZE` in `.env`, then `make start` |
 | HTTP 400 on very large emails or states | Request exceeds the per-slot context (16,384 tokens) | Shorten the input; `compact` it first |

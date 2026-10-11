@@ -10,6 +10,10 @@ from jev_mcp.app import logger, mcp
 from jev_mcp.provider import ChoiceQuestion, NoulQuestion, QuestionType, ScoreQuestion
 
 
+def _error(message: str) -> str:
+    return json.dumps({"status": "ERROR", "message": message})
+
+
 @mcp.tool(
     name="evaluate",
     description=(
@@ -75,7 +79,7 @@ def jev_evaluate_batch(
 
         except Exception as e:
             logger.error(f"QFE Failed: {str(e)}")
-            return f"CRITICAL SYSTEM ERROR: 'state' payload was {token_count} tokens and QFE compression failed: {str(e)}"
+            return _error(f"CRITICAL SYSTEM ERROR: 'state' payload was {token_count} tokens and QFE compression failed: {str(e)}")
 
     def run_linter(qs):
         findings = []
@@ -178,18 +182,23 @@ def jev_evaluate_batch(
         try:
             fixed_qs_raw = app.call_fast_autofixer(state, q_dicts, all_findings)
 
+            if len(fixed_qs_raw) != len(questions):
+                raise ValueError(f"Autofixer returned {len(fixed_qs_raw)} questions for {len(questions)}.")
+
             fixed_qs: List[QuestionType] = []
             for original_q, fq in zip(questions, fixed_qs_raw):
                 orig_prompt = original_q.prompt
                 autofix_details.append({"original": orig_prompt, "fixed": fq["prompt"]})
 
+                # Results stay under the caller's key, whatever the autofixer called the question.
+                key = original_q.key
                 if fq["type"] == "noul":
-                    fixed_qs.append(NoulQuestion(prompt=fq["prompt"], key=fq["key"]))
+                    fixed_qs.append(NoulQuestion(prompt=fq["prompt"], key=key))
                 elif fq["type"] == "choice":
                     fixed_qs.append(
                         ChoiceQuestion(
                             prompt=fq["prompt"],
-                            key=fq["key"],
+                            key=key,
                             options=fq.get("options", []),
                         )
                     )  # type: ignore
@@ -197,10 +206,12 @@ def jev_evaluate_batch(
                     fixed_qs.append(
                         ScoreQuestion(
                             prompt=fq["prompt"],
-                            key=fq["key"],
+                            key=key,
                             labels=fq.get("labels", []),
                         )
                     )  # type: ignore
+                else:
+                    raise ValueError(f"Autofixer returned an unknown question type: {fq['type']!r}")
 
             new_findings = run_linter(fixed_qs)
             if any(f["severity"] == "ERROR" for f in new_findings):
@@ -258,7 +269,7 @@ def jev_evaluate_batch(
         return json.dumps(response, indent=2)
     except Exception as e:
         logger.error(f"Engine failure: {str(e)}")
-        return f"INTERNAL ENGINE ERROR: {str(e)}"
+        return _error(f"INTERNAL ENGINE ERROR: {str(e)}")
 
 @mcp.tool(
     name="explain-decision",
@@ -304,7 +315,7 @@ def jev_explain_decision(
         'Format: {"evidence_sentence": "...", "reasoning": "..."}'
     )
 
-    user_prompt = f"STATE:\n{state_str[:3000]}...\n\nQUESTION:\n{q_prompt}\n\nDECISION:\n{decision}\n\nReturn ONLY the JSON object."
+    user_prompt = f"STATE:\n{state_str[:3000]}...\n\nQUESTION:\n{q_prompt}\n\nDECISION:\n{decision_str}\n\nReturn ONLY the JSON object."
 
     try:
         data = app._chat_completion_json(
@@ -324,7 +335,7 @@ def jev_explain_decision(
             indent=2,
         )
     except Exception as e:
-        return f"Evidence Extraction Failed: {str(e)}"
+        return _error(f"Evidence Extraction Failed: {str(e)}")
 
 @mcp.tool(
     name="generate-data",
@@ -424,10 +435,12 @@ Once you have generated this JSON array, you must immediately pass it into the `
                 if isinstance(batch_data, dict) and "dataset" in batch_data:
                     batch_data = batch_data["dataset"]
 
-                if isinstance(batch_data, list):
-                    dataset_accumulator.extend(batch_data)
-                else:
+                if not isinstance(batch_data, list):
                     raise ValueError("Local 7B Model did not return a valid JSON list.")
+                if not batch_data:
+                    # An empty batch makes no progress; asking again could loop forever.
+                    raise ValueError("Local 7B Model returned no cases.")
+                dataset_accumulator.extend(batch_data)
 
             dataset_accumulator = dataset_accumulator[:num_cases]
             logger.info("Local dataset generation successful!")

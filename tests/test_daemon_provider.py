@@ -345,3 +345,67 @@ def test_prior_cache_shared_across_instances(mock_check_output, mock_get_logprob
     p1.evaluate_batch("s", [q])
     p2.evaluate_batch("s", [q])
     assert mock_get_logprobs.call_count == 3
+
+
+FLAT_NOUL_PRIOR = {"true": math.log(0.5), "false": math.log(0.5)}
+
+
+@patch.object(DaemonProvider, "_get_daemon_pid", return_value="1234")
+@patch.object(DaemonProvider, "get_logprobs")
+def test_score_question_is_reported_by_label_like_the_fast_tier(mock_get_logprobs, mock_pid):
+    # The model answers with an index; callers (model-router) read the label.
+    answer = {"0": math.log(0.05), "1": math.log(0.05), "2": math.log(0.1), "3": math.log(0.8)}
+    flat_prior = {str(i): math.log(0.25) for i in range(4)}
+    mock_get_logprobs.side_effect = [(answer, "m-score-labels"), (flat_prior, "m-score-labels")]
+    q = ScoreQuestion(key="complexity", prompt="Score it", labels=["1", "2", "3", "4"])
+
+    result = DaemonProvider().evaluate_batch("state", [q])["complexity"]
+
+    assert result["score"] == "4"
+    assert set(result["probabilities"]) == {"1", "2", "3", "4"}
+    assert result["probabilities"]["4"] == max(result["probabilities"].values())
+
+
+@patch.object(DaemonProvider, "_get_daemon_pid", return_value="1234")
+@patch.object(DaemonProvider, "get_logprobs")
+def test_a_failed_prior_fetch_is_not_cached(mock_get_logprobs, mock_pid):
+    answer = {"true": math.log(0.8), "false": math.log(0.2)}
+    mock_get_logprobs.side_effect = [
+        (answer, "m-prior-retry"),
+        ({}, "unknown_model"),  # the prior fetch fails once
+        (answer, "m-prior-retry"),
+        (FLAT_NOUL_PRIOR, "m-prior-retry"),  # so it must be fetched again
+    ]
+    q = NoulQuestion(key="q", prompt="p")
+    provider = DaemonProvider()
+
+    provider.evaluate_batch("state", [q])
+    provider.evaluate_batch("state", [q])
+
+    assert mock_get_logprobs.call_count == 4
+
+
+@patch.object(DaemonProvider, "_get_daemon_pid", return_value="1234")
+@patch.object(DaemonProvider, "get_logprobs", return_value=({}, "unknown_model"))
+def test_a_question_the_daemon_did_not_answer_has_no_result(mock_get_logprobs, mock_pid):
+    # All-zero probabilities would read as a confident "no"; no answer must stay no answer.
+    results = DaemonProvider().evaluate_batch("state", [NoulQuestion(key="q", prompt="p")])
+
+    assert results == {}
+
+
+@patch.object(DaemonProvider, "_get_daemon_pid", return_value="1234")
+@patch.object(DaemonProvider, "get_logprobs")
+def test_a_saved_temperature_applies_to_a_provider_built_before_it(mock_get_logprobs, mock_pid):
+    from jev_mcp.router_config import save_router_config
+
+    answer = {"true": math.log(0.9), "false": math.log(0.1)}
+    mock_get_logprobs.side_effect = [(answer, "m-temp"), (FLAT_NOUL_PRIOR, "m-temp"), (answer, "m-temp")]
+    q = NoulQuestion(key="q", prompt="p")
+    provider = DaemonProvider()
+
+    before = provider.evaluate_batch("state", [q])["q"]["noul"]
+    save_router_config({"buckets": {}, "rules": [], "fitted_temperature": 3.0})
+    after = provider.evaluate_batch("state", [q])["q"]["noul"]
+
+    assert 0.5 < after < before
