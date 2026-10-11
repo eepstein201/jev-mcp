@@ -35,11 +35,11 @@ Found during the 2026-10-10 documentation and benchmark review. Each item lists 
   `mv <target> <target>.bak` exists (`server.py:1191`), but nothing restores it.
   - Fix: add a restore action (move `.bak` back, restart the agent) and document it.
 
-- [ ] **`train` non-fuse path downloads and runs a script from `master`.** (from source)
+- [x] **`train` non-fuse path downloads and runs a script from `master`.** *(fixed: `fuse=False` now only reports the adapter path)*
   It `curl`s `convert-lora-to-ggml.py` from llama.cpp `master` and executes it.
   - Fix: remove, or pin to a commit and verify a checksum.
 
-- [ ] **`train` uses fixed `--iters 500`.**
+- [x] **`train` uses fixed `--iters 500`.** *(fixed: `iters` argument, default 500; batch size and layers still fixed)*
   No way to scale iterations to dataset size; overfits small sets.
   - Fix: expose iterations (and batch size / layers) as arguments.
 
@@ -61,10 +61,10 @@ Found during the 2026-10-10 documentation and benchmark review. Each item lists 
   80% of scores on the 88-row set are within 1e-6 of 0 or 1; 26 are exactly 0.0 because the `true` token fell outside `top_logprobs=11` and got the `-9999.0` sentinel. Thresholds between 0.50 and 0.90 behave identically.
   - Fix options: apply the fitted temperature by default after calibration; treat missing tokens as censored rather than zero; report saturation in tool output.
 
-- [ ] **`JEV_DAEMON_PORT` default collides with the fast port.**
+- [x] **`JEV_DAEMON_PORT` default collides with the fast port.** *(fixed: when unset it follows `JEV_SMART_PORT`, default 8081)*
   Both default to `8080`. Fix together with the provider item above (drop the variable or default it to the smart port).
 
-- [ ] **`compact` chunks JSON states blindly.** (verified)
+- [x] **`compact` chunks JSON states blindly.** *(fixed: dict states are chunked one top-level key at a time)*
   A JSON state has no blank lines, so it is treated as one blob and cut every 2000 characters (`server.py:1459-1474`), splitting mid-sentence.
   - Fix: chunk by top-level key / list item for dict states.
 
@@ -74,12 +74,13 @@ Found during the 2026-10-10 documentation and benchmark review. Each item lists 
 
 ## P2: smaller issues
 
-- [ ] `email_triage/mcp_tool.py`: `except Exception: pass` swallows compaction errors; log a warning instead. The `2000` and `0.6` thresholds are magic numbers.
+- [x] `email_triage/mcp_tool.py`: `except Exception: pass` swallows compaction errors; log a warning instead. The `2000` and `0.6` thresholds are magic numbers. *(fixed)*
 - [ ] `email_triage/auth.py`: `jwt_decode` is a stub that always raises, so only the static `JEV_MCP_API_KEY` works. No launcher ships for the webhook app.
-- [ ] `run-browser-agent`: only checks that `./jev-ultrafast` exists (CWD-relative) and returns a dispatch message; unused `subprocess`/`tempfile` imports.
+- [ ] `run-browser-agent`: only checks that `./jev-ultrafast` exists (CWD-relative) and returns a dispatch message. *(unused imports removed; the stub behaviour remains)*
 - [ ] Two unrelated `NoulQuestion`/`ChoiceQuestion` classes (`provider.py` vs `email_triage/core.py`) with the same names.
 - [ ] `router_config.py` defaults reference old model names (`claude-3-5-*`, `claude-fable`).
 - [ ] `server.py` is 1748 lines; split by tool family.
 - [ ] `requirements.txt` and `pyproject.toml` list different dependency sets (e.g. `fastapi`, `tree-sitter`, Google clients only in `pyproject`; `mlx`, `kev` only in `requirements.txt`).
-- [ ] CI: `actions/checkout@v4` and `actions/setup-python@v5` trigger a Node 20 deprecation warning.
+- [ ] CI: `actions/checkout@v4` and `actions/setup-python@v5` trigger a Node 20 deprecation warning. *(bumped both to v7; tick once a CI run confirms the warning is gone)*
+- [ ] Some `compact` tests patch the `RoutingProvider` class rather than the fast provider, so they can reach a real daemon on port 8080 when one is running. (from source) Mock at the HTTP boundary instead.
 - [ ] Golden dataset: 80 of 88 rows were written in one pass by an LLM and frontier models score 100%; add real, hard cases.

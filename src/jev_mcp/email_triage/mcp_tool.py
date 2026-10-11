@@ -1,5 +1,12 @@
 import json
+import logging
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
+
+# Bodies longer than this are compacted before evaluation, keeping chunks scored at or above the confidence.
+COMPACTION_MIN_BODY_CHARS = 2000
+COMPACTION_CONFIDENCE = 0.6
 
 def get_config_path() -> Path:
     config_dir = Path.home() / ".jev-mcp"
@@ -35,22 +42,22 @@ def evaluate_email_with_mlx(subject: str, sender: str, body: str, labels: list[s
         elif q.type == "choice":
             eval_questions.append(ChoiceQuestion(key=q.question, prompt=q.instruction, options=q.choices))
             
-    if len(body) > 2000:
+    if len(body) > COMPACTION_MIN_BODY_CHARS:
         from jev_mcp.server import jev_compact_context
         import json
-        
+
         try:
             goal = f"Identify if the email requires action, is important, or fits any of these categories: {', '.join(labels)}."
             compaction_res = jev_compact_context(
                 state={"text": body},
                 goal=goal,
-                confidence_threshold=0.6
+                confidence_threshold=COMPACTION_CONFIDENCE
             )
             parsed_res = json.loads(compaction_res)
             if parsed_res.get("compacted_state"):
                 body = parsed_res["compacted_state"]
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Email body compaction failed; triaging the original body: %s", e)
 
     state = {
         "email_subject": subject,

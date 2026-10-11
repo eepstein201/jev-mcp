@@ -661,6 +661,48 @@ def test_jev_train_lora_starts_training(mock_popen, tmp_path, monkeypatch):
     data_dir = res["data_dir"]
     assert os.path.exists(os.path.join(data_dir, "train.jsonl"))
 
+def _read_train_script(mock_popen):
+    with open(mock_popen.call_args[0][0][1], "r") as f:
+        return f.read()
+
+@patch("subprocess.Popen")
+def test_jev_train_lora_passes_the_requested_iteration_count(mock_popen, tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    mock_popen.return_value = MagicMock(pid=1)
+    ds = tmp_path / "mydata.jsonl"
+    ds.write_text('{"messages": []}\n')
+
+    res = json.loads(server.jev_train_lora(str(ds), iters=120))
+
+    assert res["status"] == "TRAINING_STARTED", res.get("message", "unknown error")
+    assert "--iters 120" in _read_train_script(mock_popen)
+
+@patch("subprocess.Popen")
+def test_jev_train_lora_rejects_non_positive_iters(mock_popen, tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    ds = tmp_path / "mydata.jsonl"
+    ds.write_text('{"messages": []}\n')
+
+    res = json.loads(server.jev_train_lora(str(ds), iters=0))
+
+    assert res["status"] == "ERROR"
+    mock_popen.assert_not_called()
+
+@patch("subprocess.Popen")
+def test_jev_train_lora_without_fuse_does_not_download_or_run_remote_scripts(mock_popen, tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    mock_popen.return_value = MagicMock(pid=1)
+    ds = tmp_path / "mydata.jsonl"
+    ds.write_text('{"messages": []}\n')
+
+    res = json.loads(server.jev_train_lora(str(ds), fuse=False))
+
+    script = _read_train_script(mock_popen)
+    assert res["status"] == "TRAINING_STARTED", res.get("message", "unknown error")
+    assert "curl" not in script
+    assert "convert-lora-to-ggml" not in script
+    assert res["adapter_path"] in script
+
 @patch("subprocess.Popen")
 def test_jev_train_lora_rejects_bad_model_name(mock_popen, tmp_path):
     ds = tmp_path / "data.jsonl"

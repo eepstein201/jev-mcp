@@ -34,6 +34,23 @@ def test_routing_provider_evaluate_dataset_returns_expected_and_probabilities():
     mock_batch.assert_called_once_with("s1", [question])
 
 
+def test_compact_scores_each_top_level_key_of_a_dict_state_separately():
+    # Arrange
+    state = {"training": "Run mlx_lm.lora on the base model.", "kitchen": "Buy oat milk on Friday."}
+    scores = [{"chunk_0": {"noul": 0.9}}, {"chunk_1": {"noul": 0.1}}]
+
+    # Act
+    with patch.object(server.provider.fast_provider, "evaluate_batch", side_effect=scores):
+        result = json.loads(
+            server.jev_compact_context(state=state, goal="train a model", confidence_threshold=0.5)
+        )
+
+    # Assert
+    assert result["original_chunks"] == 2
+    assert "mlx_lm.lora" in result["compacted_state"]
+    assert "oat milk" not in result["compacted_state"]
+
+
 def test_calibrate_marks_threshold_unusable_when_no_positive_is_ever_predicted():
     # Arrange: every case is confidently auto-rejected, including the real positive.
     question = NoulQuestion(key="k", prompt="p?")

@@ -9,7 +9,29 @@ from jev_mcp.server import NoulQuestion
 def test_daemon_provider_no_dotenv():
     # Covers lines 32-33
     provider = DaemonProvider()
-    assert "8080" in provider.base_url
+    assert "/v1/chat/completions" in provider.base_url
+
+@patch.dict('sys.modules', {'dotenv': None})
+def test_bare_daemon_provider_defaults_to_the_smart_port(monkeypatch):
+    # 8080 is the Kev daemon in the dual-engine setup; a bare DaemonProvider must not land there.
+    monkeypatch.delenv("JEV_DAEMON_PORT", raising=False)
+    monkeypatch.delenv("JEV_SMART_PORT", raising=False)
+
+    assert DaemonProvider().base_url == "http://127.0.0.1:8081/v1/chat/completions"
+
+@patch.dict('sys.modules', {'dotenv': None})
+def test_bare_daemon_provider_follows_the_configured_smart_port(monkeypatch):
+    monkeypatch.delenv("JEV_DAEMON_PORT", raising=False)
+    monkeypatch.setenv("JEV_SMART_PORT", "9191")
+
+    assert DaemonProvider().base_url == "http://127.0.0.1:9191/v1/chat/completions"
+
+@patch.dict('sys.modules', {'dotenv': None})
+def test_jev_daemon_port_still_overrides_the_smart_port(monkeypatch):
+    monkeypatch.setenv("JEV_DAEMON_PORT", "7070")
+    monkeypatch.setenv("JEV_SMART_PORT", "9191")
+
+    assert DaemonProvider().base_url == "http://127.0.0.1:7070/v1/chat/completions"
 
 @patch("urllib.request.urlopen")
 def test_daemon_provider_no_content_logprobs(mock_urlopen):

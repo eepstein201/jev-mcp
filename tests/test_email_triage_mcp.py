@@ -152,3 +152,30 @@ def test_triage_evaluates_the_compacted_body_returned_by_the_compact_tool(tmp_pa
     # Assert
     evaluated_state = mock_provider_instance.evaluate_batch.call_args[0][0]
     assert evaluated_state["email_body"] == "Compressed body"
+
+def test_triage_logs_a_warning_when_compaction_fails(tmp_path, monkeypatch, caplog):
+    # Arrange
+    import logging
+    from unittest.mock import MagicMock
+    monkeypatch.setattr("jev_mcp.email_triage.mcp_tool.get_config_path", lambda: tmp_path / "triage_configs.json")
+    configure_triage_labels("test@mailbox.com", ["Engineering", "Sales"])
+    mock_provider_instance = MagicMock()
+    mock_provider_instance.evaluate_batch.return_value = {
+        "requires_action": {"probabilities": {"true": 0.9}},
+        "is_important": {"probabilities": {"true": 0.9}},
+        "bucket": {"probabilities": {"Engineering": 0.8, "Sales": 0.2}}
+    }
+    monkeypatch.setattr("jev_mcp.routing_provider.RoutingProvider", lambda: mock_provider_instance)
+
+    def mock_compact_fail(state, goal, confidence_threshold):
+        raise ValueError("boom")
+
+    monkeypatch.setattr("jev_mcp.server.jev_compact_context", mock_compact_fail)
+
+    # Act
+    with caplog.at_level(logging.WARNING, logger="jev_mcp.email_triage.mcp_tool"):
+        response = json.loads(triage_email_content("test@mailbox.com", "Urgent Bug", "boss@test.com", "A" * 2001))
+
+    # Assert: the original body is still triaged, and the failure is visible.
+    assert response["status"] == "success"
+    assert any("compaction failed" in record.getMessage().lower() for record in caplog.records)

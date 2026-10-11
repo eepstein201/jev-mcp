@@ -264,7 +264,7 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
 *   **Command:** `/jev-mcp:train`
 *   **Underlying Tool:** `train`
 *   **Natural Language Triggers:** *"Train a custom adapter on this data,"*, *"Fine-tune a local model..."*
-*   **What it does:** Starts a detached `mlx_lm.lora` run (500 iterations) on your Apple Silicon GPU and returns the process id, adapter directory (`~/.jev/adapters/<run_id>`), and log path. With `fuse=True` it then runs `mlx_lm.fuse --export-gguf`; if a fused GGUF is produced and `target_gguf_path` is set, it moves the existing model to `<target>.bak`, installs the new file, and restarts a running `llama-server`.
+*   **What it does:** Starts a detached `mlx_lm.lora` run (`iters` iterations, default 500) on your Apple Silicon GPU and returns the process id, adapter directory (`~/.jev/adapters/<run_id>`), and log path. With `fuse=True` it then runs `mlx_lm.fuse --export-gguf`; if a fused GGUF is produced and `target_gguf_path` is set, it moves the existing model to `<target>.bak`, installs the new file, and restarts a running `llama-server`.
 *   **Current limitations (read from the code and `mlx_lm` 0.31.3, not yet exercised end to end):**
     *   `mlx_lm.fuse --export-gguf` only supports unquantized `llama`, `mistral`, and `mixtral` models, so with the default base (`mlx-community/Qwen2.5-7B-Instruct-4bit`, a quantized `qwen2` model) the fuse step cannot produce a GGUF. The adapter itself is still written. A working route for Qwen is `mlx_lm.fuse --dequantize --save-path <dir>` followed by llama.cpp's `convert_hf_to_gguf.py` and `llama-quantize`; the converter script is not shipped with the Homebrew `llama.cpp` package.
     *   The restart step kills the first `llama-server` process it finds, which is not necessarily the one serving `target_gguf_path` when both engines are running, and the launchd agents use `KeepAlive`. After a replacement, prefer `make start` to restart both daemons cleanly.
@@ -276,6 +276,9 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
     *   `engine` *(string, default: "mlx")*: The training backend. Supports `"mlx"` (Apple Silicon Native) or `"llama.cpp"` (Experimental).
     *   `fuse` *(bool, default: True)*: Attempts to fuse the adapter and export a single `.gguf` file (see the limitations above).
     *   `target_gguf_path` *(string, optional)*: If a fused GGUF is produced, replaces this inference model with it (moving the original to `.bak`) and restarts `llama-server`.
+    *   `iters` *(integer, default: 500)*: Number of training iterations. Lower it for small datasets to limit overfitting.
+
+    With `fuse=False` the run stops after training and leaves the MLX adapter in the adapter directory; nothing is downloaded or converted.
 
 
 #### ⚡ Evaluate Batch
@@ -733,7 +736,7 @@ Ports come from `JEV_FAST_PORT` (default `8080`) and `JEV_SMART_PORT` (default `
 | `JEV_FAST_PORT` | `8080` | manager, `routing_provider.py`, `server.py` | Port of the fast engine (Kev 0.8B). |
 | `JEV_SMART_PORT` | `8081` | manager, `routing_provider.py`, `server.py` | Port of the smart engine (Qwen 7B). |
 | `JEV_FAST_ENGINE` | `kev` | `routing_provider.py` | `kev` uses `KevProvider` (`/v1/systemone`) for the fast tier; any other value uses `DaemonProvider` (`/v1/chat/completions`) on the fast port. |
-| `JEV_DAEMON_PORT` | `8080` | `daemon_provider.py` | Fallback port used only when a `DaemonProvider` is built without an explicit URL. The router always passes explicit URLs built from `JEV_FAST_PORT` / `JEV_SMART_PORT`. |
+| `JEV_DAEMON_PORT` | unset | `daemon_provider.py` | Optional override for a `DaemonProvider` built without an explicit URL; when unset it follows `JEV_SMART_PORT`. The router always passes explicit URLs built from `JEV_FAST_PORT` / `JEV_SMART_PORT`. |
 | `JEV_BATCH_SIZE` | RAM-based | manager | Number of `llama-server` parallel slots. |
 | `JEV_MCP_API_KEY` | none | `email_triage/auth.py` | Bearer token accepted by the email-triage webhook. |
 

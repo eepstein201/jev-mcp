@@ -38,7 +38,8 @@ class DaemonProvider(JevProvider):
             load_dotenv()
         except ImportError:
             pass
-        port = os.getenv("JEV_DAEMON_PORT", "8080")
+        # Default to the smart engine's port: 8080 is the Kev daemon in the dual-engine setup.
+        port = os.getenv("JEV_DAEMON_PORT", "") or os.getenv("JEV_SMART_PORT", "8081")
         self.base_url = base_url or f"http://127.0.0.1:{port}/v1/chat/completions"
         self.max_tokens = 8192
         self.current_model_id = "unknown_model"
