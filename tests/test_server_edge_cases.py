@@ -61,7 +61,7 @@ def test_unknown_question_type_and_semantic_dedupe(mock_provider, mock_linter):
     assert res["status"] == "REJECTED_BY_LINTER"
     assert "original_findings" in res
 
-@patch("jev_mcp.server.provider")
+@patch("jev_mcp.app.provider")
 @patch("urllib.request.urlopen")
 def test_jev_optimize_prompt_unknown_type_and_json_cleaning(mock_urlopen, mock_provider):
     mock_provider.evaluate_batch.return_value = {} # hit 523

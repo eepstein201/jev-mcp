@@ -599,7 +599,7 @@ def test_jev_calibrate_threshold_platt_missing_sklearn(mock_eval_dataset):
         
         assert "scikit-learn" in res["markdown_report"]
 
-@patch("jev_mcp.server.RoutingProvider")
+@patch("jev_mcp.app.RoutingProvider")
 def test_jev_determine_best_model(mock_provider_class):
     mock_provider = MagicMock()
     mock_provider_class.return_value = mock_provider
@@ -617,7 +617,7 @@ def test_jev_determine_best_model(mock_provider_class):
     # Complexity 3 routes to bucket b3 of the default config (no config file exists in tests).
     assert res["recommended_model"] == "claude-opus-5-5"
 
-@patch("jev_mcp.server.RoutingProvider")
+@patch("jev_mcp.app.RoutingProvider")
 def test_jev_agent_handoff(mock_provider_class):
     mock_provider = MagicMock()
     mock_provider_class.return_value = mock_provider
@@ -767,8 +767,8 @@ def test_chat_completion_without_system_or_format(mock_post, monkeypatch):
     assert payload["messages"] == [{"role": "user", "content": "user-msg"}]
     assert "response_format" not in payload
 
-@patch("jev_mcp.server.load_router_config")
-@patch("jev_mcp.server.save_router_config")
+@patch("jev_mcp.app.load_router_config")
+@patch("jev_mcp.app.save_router_config")
 def test_jev_manage_router_config(mock_save, mock_load):
     mock_load.return_value = {"custom_rules": [], "buckets": {}}
     
@@ -803,7 +803,7 @@ def test_jev_manage_temperature(mock_save, mock_load):
     assert saved_cfg_reset["fitted_temperature"] == 1.0
 
 @patch("jev_mcp.app.load_router_config")
-@patch("jev_mcp.server.RoutingProvider")
+@patch("jev_mcp.app.RoutingProvider")
 def test_system_notice_injection(mock_provider_class, mock_load):
     # Reset global state for test
     app._has_notified_temp = False

@@ -118,7 +118,7 @@ def test_model_router_mentions_newer_models_once_per_session(cached_catalog):
     _write_config()
     answer = {"complexity": {"score": "2", "probabilities": {}}}
 
-    with patch.object(server, "RoutingProvider") as provider_cls:
+    with patch.object(app, "RoutingProvider") as provider_cls:
         provider_cls.return_value.evaluate_batch.return_value = answer
         first = json.loads(server.jev_determine_best_model(task_description="rename a variable", estimated_tokens=0))
         second = json.loads(server.jev_determine_best_model(task_description="rename a variable", estimated_tokens=0))

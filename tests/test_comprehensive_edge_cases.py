@@ -209,8 +209,8 @@ def test_read_file_whole_file_failure(mock_eval, tmp_path):
 # 9. Manage Router Config (remove_rule)
 # ---------------------------------------------------------
 from jev_mcp.server import jev_manage_router_config
-@patch("jev_mcp.server.load_router_config", return_value={"rules": [{"condition": "test", "target": "smart"}], "buckets": {}})
-@patch("jev_mcp.server.save_router_config")
+@patch("jev_mcp.app.load_router_config", return_value={"rules": [{"condition": "test", "target": "smart"}], "buckets": {}})
+@patch("jev_mcp.app.save_router_config")
 def test_manage_router_config_remove(mock_save, mock_load):
     res = jev_manage_router_config(action="remove_rule", rule_id=0)
     assert "Rule removed" in res
@@ -220,8 +220,8 @@ def test_manage_router_config_remove(mock_save, mock_load):
 # 10. Determine Best Model (rule triggered)
 # ---------------------------------------------------------
 from jev_mcp.server import jev_determine_best_model
-@patch("jev_mcp.server.RoutingProvider")
-@patch("jev_mcp.server.load_router_config", return_value={
+@patch("jev_mcp.app.RoutingProvider")
+@patch("jev_mcp.app.load_router_config", return_value={
     "rules": [{"condition": "'urgent' in context", "target": "smart"}],
     "buckets": {"smart": "qwen"}
 })
