@@ -1,9 +1,10 @@
 """Map the connecting MCP client to router default buckets.
 
-v1 is Anthropic-only: the patterns below recognize Claude-family clients and
-map them to the Anthropic tiers in ``router_config.FALLBACK_BUCKETS`` (which
-the model catalog keeps current). Every other client maps to ``None`` and
-seeding never happens for it.
+Each entry pairs the client-name patterns of an MCP client family with the
+tier table of that family's provider. Tier model ids are hand-picked from the
+models.dev catalog (the same-family auto-update then keeps them current);
+Google's top tiers repeat ``gemini-3.8-flash`` because its catalog currently
+offers nothing newer above the flash family (``pro`` is stale at 2.5).
 """
 import logging
 from typing import Any
@@ -12,19 +13,44 @@ from jev_mcp.router_config import FALLBACK_BUCKETS
 
 logger = logging.getLogger("jev-mcp")
 
-ANTHROPIC_CLIENT_PATTERNS: tuple[str, ...] = (
-    "claude code",
-    "claude desktop",
-    "claude",
-    "antigravity",
+PROVIDER_CLIENT_TABLE: tuple[dict[str, Any], ...] = (
+    {
+        "provider": "anthropic",
+        "patterns": ("claude code", "claude desktop", "claude", "antigravity"),
+        "buckets": dict(FALLBACK_BUCKETS),
+    },
+    {
+        "provider": "openai",
+        "patterns": ("opencode", "cursor", "windsurf", "continue", "zed"),
+        "buckets": {
+            "b1": "gpt-5.4-nano",
+            "b2": "gpt-5.4-mini",
+            "b3": "gpt-5.5",
+            "b4": "gpt-5.5-pro",
+        },
+    },
+    {
+        "provider": "google",
+        "patterns": ("gemini",),
+        "buckets": {
+            "b1": "gemini-3.5-flash-lite",
+            "b2": "gemini-3.8-flash",
+            "b3": "gemini-3.8-flash",
+            "b4": "gemini-3.8-flash",
+        },
+    },
 )
+
+# Kept for compatibility with earlier references to the Anthropic patterns.
+ANTHROPIC_CLIENT_PATTERNS: tuple[str, ...] = PROVIDER_CLIENT_TABLE[0]["patterns"]
 
 
 def default_buckets_for_client(client_name: str) -> dict[str, str] | None:
     """The provider tier table for a connecting client, or None if unrecognized."""
     lowered = (client_name or "").lower()
-    if any(pattern in lowered for pattern in ANTHROPIC_CLIENT_PATTERNS):
-        return dict(FALLBACK_BUCKETS)
+    for entry in PROVIDER_CLIENT_TABLE:
+        if any(pattern in lowered for pattern in entry["patterns"]):
+            return dict(entry["buckets"])
     return None
 
 
