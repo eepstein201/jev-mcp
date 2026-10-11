@@ -1,34 +1,24 @@
 import sys
 import os
-import json
-import subprocess
-from typing import Annotated, Any, Dict, List, Optional, Literal
-from pydantic import Field
 
 # Shared server state (mcp, provider, linter, logger, chat helpers, notices)
 # lives in jev_mcp.app so tool modules never import this __main__ module.
+# The names below stay re-exported: tests and downstream callers import them
+# from jev_mcp.server.
 from jev_mcp.app import (
-    PLATT_CV_FOLDS,
-    SKIP_MODEL_SYNC_ENV,
     _chat_completion,
-    _chat_completion_json,
     _clean_json,
     _safe_truncate,
     _sync_models,
     call_fast_autofixer,
-    get_model_notice,
-    get_temp_notice,
     linter,
     logger,
     mcp,
-    model_update_notice,
     provider,
     start_model_sync,
 )
-from jev_mcp import router_config
-from jev_mcp.router_config import apply_model_updates, load_router_config, pending_model_updates, save_router_config
-from jev_mcp.provider import QuestionType, NoulQuestion, ChoiceQuestion, ScoreQuestion
-from jev_mcp.routing_provider import RoutingProvider
+from jev_mcp.router_config import save_router_config
+from jev_mcp.provider import NoulQuestion
 from jev_mcp.tools.browser import jev_run_browser_agent
 from jev_mcp.tools.calibrate import jev_calibrate_threshold, jev_manage_temperature
 from jev_mcp.tools.prompts import jev_optimize_prompt
@@ -45,7 +35,6 @@ from jev_mcp.tools.triage import (
     tool_setup_gas_workflow,
     tool_triage_email_content,
 )
-import re
 
 @mcp.prompt(
     name="calibrate",
