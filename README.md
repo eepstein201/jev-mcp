@@ -272,13 +272,11 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
     3.  quantizes to `Q4_K_M` with `llama-quantize` and leaves `fused-Q4_K_M.gguf` in the adapter directory.
 
     If `target_gguf_path` is set, the existing model is kept as `<target>.bak` (only the first time, so the backup is always the original), the new file takes its place, and the one launchd agent whose plist serves that file is restarted with `launchctl kickstart -k`. The other engine is not touched. Any failed step stops the run before the served model is changed.
-*   **Converter setup (once, needed for `fuse=True`):** Homebrew's `llama.cpp` does not ship the converter. Extract it from the commit your `llama-server` was built from, and read it before use:
-    ```bash
-    COMMIT=$(llama-server --version 2>&1 | rg -o "commit ([0-9a-f]+)" -r '$1')
-    mkdir -p ~/.jev/llama.cpp-src
-    curl -sL "https://github.com/ggml-org/llama.cpp/archive/$COMMIT.tar.gz" | tar -xz --strip-components=1 -C ~/.jev/llama.cpp-src '*/convert_hf_to_gguf.py' '*/conversion' '*/gguf-py'
-    ```
-    Set `JEV_LLAMA_CPP_SRC` to use another directory. The converter runs in the project environment and needs `torch` and `transformers` from the `engines` extra. Without the converter, `train` returns `NOT_AVAILABLE` instead of starting.
+*   **Converter (automatic):** Homebrew's `llama.cpp` does not ship the converter, so each `fuse=True` run checks it first. `train` reads the commit from `llama-server --version` and compares it with the marker in `~/.jev/llama.cpp-src/.jev-llama-commit`. If the converter is missing or was fetched for a different commit (for example after `brew upgrade llama.cpp`), it downloads `convert_hf_to_gguf.py`, `conversion/` and `gguf-py/` from exactly that commit on GitHub and replaces the directory. This takes about 5 seconds and runs code from the llama.cpp repository on your machine.
+    *   The result reports the commit in use as `converter_commit`.
+    *   If the download fails and an older converter is present, the run continues with it and logs a warning. If none is present, `train` returns `NOT_AVAILABLE`.
+    *   To manage the converter yourself, set `JEV_LLAMA_CPP_SRC` to your own directory; `train` then never downloads into it.
+    *   The converter runs in the project environment and needs `torch` and `transformers` from the `engines` extra.
 *   **Restore:** `train` with `action="restore"` and `target_gguf_path` moves `<target>.bak` back over the fine-tuned model and restarts that agent.
 *   **Measured on 2026-10-10 (Qwen2.5-7B, M2 Pro 16 GB, `mlx_lm` 0.31.3, llama.cpp `d81235049`):**
     *   The route works end to end. 120 iterations on 56 rows took about 3.5 minutes at 6.3 GB peak memory; fuse, convert and quantize took about 5 minutes more.
@@ -289,7 +287,7 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
     *   `dataset_path` *(string)*: Absolute path to the `.jsonl` dataset. Not needed for `action="restore"`.
     *   `model_name` *(string, default: "mlx-community/Qwen2.5-7B-Instruct-4bit")*: The base model to fine-tune.
     *   `engine` *(string, default: "mlx")*: The training backend. Supports `"mlx"` (Apple Silicon Native) or `"llama.cpp"` (Experimental).
-    *   `fuse` *(bool, default: True)*: Fuse the adapter and produce a `Q4_K_M` `.gguf` file (needs the converter setup above).
+    *   `fuse` *(bool, default: True)*: Fuse the adapter and produce a `Q4_K_M` `.gguf` file (fetches the converter when needed, see above).
     *   `target_gguf_path` *(string, optional)*: A `.gguf` model to replace with the fused result, or to restore.
     *   `iters` *(integer, default: 500)*: Number of training iterations. Lower it for small datasets to limit overfitting.
     *   `action` *(string, default: "train")*: `"train"` or `"restore"`.

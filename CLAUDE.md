@@ -46,4 +46,4 @@ Both engines run side by side (`make start`); requests route between them automa
 
 ## LoRA Fine-Tuning 
 - The `jev_train_lora` tool supports both `mlx` and `llama.cpp` backends. 
-- The default `mlx` option runs `mlx_lm.lora`, then (with `fuse=True`) the steps in `lora_training.py`: `mlx_lm fuse --dequantize` → llama.cpp `convert_hf_to_gguf.py` from `JEV_LLAMA_CPP_SRC` (default `~/.jev/llama.cpp-src`) → `llama-quantize` Q4_K_M. With `target_gguf_path` it keeps the original as `.bak` and restarts only the launchd agent serving that file (`launchctl kickstart -k`); `action="restore"` puts the `.bak` back.
+- The default `mlx` option runs `mlx_lm.lora`, then (with `fuse=True`) the steps in `lora_training.py`: `mlx_lm fuse --dequantize` → llama.cpp `convert_hf_to_gguf.py` (auto-fetched into `~/.jev/llama.cpp-src` for the commit in `llama-server --version` unless `JEV_LLAMA_CPP_SRC` is set) → `llama-quantize` Q4_K_M. With `target_gguf_path` it keeps the original as `.bak` and restarts only the launchd agent serving that file (`launchctl kickstart -k`); `action="restore"` puts the `.bak` back.
