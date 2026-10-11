@@ -3,7 +3,7 @@
 
 ## Layout
 server.py (~175 lines) — entry point: `python -m jev_mcp.server` → main() (`setup-gas` / `serve-webhook` / stdio), `@mcp.prompt` definitions, re-exports.
-app.py — shared state: `mcp` (MCPServer), `provider` (RoutingProvider), `linter`, `logger`, `_clean_json`/`_safe_truncate`/`_chat_completion(_json)`, `call_fast_autofixer`, `get_temp_notice`/`get_model_notice`, `start_model_sync`/`_sync_models`. Tool modules reference `app.X` AT CALL TIME (never import `jev_mcp.server`).
+app.py — shared state: `mcp` (MCPServer), `provider` (RoutingProvider), `linter`, `logger`, `_clean_json`/`_safe_truncate`/`_chat_completion(_json)`, `call_fast_autofixer`, `get_temp_notice`/`get_model_notice`, `start_model_sync`/`_sync_models`. Tool modules reference `app.X` AT CALL TIME (never import `jev_mcp.server`). MCPServer carries `client_defaults.SeedingMiddleware` (handshake-time per-client bucket seeding; config provenance `buckets_source`/`detected_client`).
 
 ## Tools (tools/) → impl
 evaluate           → tools/evaluate.py jev_evaluate_batch (state + QuestionType[] → RoutingProvider)

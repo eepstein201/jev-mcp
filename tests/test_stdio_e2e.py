@@ -25,9 +25,13 @@ EXPECTED_TOOLS = {
 }
 
 
-def _start_server():
+def _start_server(home=None):
     env = os.environ.copy()
     env["PYTHONUNBUFFERED"] = "1"
+    if home is not None:
+        # Full isolation: the child resolves ~/.jev from this HOME, so the
+        # real router config is never read or written.
+        env["HOME"] = str(home)
     return subprocess.Popen(
         [sys.executable, "-m", "jev_mcp.server"],
         cwd=REPO_ROOT,
@@ -110,6 +114,117 @@ def test_stdio_handshake_and_tool_registry():
         prompts = read_rpc()
         prompt_names = {p["name"] for p in prompts["result"]["prompts"]}
         assert {"calibrate", "temperature", "scan-repo"} <= prompt_names
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+
+
+def test_stdio_handshake_seeds_anthropic_defaults_for_claude_client(tmp_path):
+    from jev_mcp.router_config import FALLBACK_BUCKETS
+
+    proc = _start_server(home=tmp_path)
+    q = queue.Queue()
+    threading.Thread(target=_reader, args=(proc.stdout, q), daemon=True).start()
+
+    def send(obj):
+        proc.stdin.write((json.dumps(obj) + "\n").encode())
+        proc.stdin.flush()
+
+    def read_rpc(timeout=30.0):
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                line = q.get(timeout=1.0)
+            except queue.Empty:
+                if proc.poll() is not None:
+                    raise AssertionError(f"server exited early (rc={proc.returncode}):\n{proc.stderr.read().decode(errors='replace')}")
+                continue
+            if line is None:
+                raise AssertionError(f"server stdout closed:\n{proc.stderr.read().decode(errors='replace')}")
+            try:
+                msg = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if "id" in msg:
+                return msg
+        raise AssertionError("timed out waiting for a JSON-RPC response")
+
+    config_path = tmp_path / ".jev" / "router_config.json"
+    try:
+        send({
+            "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+                "protocolVersion": "2025-06-18", "capabilities": {},
+                "clientInfo": {"name": "claude-code-e2e", "version": "0.0.1"},
+            },
+        })
+        init = read_rpc(timeout=30)
+        assert init.get("id") == 1, init
+        send({"jsonrpc": "2.0", "method": "notifications/initialized"})
+        # Keep the session alive long enough for the seeding side effect.
+        send({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
+        assert read_rpc().get("id") == 2
+
+        # Wait for the condition (the config file), not a fixed delay.
+        deadline = time.time() + 10
+        while not config_path.exists() and time.time() < deadline:
+            time.sleep(0.1)
+        assert config_path.exists(), "seeding never wrote a router config"
+        config = json.loads(config_path.read_text())
+        assert config["buckets"] == dict(FALLBACK_BUCKETS)
+        assert config["buckets_source"] == "detected"
+        assert config["detected_client"] == "claude-code-e2e"
+        assert config["rules"] == []
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+
+
+def test_stdio_handshake_does_not_seed_unknown_client(tmp_path):
+    proc = _start_server(home=tmp_path)
+    q = queue.Queue()
+    threading.Thread(target=_reader, args=(proc.stdout, q), daemon=True).start()
+
+    def send(obj):
+        proc.stdin.write((json.dumps(obj) + "\n").encode())
+        proc.stdin.flush()
+
+    def read_rpc(timeout=30.0):
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                line = q.get(timeout=1.0)
+            except queue.Empty:
+                if proc.poll() is not None:
+                    raise AssertionError(f"server exited early (rc={proc.returncode}):\n{proc.stderr.read().decode(errors='replace')}")
+                continue
+            if line is None:
+                raise AssertionError(f"server stdout closed:\n{proc.stderr.read().decode(errors='replace')}")
+            try:
+                msg = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if "id" in msg:
+                return msg
+        raise AssertionError("timed out waiting for a JSON-RPC response")
+
+    try:
+        send({
+            "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+                "protocolVersion": "2025-06-18", "capabilities": {},
+                "clientInfo": {"name": "opencode-e2e", "version": "0.0.1"},
+            },
+        })
+        assert read_rpc(timeout=30).get("id") == 1
+        send({"jsonrpc": "2.0", "method": "notifications/initialized"})
+        send({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
+        assert read_rpc().get("id") == 2
+        assert not (tmp_path / ".jev" / "router_config.json").exists()
     finally:
         proc.terminate()
         try:

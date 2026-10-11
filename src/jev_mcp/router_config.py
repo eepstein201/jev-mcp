@@ -29,6 +29,39 @@ def save_router_config(config):
     with open(ROUTER_CONFIG_PATH, "w") as f:
         json.dump(config, f, indent=2)
 
+def seed_defaults_for_client(client_name: str) -> dict[str, Any] | None:
+    """Seed router buckets from the connecting client when the user hasn't chosen them.
+
+    Eligible only when no config file exists yet, or when the buckets were
+    previously seeded by detection (``buckets_source == "detected"``); a config
+    without the field counts as user-chosen and is never touched. Returns the
+    written config, or None when nothing was seeded.
+    """
+    from jev_mcp.client_defaults import default_buckets_for_client
+
+    tiers = default_buckets_for_client(client_name)
+    if tiers is None:
+        return None
+    try:
+        if not os.path.exists(ROUTER_CONFIG_PATH):
+            seeded = {
+                "buckets": tiers,
+                "rules": [],
+                "buckets_source": "detected",
+                "detected_client": client_name,
+            }
+        else:
+            with open(ROUTER_CONFIG_PATH, "r") as f:
+                config = json.load(f)
+            if config.get("buckets_source") != "detected":
+                return None
+            seeded = {**config, "buckets": tiers, "detected_client": client_name}
+    except (OSError, json.JSONDecodeError):
+        # An unreadable or corrupt config is never a reason to seed over it.
+        return None
+    save_router_config(seeded)
+    return seeded
+
 def pending_model_updates(config: dict[str, Any]) -> dict[str, dict[str, str]]:
     """Buckets whose model has a newer release in the same family, per the cached catalog."""
     return model_catalog.suggest_updates(config.get("buckets", {}), model_catalog.load_cached())

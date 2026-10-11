@@ -116,7 +116,9 @@ def _chat_completion_json(**kwargs: Any) -> Any:
     return json.loads(_clean_json(_chat_completion(**kwargs)))
 
 # Initialize MCP and Provider
-mcp = MCPServer("jev-mcp")
+from jev_mcp.client_defaults import SeedingMiddleware  # noqa: E402 - after logging setup
+
+mcp = MCPServer("jev-mcp", middleware=[SeedingMiddleware()])
 
 # The hybrid router, not a bare DaemonProvider: a bare one falls back to
 # JEV_DAEMON_PORT (8080), which is the Kev daemon in the dual-engine setup.
