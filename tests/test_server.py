@@ -781,8 +781,8 @@ def test_jev_manage_router_config(mock_save, mock_load):
     server.jev_manage_router_config("set_bucket", bucket_id="b1", model_name="gpt-4")
     mock_save.assert_called_once()
 
-@patch("jev_mcp.server.load_router_config")
-@patch("jev_mcp.server.save_router_config")
+@patch("jev_mcp.app.load_router_config")
+@patch("jev_mcp.app.save_router_config")
 def test_jev_manage_temperature(mock_save, mock_load):
     mock_load.return_value = {"fitted_temperature": 1.5, "temperature_updated_at": "Today"}
     
