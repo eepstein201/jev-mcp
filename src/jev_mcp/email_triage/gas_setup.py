@@ -60,13 +60,16 @@ def setup_gas_workflow(webhook_url: str | None = None, api_key: str | None = Non
         # Fallback for testing
         template_code = "const WEBHOOK = 'TEMPLATE'; const API_KEY = 'TEMPLATE';"
         
-    # Inject variables
-    final_code = template_code.replace("'TEMPLATE'", f"'{webhook_url}'", 1)
-    final_code = final_code.replace("'TEMPLATE'", f"'{api_key}'", 1)
-    
+    # Inject variables. json.dumps writes each one as an escaped JavaScript string
+    # literal, so a quote in the value cannot end the string and run as code.
+    url_literal = json.dumps(webhook_url)
+    key_literal = json.dumps(api_key)
+    final_code = template_code.replace("'TEMPLATE'", url_literal, 1)
+    final_code = final_code.replace("'TEMPLATE'", key_literal, 1)
+
     # We just do a naive prepend for simplicity if replace didn't work
-    if webhook_url not in final_code:
-        final_code = f"const JEV_MCP_WEBHOOK_URL = '{webhook_url}';\nconst JEV_MCP_API_KEY = '{api_key}';\n" + final_code
+    if url_literal not in final_code:
+        final_code = f"const JEV_MCP_WEBHOOK_URL = {url_literal};\nconst JEV_MCP_API_KEY = {key_literal};\n" + final_code
         
     print("Uploading code...")
     update_request = {

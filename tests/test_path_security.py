@@ -1,6 +1,8 @@
 import json
 from unittest.mock import patch
 
+import pytest
+
 from jev_mcp.security import is_safe_path
 from jev_mcp.server import jev_read_file, jev_scan_repo
 
@@ -66,3 +68,41 @@ def test_read_file_allows_user_temp(mock_eval, tmp_path):
 
     res = jev_read_file(str(f), "find x", filter_by_chunk=False)
     assert "passed relevance check" in res
+
+
+@pytest.mark.parametrize("path", [
+    "/Users/test/.SSH/id_rsa",
+    "/Users/test/.Aws/credentials",
+    "/Users/test/.CONFIG/gh/hosts.yml",
+    "/Users/test/.ZSH_HISTORY",
+])
+def test_is_safe_path_blocks_credential_names_in_any_letter_case(path):
+    # macOS filesystems are case-insensitive, so ~/.SSH opens ~/.ssh.
+    assert is_safe_path(path) is False
+
+
+@pytest.mark.parametrize("path", [
+    "/Users/test/.docker/config.json",
+    "/Users/test/.pgpass",
+    "/Users/test/.pypirc",
+    "/Users/test/.jev-mcp/client_secrets.json",
+    "/Users/test/Library/Keychains/login.keychain-db",
+    "/Users/test/Library/Application Support/Google/Chrome/Default/Cookies",
+    "/Users/test/Library/Cookies/Cookies.binarycookies",
+    "/Users/test/project/.env",
+    "/Users/test/project/.env.production",
+    "/Users/test/backup/id_ed25519",
+    "/Users/test/.claude/.credentials.json",
+])
+def test_is_safe_path_blocks_credential_stores(path):
+    assert is_safe_path(path) is False
+
+
+@pytest.mark.parametrize("path", [
+    "/Users/test/project/.env.example",
+    "/Users/test/project/environment.py",
+    "/Users/test/project/library/keychains.py",
+    "/Users/test/Library/Developer/notes.md",
+])
+def test_is_safe_path_still_allows_ordinary_project_files(path):
+    assert is_safe_path(path) is True

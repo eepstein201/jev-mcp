@@ -121,9 +121,10 @@ def test_jwt_is_verified_against_the_identity_providers_jwks(jwt_env):
     from unittest.mock import MagicMock, patch
 
     private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    token = jwt.encode({"sub": "idp-user", "exp": int(time.time()) + 300}, private_key, algorithm="RS256")
+    token = jwt.encode({"sub": "idp-user", "exp": int(time.time()) + 300, "aud": "jev-triage"}, private_key, algorithm="RS256")
     jwt_env.delenv("JEV_MCP_JWT_SECRET")
     jwt_env.setenv("JEV_MCP_JWKS_URL", "https://idp.example.test/.well-known/jwks.json")
+    jwt_env.setenv("JEV_MCP_JWT_AUDIENCE", "jev-triage")
     signing_key = MagicMock(key=private_key.public_key())
 
     with patch("jwt.PyJWKClient") as client_cls:

@@ -66,3 +66,17 @@ def test_scanner_max_depth(tmp_path):
     # So we should only have 5 files.
     assert len(files) == 5
     assert not any("dir_10" in f for f in files)
+
+
+def test_scanner_skips_symlinked_files(tmp_path):
+    # A link inside the repo must not pull in a file from outside it.
+    outside = tmp_path / "outside.txt"
+    outside.write_text("secret")
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    (repo_dir / "main.py").write_text("x = 1")
+    (repo_dir / "link.py").symlink_to(outside)
+
+    files = walk_repository(str(repo_dir))
+
+    assert [os.path.basename(f) for f in files] == ["main.py"]

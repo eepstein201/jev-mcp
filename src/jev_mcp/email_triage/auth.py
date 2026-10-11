@@ -23,12 +23,18 @@ def jwt_decode(token: str) -> dict:
     """Verify a JWT's signature, expiry, and (when configured) audience and issuer.
 
     The key comes from JEV_MCP_JWKS_URL (the identity provider's published keys) or,
-    failing that, JEV_MCP_JWT_SECRET (a shared HS256 secret).
+    failing that, JEV_MCP_JWT_SECRET (a shared HS256 secret). With a JWKS URL the
+    audience is required, not optional.
     """
     jwks_url = os.environ.get("JEV_MCP_JWKS_URL")
     secret = os.environ.get("JEV_MCP_JWT_SECRET")
+    audience = os.environ.get("JEV_MCP_JWT_AUDIENCE")
     if jwks_url:
-        key = _jwks_client(jwks_url).get_signing_key_from_jwt(token).key
+        # An identity provider signs tokens for every app it serves, so its signature
+        # alone does not show the token was issued for this webhook.
+        if not audience:
+            raise ValueError("JEV_MCP_JWT_AUDIENCE must be set when JEV_MCP_JWKS_URL is used")
+        key =_jwks_client(jwks_url).get_signing_key_from_jwt(token).key
         algorithms = JWKS_ALGORITHMS
     elif secret:
         key = secret
@@ -36,7 +42,6 @@ def jwt_decode(token: str) -> dict:
     else:
         raise ValueError("No JWT verification key configured (JEV_MCP_JWKS_URL or JEV_MCP_JWT_SECRET)")
 
-    audience = os.environ.get("JEV_MCP_JWT_AUDIENCE")
     return jwt.decode(
         token,
         key,

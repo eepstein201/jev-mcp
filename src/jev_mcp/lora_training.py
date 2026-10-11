@@ -171,7 +171,7 @@ def build_fuse_script(
     ]
 
     if not target_gguf_path:
-        steps.append(f'echo "Fused model saved to {out_path}. No target_gguf_path given, so nothing was replaced."')
+        steps.append("echo " + q(f"Fused model saved to {out_path}. No target_gguf_path given, so nothing was replaced."))
         return "\n".join(steps) + "\n"
 
     backup = f"{target_gguf_path}.bak"
@@ -179,14 +179,14 @@ def build_fuse_script(
         # Keep the first backup: it is the original, not an earlier fine-tune.
         f"if [ -f {q(target_gguf_path)} ] && [ ! -f {q(backup)} ]; then",
         f"    mv {q(target_gguf_path)} {q(backup)}",
-        f'    echo "Backed up the original model to {backup}"',
+        "    echo " + q(f"Backed up the original model to {backup}"),
         "fi",
         f"mv {q(out_path)} {q(target_gguf_path)}",
     ]
     if label:
         steps += [
             f"launchctl kickstart -k gui/$(id -u)/{q(label)}",
-            f'echo "Replaced the model and restarted {label}."',
+            "echo " + q(f"Replaced the model and restarted {label}."),
         ]
     else:
         steps.append('echo "Replaced the model. No launchd agent serves it, so nothing was restarted."')

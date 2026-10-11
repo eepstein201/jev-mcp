@@ -948,8 +948,9 @@ def test_tool_configure_triage_labels(monkeypatch):
 def test_tool_setup_gas_workflow(monkeypatch):
     import jev_mcp.server
     monkeypatch.setattr(jev_mcp.tools.triage, "setup_gas_workflow", lambda webhook_url, api_key: "setup done")
-    res = jev_mcp.server.tool_setup_gas_workflow("url", "key")
-    assert res == "setup done"
+    res = jev_mcp.server.tool_setup_gas_workflow("https://hook.example/api", "key")
+    import json
+    assert json.loads(res) == {"status": "SUCCESS", "url": "setup done"}
 
 def test_tool_triage_email_content(monkeypatch):
     import jev_mcp.server
@@ -996,3 +997,24 @@ def test_jev_train_lora_llama_cpp_engine_rejects_non_gguf(tmp_path):
 
     assert res["status"] == "ERROR"
     assert "llama.cpp engine requires a .gguf model_name path." in res["message"]
+
+
+@patch("subprocess.Popen")
+def test_jev_train_lora_quotes_paths_with_spaces_in_the_run_script(mock_popen, tmp_path, monkeypatch):
+    import shlex
+
+    home = tmp_path / "my home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    mock_popen.return_value = MagicMock(pid=1)
+    ds = tmp_path / "mydata.jsonl"
+    ds.write_text('{"messages": []}\n')
+
+    res = json.loads(server.jev_train_lora(str(ds), fuse=False))
+
+    assert res["status"] == "TRAINING_STARTED", res.get("message")
+    with open(mock_popen.call_args[0][0][1]) as f:
+        script = f.read()
+    assert f"--data {shlex.quote(res['data_dir'])}" in script
+    assert "--adapter-path '" in script
+    assert 'echo "Training complete. Adapter saved to' not in script

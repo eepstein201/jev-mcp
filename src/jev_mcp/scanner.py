@@ -30,6 +30,9 @@ def walk_repository(root_path: str, max_depth: int = 10) -> list[str]:
                 continue
                 
             full_path = os.path.join(dirpath, f)
+            # A link can point outside the repository, so only real files are scanned.
+            if os.path.islink(full_path):
+                continue
             # Basic sanity check to avoid massive files (e.g. minified JS)
             try:
                 if os.path.getsize(full_path) < 1024 * 500: # 500 KB limit
