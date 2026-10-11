@@ -3,7 +3,7 @@
 
 | Path | Owner | Contents |
 |------|-------|----------|
-| ~/.jev/router_config.json | router_config.py | buckets b1-b4 → model names, rules[], fitted temperature, auto_update |
+| ~/.jev/router_config.json | router_config.py | buckets b1-b4 → model names, rules[], fitted temperature, auto_update, buckets_source ("detected"/"user"), detected_client |
 | ~/.jev/model_catalog.json | model_catalog.py | reduced models.dev catalog (id, family, release date, price), refreshed daily at start-up |
 | ~/.jev/jev.log | server logging | runtime log |
 | ~/.jev/adapters/{run_id} | jev_train_lora | LoRA adapters |
@@ -15,7 +15,7 @@
 
 ## Models (pydantic)
 provider.py: NoulQuestion{prompt,key} · ChoiceQuestion{prompt,options,key} · ScoreQuestion{prompt,labels,key} · QuestionType=Union
-email_triage/core.py (separate, same names): NoulQuestion{question,instruction} · ChoiceQuestion{question,instruction,choices}
+email_triage/core.py builds jev_mcp.provider's question classes (no separate duplicates)
 CategoryConfig.categories = Follow Up|Pending|Receipts|Newsletter|Notifications|Review
 JevMailConfig{action_threshold=0.8, important_threshold=0.8}
 
