@@ -42,5 +42,5 @@ make clean     # uninstall: unload daemons, remove plists, the venv and ALL of ~
 ## Rollback
 
 - **LoRA fusion:** `train` with `target_gguf_path` replaces that model, keeps the original as `<target>.bak`, and restarts only the agent serving it. Roll back with `train` `action="restore"` and the same `target_gguf_path`.
-- **Router config:** `~/.jev/router_config.json` is plain JSON; restore a copy or delete it to return to defaults.
+- **Router config:** `~/.jev/router_config.json` is plain JSON (written atomically via a temp file + rename); restore a copy, or delete it to return to defaults — note a Claude-family client will then re-seed provider defaults at its next connect (`buckets_source: "detected"`); any manual bucket choice marks it `"user"` and stops that.
 - **Webhook key:** the API key is written into the deployed Apps Script by `jev-mcp setup-gas`. To rotate, change `JEV_MCP_API_KEY` and re-run `setup-gas`.

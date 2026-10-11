@@ -162,8 +162,28 @@ def test_claude_code_name_maps_to_anthropic_tiers():
 
 
 def test_unknown_client_maps_to_none():
-    assert client_defaults.default_buckets_for_client("opencode") is None
+    assert client_defaults.default_buckets_for_client("qwen-cli") is None
     assert client_defaults.default_buckets_for_client("") is None
+
+
+def test_openai_clients_map_to_gpt_tiers():
+    buckets = client_defaults.default_buckets_for_client("OpenCode 1.0")
+    assert buckets == {
+        "b1": "gpt-5.4-nano",
+        "b2": "gpt-5.4-mini",
+        "b3": "gpt-5.5",
+        "b4": "gpt-5.5-pro",
+    }
+
+
+def test_google_clients_map_to_gemini_tiers():
+    buckets = client_defaults.default_buckets_for_client("gemini-cli")
+    assert buckets == {
+        "b1": "gemini-3.5-flash-lite",
+        "b2": "gemini-3.8-flash",
+        "b3": "gemini-3.8-flash",
+        "b4": "gemini-3.8-flash",
+    }
 
 
 def test_seeds_when_no_config_file_exists():
@@ -202,5 +222,5 @@ def test_detected_config_reseeds_to_current_table():
 
 
 def test_unknown_client_never_writes():
-    assert router_config.seed_defaults_for_client("opencode") is None
+    assert router_config.seed_defaults_for_client("qwen-cli") is None
     assert not os.path.exists(router_config.ROUTER_CONFIG_PATH)

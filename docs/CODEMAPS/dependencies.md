@@ -1,4 +1,4 @@
-<!-- Generated: 2026-10-10 | Files scanned: pyproject.toml, requirements.txt, Makefile, ci.yml, jev_mac_manager.sh (as of 559930f) | Token estimate: ~450 -->
+<!-- Generated: 2026-10-10, re-checked 2026-10-11 | Files scanned: pyproject.toml, Makefile, ci.yml, jev_mac_manager.sh (as of eed41ad) | Token estimate: ~450 -->
 # Dependencies
 
 ## Python (pyproject.toml, py>=3.12)
@@ -23,4 +23,4 @@ make install|update|start|hybrid|stop|clean|test|lint|format|eval|train · ci.ym
 Commit gate: AGENTS.md (95% per file, 85% overall)
 
 ## External integrations
-Google Apps Script (examples/gas_triage.js) · Slack (HITL) · MCP clients: Antigravity, Claude Code/Desktop, OpenCode
+Google Apps Script (examples/gas_triage.js) · Slack (HITL) · MCP clients: Claude Code/Desktop, Antigravity (anthropic tiers), OpenCode/Cursor/Windsurf/Continue/Zed (openai tiers), Gemini CLI (google tiers) — per-client bucket seeding via client_defaults.py

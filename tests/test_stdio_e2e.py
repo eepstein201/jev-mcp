@@ -220,7 +220,7 @@ def test_stdio_handshake_does_not_seed_unknown_client(tmp_path):
         send({
             "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
                 "protocolVersion": "2025-06-18", "capabilities": {},
-                "clientInfo": {"name": "opencode-e2e", "version": "0.0.1"},
+                "clientInfo": {"name": "unknown-cli-e2e", "version": "0.0.1"},
             },
         })
         assert read_rpc(timeout=30).get("id") == 1
