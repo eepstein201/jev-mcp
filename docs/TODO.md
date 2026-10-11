@@ -53,14 +53,15 @@ Found during the 2026-10-10 documentation and benchmark review. Each item lists 
 
 ## P1: scoring behaviour
 
-- [ ] **XML sandbox prompt is never used for Qwen under `llama-server`.** (from source)
+- [x] **XML sandbox prompt is never used for Qwen under `llama-server`.** *(fixed: the smart tier always uses the sandbox; only a model the daemon itself reports as 0.5B gets the plain prompt, and no process list is consulted. README numbers re-measured.)*
   **Decision (2026-10-10): turn it on.** Select the prompt from the configured engine, not `pgrep`. This changes every Qwen score, so re-run `make eval` and the calibration table and update the README numbers in the same change.
+  - Follow-ups found while measuring: warm latency rose from about 244 ms to about 662 ms per sample (longer prompt), and the random per-question salt makes scores vary slightly between runs (84 vs 85 of 88 correct). Options: move the static instructions ahead of the salted tag so `llama-server` can reuse the prompt prefix; derive the salt from a hash of the payload so a given input always scores the same.
   `daemon_provider.py:204-208` decides `is_small_model` from `pgrep -fl mlx_lm`; with no `mlx_lm` process the call fails and it defaults to `True`, selecting the simple prompt. The README says the 7B profile is sandboxed. The prompt also silently switches whenever any `mlx_lm` process (e.g. training) is running.
   - Fix: decide from the configured engine/model, not from `pgrep`.
 
 - [ ] **Qwen scores are saturated.** (verified)
   **Decision (2026-10-10): do both, in the form that is best for now.**
-  (a) Missing tokens: treat as censored. When `true`/`false` is absent from the top-11 log-probs, use the lowest log-prob in that list as an upper bound instead of the `-9999.0` sentinel, so scores are small but never a false exact 0.0.
+  (a) Missing tokens: treat as censored. When `true`/`false` is absent from the top-11 log-probs, use the lowest log-prob in that list as an upper bound instead of the `-9999.0` sentinel, so scores are small but never a false exact 0.0. *(done: with the sandbox prompt, saturation fell from 80% to 49%, exact 0.0 scores from 26 to 0, AUC rose from 0.977 to 0.997 and accuracy at 0.5 from 89.8% to 95.5%. Part (b) is still open, which is why this item stays unchecked.)*
   (b) Temperature: have `calibrate` return the fitted temperature and persist it only when asked (an explicit flag), not silently. A temperature fitted on one question's dataset is global and would change every other question's scores.
   80% of scores on the 88-row set are within 1e-6 of 0 or 1; 26 are exactly 0.0 because the `true` token fell outside `top_logprobs=11` and got the `-9999.0` sentinel. Thresholds between 0.50 and 0.90 behave identically.
   - Fix options: apply the fitted temperature by default after calibration; treat missing tokens as censored rather than zero; report saturation in tool output.

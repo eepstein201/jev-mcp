@@ -94,7 +94,7 @@ class node_fastservice,node_smartservice toneIndigo
 ### ⚡ Engine Highlights
 By bypassing traditional text generation, Jev unlocks large latency gains on Apple Silicon using two distinct model profiles (measured figures and caveats: [Performance Benchmarks](#-performance-benchmarks)):
 - **The `0.8B` Fast Profile (Kev):** Evaluates in roughly **40 ms** per warm request. Powered by a native pointer-head, it scores without generating text, reaching `0.93` ROC AUC and 90% accuracy at a 0.5 threshold on the 88-row golden set.
-- **The `7B` Smart Profile:** Evaluates in roughly **245 ms** per warm request. It reached `0.98` ROC AUC on the same set but, at a 0.5 threshold, the same 90% accuracy as Kev; its scores are close to hard 0/1 (80% saturated), so use thresholds with care.
+- **The `7B` Smart Profile:** Evaluates in roughly **660 ms** per warm request. It reached `0.997` ROC AUC and 95% accuracy at a 0.5 threshold on the same set; about half of its scores are still close to hard 0/1, so use thresholds with care.
 - **Enterprise-Grade Security:** Because Jev evaluates raw, untrusted user data, all payloads are strictly sterilized via NFKC Unicode normalization and recursive Control Token stripping. For the 7B profile, prompts are additionally wrapped in strict XML sandboxing to isolate prompt injection payloads.
 - **Browser Automation Gateway:** Integrated tightly with the `jev-ultrafast` local browser agent, Jev-MCP supplies the core probabilistic evaluation engine for TypeSafe AI browser navigation, seamlessly converting DOM state and objective logic into fully-local, dual-engine llama.cpp routing decisions without requiring external cloud API keys.
 
@@ -490,20 +490,21 @@ Jev MCP fundamentally changes the speed and reliability of local AI decision-mak
 | **Standard Text Prompting** (e.g., Ollama) | ~2,000ms | 0.65 - 0.70 | Extreme (Recency/Position) | Free |
 | **Cloud APIs** (e.g., GPT-4o) | ~1,500ms+ | 0.85 - 0.90 | High | $$$ |
 | **Jev MCP (`0.8B` Kev Profile)** | **~44 ms** | 0.93 (CI 0.87–0.98) | Neutralized (DCPMI) | Free |
-| **Jev MCP (`7B` Smart Profile)** | ~244 ms | **0.98** (CI 0.94–0.99) | Neutralized (DCPMI) | Free |
+| **Jev MCP (`7B` Smart Profile)** | ~660 ms | **0.997** (CI 0.99–1.00) | Neutralized (DCPMI) | Free |
 
 **Measured on the 88-row golden set** (`tests/golden_dataset.json`: 43 positive, 45 negative, 12 question groups; Apple M2 Pro, 16 GB; 2026-10-10)
 
 | Engine | ROC AUC (95% bootstrap CI) | Accuracy @ 0.5 | Saturated scores | Warm latency / sample |
 | :--- | :--- | :--- | :--- | :--- |
 | Kev 0.8B | 0.928 (0.866–0.979) | 89.8% | 0% | 44 ms |
-| Qwen 2.5 7B | 0.977 (0.944–0.995) | 89.8% | 80% | 244 ms |
+| Qwen 2.5 7B | 0.997 (0.989–1.000) | 95.5% | 49% | 662 ms |
 | Claude Sonnet (reference) | 1.000 | 100% | n/a (verbalized) | not measured |
 | Claude Opus (reference) | 1.000 | 100% | n/a (verbalized) | not measured |
 
 **What is measured, and what is not**
 - The two Jev rows are reproducible: `make start && make eval` runs `tests/run_evals.py`, which does one untimed warm-up pass per engine (so model loading and cache priming are excluded), then times a second pass and reports ROC AUC with a bootstrap interval, accuracy at 0.5, the share of saturated scores, and a per-kind accuracy breakdown. The first run after a daemon restart is several times slower because of model load.
-- **Read Qwen's AUC with care.** 80% of its scores sit within 1e-6 of 0 or 1, and 26 are exactly 0.0 (the `true` token fell outside the top-11 log-probs). Its AUC therefore ranks differences in the far tails, while at the practical 0.5 threshold it is no more accurate than Kev. The per-kind breakdown shows where each engine fails (Kev is weakest on `hypothetical`, Qwen on `implicit`).
+- **Read Qwen's AUC with care.** 49% of its scores still sit within 1e-6 of 0 or 1, so part of its AUC ranks differences in the far tails. None is an exact 0.0 any more: a `true`/`false` token that falls outside the top-11 log-probs is now bounded by the lowest listed log-prob instead of being treated as impossible. The per-kind breakdown shows where each engine fails (Kev is weakest on `hypothetical`, Qwen on `distractor` and `implicit`).
+- Qwen is scored through the XML sandbox prompt, which wraps the question and the context in a tag with a random per-question salt. That prompt is longer than the plain one (warm latency rose from about 244 ms to about 662 ms per sample), and because the salt changes on every call, a borderline row can land on either side of 0.5 between runs (84 and 85 of 88 correct in two consecutive runs).
 - The Claude rows are one-off references, not part of `make eval`: Sonnet and Opus were each given the label-free cases (`id`, `question`, `state`) once as a Claude Code subagent task and asked for an answer plus a confidence in 0.5–1.0, which was converted to P(true) and scored with `python tests/run_evals.py --scores FILE NAME`. Claude exposes no token log-probs, so these confidences are verbalized, not calibrated probabilities, and both models hit the ceiling, so this set cannot separate them. Latency was not measured.
 - Dataset caveats: the 80 non-legacy rows were written for this benchmark in a single pass by an LLM and may be easier than real traffic (frontier models score 100%); treat the figures as a regression and smoke benchmark, and extend `golden_dataset.json` with real, hard cases before drawing conclusions.
 - The "Standard Text Prompting" and "Cloud APIs" rows above are illustrative ranges that this repository does not measure.
@@ -515,12 +516,14 @@ Jev MCP fundamentally changes the speed and reliability of local AI decision-mak
 | Kev 0.8B | > 0.50 | 100% | 85.4% | 95.3% | 7 |
 | Kev 0.8B | > 0.90 | 35.2% | 90.0% | 41.9% | 2 |
 | Kev 0.8B | > 0.95 | 13.6% | 100% | 14.0% | 0 |
-| Qwen 7B (raw) | > 0.50 to > 0.90 | 100% | 92.5% | 86.0% | 3 |
-| Qwen 7B (Platt) | > 0.90 | 86.4% | 94.1% | 74.4% | 2 |
-| Qwen 7B (Platt) | > 0.95 | 36.4% | 100% | 74.4% | 0 |
+| Qwen 7B (raw) | > 0.50 | 100% | 100% | 93.0% | 0 |
+| Qwen 7B (raw) | > 0.95 | 98.9% | 100% | 90.7% | 0 |
+| Qwen 7B (raw) | > 0.99 | 97.7% | 100% | 88.4% | 0 |
+| Qwen 7B (Platt) | > 0.50 | 100% | 97.6% | 95.3% | 1 |
+| Qwen 7B (Platt) | > 0.95 | 94.3% | 97.6% | 93.0% | 1 |
 
 - Kev's scores are graded, so raising the threshold trades automation for precision as intended; Platt scaling did not improve it under 5-fold cross-validation (AUC 0.928 to 0.922).
-- Qwen's raw scores are saturated, so thresholds from 0.50 to 0.90 behave identically. Platt scaling does not make it more accurate (held-out accuracy 89.8% to 90.9%) but it makes the probabilities usable: held-out log-loss falls from 0.894 to 0.278, and a 0.95 gate then reaches 100% precision at 36% automation.
+- Qwen's raw scores produced no false positives at any threshold on this set; its errors are missed positives (3 of 43 at 0.5). The thresholds now separate a little (automation falls from 100% to 97.7% between 0.50 and 0.99), but most scores are still near 0 or 1. Cross-validated Platt scaling no longer helps here: it recovers one positive and adds one false positive.
 - These are small-sample figures on a set written for this benchmark; re-run them on your own data before choosing a production threshold.
 
 ---
