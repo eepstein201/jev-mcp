@@ -7,9 +7,14 @@ mlx_lm fuse --dequantize -> convert_hf_to_gguf.py (Q8_0) -> llama-quantize (Q4_K
 import importlib.util
 import logging
 import os
+import re
 import shlex
+import shutil
 import subprocess
-from pathlib import Path
+import tarfile
+import tempfile
+import urllib.request
+from pathlib import Path, PurePosixPath
 from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
@@ -17,6 +22,10 @@ logger = logging.getLogger(__name__)
 DEFAULT_LLAMA_CPP_SRC = "~/.jev/llama.cpp-src"
 CONVERTER_SCRIPT = "convert_hf_to_gguf.py"
 CONVERTER_MODULES = ("torch", "transformers")
+CONVERTER_PARTS = (CONVERTER_SCRIPT, "conversion", "gguf-py")
+COMMIT_MARKER = ".jev-llama-commit"
+ARCHIVE_URL = "https://github.com/ggml-org/llama.cpp/archive/{commit}.tar.gz"
+DOWNLOAD_TIMEOUT_SECONDS = 120
 QUANT_TYPE = "Q4_K_M"
 AGENT_GLOB = "com.jev.*.plist"
 
@@ -45,14 +54,80 @@ def converter_problem() -> Optional[str]:
     src = llama_cpp_src()
     if not (src / CONVERTER_SCRIPT).is_file():
         return (
-            f"{CONVERTER_SCRIPT} not found in {src}. Homebrew's llama.cpp does not ship it: extract it "
-            "(with conversion/ and gguf-py/) from the llama.cpp commit shown by `llama-server --version` "
-            "into that directory, or set JEV_LLAMA_CPP_SRC. See the README, 'Train LoRA'."
+            f"{CONVERTER_SCRIPT} not found in {src}, and it could not be fetched automatically because "
+            "`llama-server --version` did not report a commit. Extract it (with conversion/ and gguf-py/) "
+            "from the matching llama.cpp commit into that directory, or set JEV_LLAMA_CPP_SRC. "
+            "See the README, 'Train LoRA'."
         )
     missing = [name for name in CONVERTER_MODULES if importlib.util.find_spec(name) is None]
     if missing:
         return f"The converter needs {', '.join(missing)}. Run: pip install -e \".[engines]\""
     return None
+
+
+def installed_llama_commit() -> Optional[str]:
+    """Commit the installed llama-server was built from, or None when it cannot be read."""
+    try:
+        out = subprocess.run(["llama-server", "--version"], capture_output=True, text=True, timeout=15)
+    except (OSError, subprocess.SubprocessError) as e:
+        logger.warning(f"Could not run llama-server --version: {e}")
+        return None
+    match = re.search(r"commit ([0-9a-f]{7,40})\b", f"{out.stdout}\n{out.stderr}")
+    return match.group(1) if match else None
+
+
+def converter_commit() -> Optional[str]:
+    """Commit the converter in llama_cpp_src() was fetched from, if this module fetched it."""
+    try:
+        return (llama_cpp_src() / COMMIT_MARKER).read_text().strip() or None
+    except OSError:
+        return None
+
+
+def fetch_converter(commit: str, dest: Path) -> None:
+    """Replace dest with the converter files from llama.cpp at exactly this commit."""
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix=".llama.cpp-src-", dir=dest.parent))
+    try:
+        with urllib.request.urlopen(ARCHIVE_URL.format(commit=commit), timeout=DOWNLOAD_TIMEOUT_SECONDS) as response:
+            with tarfile.open(fileobj=response, mode="r|gz") as archive:
+                for member in archive:
+                    # Paths look like "llama.cpp-<sha>/conversion/qwen.py"; keep only the converter's parts.
+                    parts = PurePosixPath(member.name).parts[1:]
+                    if not parts or parts[0] not in CONVERTER_PARTS or ".." in parts:
+                        continue
+                    member.name = "/".join(parts)
+                    archive.extract(member, staging, filter="data")
+        if not (staging / CONVERTER_SCRIPT).is_file():
+            raise ValueError(f"{CONVERTER_SCRIPT} is not in the llama.cpp archive for {commit}")
+        (staging / COMMIT_MARKER).write_text(commit + "\n")
+        if dest.exists():
+            shutil.rmtree(dest)
+        os.replace(staging, dest)
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+
+
+def ensure_converter() -> Optional[str]:
+    """Bring the converter in step with the installed llama.cpp, then report any remaining problem.
+
+    Only the default directory is managed; one named by JEV_LLAMA_CPP_SRC belongs to the user.
+    """
+    if os.getenv("JEV_LLAMA_CPP_SRC", ""):
+        return converter_problem()
+
+    commit = installed_llama_commit()
+    src = llama_cpp_src()
+    has_converter = (src / CONVERTER_SCRIPT).is_file()
+    if commit and (not has_converter or converter_commit() != commit):
+        try:
+            logger.info(f"Fetching the llama.cpp converter for commit {commit} into {src}")
+            fetch_converter(commit, src)
+        except Exception as e:
+            if not has_converter:
+                return f"Could not download the llama.cpp converter for commit {commit}: {e}"
+            logger.warning(f"Could not update the converter to llama.cpp {commit} ({e}); using the one in {src}")
+    return converter_problem()
 
 
 def find_launchd_label(model_path: str) -> Optional[str]:

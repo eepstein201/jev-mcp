@@ -1,5 +1,7 @@
+import io
 import json
 import os
+import tarfile
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -7,6 +9,8 @@ import pytest
 from jev_mcp import lora_training, server
 
 SMART_LABEL = "com.jev.mlx_server_smart"
+COMMIT = "abc1234de"
+_real_installed_llama_commit = lora_training.installed_llama_commit
 
 
 @pytest.fixture
@@ -14,6 +18,8 @@ def home(tmp_path, monkeypatch):
     """A throwaway HOME so ~/.jev and ~/Library/LaunchAgents stay inside the test."""
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.delenv("JEV_LLAMA_CPP_SRC", raising=False)
+    # No llama-server in the test environment unless a test says otherwise.
+    monkeypatch.setattr(lora_training, "installed_llama_commit", lambda: None)
     return tmp_path
 
 
@@ -282,3 +288,176 @@ def test_restore_action_needs_a_target(home):
 
     assert res["status"] == "ERROR"
     assert "target_gguf_path" in res["message"]
+
+
+# --- keeping the converter in step with the installed llama.cpp ---
+
+
+def _archive(files):
+    """A GitHub-style source tarball: every path sits under one top-level directory."""
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+        for name, text in files.items():
+            data = text.encode()
+            info = tarfile.TarInfo(f"llama.cpp-{COMMIT}full/{name}")
+            info.size = len(data)
+            tar.addfile(info, io.BytesIO(data))
+    buf.seek(0)
+    return buf
+
+
+def _good_archive(marker_text="# converter"):
+    return _archive({
+        "convert_hf_to_gguf.py": marker_text,
+        "conversion/__init__.py": "",
+        "gguf-py/gguf/__init__.py": "",
+        "README.md": "not needed",
+        "tools/server/server.cpp": "not needed",
+    })
+
+
+@pytest.fixture
+def llama(home, monkeypatch):
+    """llama-server reports COMMIT; the converter's Python modules count as installed."""
+    monkeypatch.setattr(lora_training, "installed_llama_commit", lambda: COMMIT)
+    monkeypatch.setattr("importlib.util.find_spec", lambda name: object())
+    return home / ".jev" / "llama.cpp-src"
+
+
+def test_converter_is_downloaded_for_the_installed_commit_when_missing(llama):
+    with patch("urllib.request.urlopen", return_value=_good_archive()) as urlopen:
+        problem = lora_training.ensure_converter()
+
+    assert problem is None
+    assert COMMIT in urlopen.call_args[0][0]
+    assert (llama / "convert_hf_to_gguf.py").is_file()
+    assert (llama / "conversion" / "__init__.py").is_file()
+    assert (llama / "gguf-py" / "gguf" / "__init__.py").is_file()
+    assert lora_training.converter_commit() == COMMIT
+
+
+def test_only_the_converter_files_are_kept_from_the_archive(llama):
+    with patch("urllib.request.urlopen", return_value=_good_archive()):
+        lora_training.ensure_converter()
+
+    assert not (llama / "README.md").exists()
+    assert not (llama / "tools").exists()
+
+
+def test_nothing_is_downloaded_when_the_converter_matches_the_installed_commit(llama):
+    with patch("urllib.request.urlopen", return_value=_good_archive()):
+        lora_training.ensure_converter()
+
+    with patch("urllib.request.urlopen") as urlopen:
+        problem = lora_training.ensure_converter()
+
+    assert problem is None
+    urlopen.assert_not_called()
+
+
+def test_converter_is_replaced_after_llama_cpp_is_upgraded(llama, monkeypatch):
+    with patch("urllib.request.urlopen", return_value=_good_archive("# old converter")):
+        lora_training.ensure_converter()
+    (llama / "conversion" / "removed_upstream.py").write_text("stale")
+    monkeypatch.setattr(lora_training, "installed_llama_commit", lambda: "fff9999aa")
+
+    with patch("urllib.request.urlopen", return_value=_good_archive("# new converter")) as urlopen:
+        problem = lora_training.ensure_converter()
+
+    assert problem is None
+    assert "fff9999aa" in urlopen.call_args[0][0]
+    assert (llama / "convert_hf_to_gguf.py").read_text() == "# new converter"
+    assert not (llama / "conversion" / "removed_upstream.py").exists()
+    assert lora_training.converter_commit() == "fff9999aa"
+
+
+def test_a_directory_the_user_chose_is_never_downloaded_into(converter, monkeypatch):
+    monkeypatch.setattr(lora_training, "installed_llama_commit", lambda: COMMIT)
+    monkeypatch.setattr("importlib.util.find_spec", lambda name: object())
+
+    with patch("urllib.request.urlopen") as urlopen:
+        problem = lora_training.ensure_converter()
+
+    assert problem is None
+    urlopen.assert_not_called()
+    assert (converter / "convert_hf_to_gguf.py").read_text() == "# stand-in converter\n"
+
+
+def test_a_failed_download_with_no_converter_is_reported_with_the_commit(llama):
+    with patch("urllib.request.urlopen", side_effect=OSError("network unreachable")):
+        problem = lora_training.ensure_converter()
+
+    assert problem is not None
+    assert COMMIT in problem and "network unreachable" in problem
+    assert not llama.exists()
+
+
+def test_a_failed_download_keeps_the_converter_already_installed(llama, monkeypatch):
+    with patch("urllib.request.urlopen", return_value=_good_archive("# old converter")):
+        lora_training.ensure_converter()
+    monkeypatch.setattr(lora_training, "installed_llama_commit", lambda: "fff9999aa")
+
+    with patch("urllib.request.urlopen", side_effect=OSError("network unreachable")):
+        problem = lora_training.ensure_converter()
+
+    assert problem is None
+    assert (llama / "convert_hf_to_gguf.py").read_text() == "# old converter"
+    assert lora_training.converter_commit() == COMMIT
+
+
+def test_an_archive_without_the_converter_is_rejected_and_nothing_is_installed(llama):
+    with patch("urllib.request.urlopen", return_value=_archive({"README.md": "nothing useful"})):
+        problem = lora_training.ensure_converter()
+
+    assert problem is not None
+    assert not llama.exists()
+
+
+def test_archive_entries_cannot_be_written_outside_the_converter_directory(llama, home):
+    archive = _archive({
+        "convert_hf_to_gguf.py": "# converter",
+        "conversion/../../escaped.py": "bad",
+    })
+
+    with patch("urllib.request.urlopen", return_value=archive):
+        lora_training.ensure_converter()
+
+    assert not (home / ".jev" / "escaped.py").exists()
+    assert not (home / "escaped.py").exists()
+
+
+def test_without_llama_server_the_existing_converter_is_used_as_is(home):
+    with patch("urllib.request.urlopen") as urlopen:
+        problem = lora_training.ensure_converter()
+
+    assert problem is not None and "convert_hf_to_gguf.py" in problem
+    urlopen.assert_not_called()
+
+
+def test_installed_commit_is_read_from_llama_server_version():
+    out = MagicMock(stdout="", stderr="version: 0.6.0 (build 11429, commit d81235049)\nbuilt with AppleClang")
+
+    with patch("subprocess.run", return_value=out) as run:
+        commit = _real_installed_llama_commit()
+
+    assert commit == "d81235049"
+    assert run.call_args[0][0] == ["llama-server", "--version"]
+
+
+def test_installed_commit_is_unknown_when_llama_server_is_missing_or_unparseable():
+    with patch("subprocess.run", side_effect=FileNotFoundError("llama-server")):
+        assert _real_installed_llama_commit() is None
+    with patch("subprocess.run", return_value=MagicMock(stdout="version: unknown", stderr="")):
+        assert _real_installed_llama_commit() is None
+
+
+@patch("subprocess.Popen")
+def test_train_fetches_the_converter_itself_and_reports_its_commit(mock_popen, llama, home):
+    mock_popen.return_value = MagicMock(pid=7)
+
+    with patch("urllib.request.urlopen", return_value=_good_archive()):
+        res = json.loads(server.jev_train_lora(_dataset(home)))
+
+    assert res["status"] == "TRAINING_STARTED", res.get("message")
+    assert res["converter_commit"] == COMMIT
+    assert str(llama) in _started_script(mock_popen)

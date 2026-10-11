@@ -23,7 +23,7 @@ Found during the 2026-10-10 documentation and benchmark review. Each item lists 
 
 ## P1: correctness and safety of training and daemon control
 
-- [x] **`train` fuse step cannot work for the default model.** *(fixed: `lora_training.build_fuse_script` runs fuse `--dequantize` → `convert_hf_to_gguf.py` → `llama-quantize`; run end to end on Qwen 7B on 2026-10-10. The converter is a one-time manual setup, see README)*
+- [x] **`train` fuse step cannot work for the default model.** *(fixed: `lora_training.build_fuse_script` runs fuse `--dequantize` → `convert_hf_to_gguf.py` → `llama-quantize`; run end to end on Qwen 7B on 2026-10-10. The converter is fetched automatically for the installed llama.cpp commit and refetched after an upgrade, see README)*
   It runs `mlx_lm.fuse --export-gguf`, which `mlx_lm` 0.31.3 limits to unquantized `llama`/`mistral`/`mixtral`. The default base is a quantized `qwen2` model.
   - Fix: `mlx_lm.fuse --dequantize --save-path <dir>`, then llama.cpp `convert_hf_to_gguf.py`, then `llama-quantize`. The converter is not shipped by Homebrew's `llama.cpp`; pin it to the installed build's commit.
 

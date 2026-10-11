@@ -1182,7 +1182,7 @@ def jev_agent_handoff(task_description: str, available_agents: Dict[str, str]) -
 
 @mcp.tool(
     name="train",
-    description="Trains a local MLX LoRA adapter on your Apple Silicon GPU. Options: fuse=True (default) merges the adapter into a Q4_K_M .gguf file (needs llama.cpp's converter, see README), and if target_gguf_path is provided, replaces that model (keeping the original as <target>.bak) and restarts the launchd agent serving it. fuse=False keeps the standalone MLX adapter. iters sets the number of training iterations (default 500). action='restore' with target_gguf_path puts the .bak back and restarts that agent."
+    description="Trains a local MLX LoRA adapter on your Apple Silicon GPU. Options: fuse=True (default) merges the adapter into a Q4_K_M .gguf file (llama.cpp's converter is fetched automatically for the installed llama-server commit), and if target_gguf_path is provided, replaces that model (keeping the original as <target>.bak) and restarts the launchd agent serving it. fuse=False keeps the standalone MLX adapter. iters sets the number of training iterations (default 500). action='restore' with target_gguf_path puts the .bak back and restarts that agent."
 )
 def jev_train_lora(dataset_path: str = "", model_name: str = "mlx-community/Qwen2.5-7B-Instruct-4bit", engine: str = "mlx", fuse: bool = True, target_gguf_path: Optional[str] = None, iters: int = 500, action: Literal["train", "restore"] = "train") -> str:
     """
@@ -1258,7 +1258,7 @@ def jev_train_lora(dataset_path: str = "", model_name: str = "mlx-community/Qwen
             # The default approach: MLX for training, then convert to gguf via llama.cpp
             run_script_path = os.path.join(adapter_path, "run_train.sh")
             if fuse:
-                problem = lora_training.converter_problem()
+                problem = lora_training.ensure_converter()
                 if problem:
                     return json.dumps({"status": "NOT_AVAILABLE", "message": f"{problem} Or pass fuse=False to train the adapter only."})
                 restart_label = lora_training.find_launchd_label(target_gguf_path) if target_gguf_path else None
@@ -1302,6 +1302,7 @@ echo "Starting MLX LoRA training..."
             "pid": proc.pid,
             "log": log_path,
             "restart_agent": restart_label,
+            "converter_commit": lora_training.converter_commit() if fuse and engine != "llama.cpp" else None,
             "command": " ".join(cmd),
             "note": f"Training runs in a detached background process. Monitor with: tail -f {log_path}",
         }, indent=2)
