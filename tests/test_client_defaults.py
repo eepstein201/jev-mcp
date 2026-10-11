@@ -116,6 +116,19 @@ def test_middleware_tolerates_missing_client_params():
     assert not os.path.exists(router_config.ROUTER_CONFIG_PATH)
 
 
+def test_middleware_reads_snake_case_client_info():
+    # The SDK's parsed InitializeRequestParams exposes `client_info`, not the
+    # wire key `clientInfo` (found by the e2e; pinned here at unit level).
+    params = SimpleNamespace(client_info=SimpleNamespace(name="Claude Code"))
+    ctx = SimpleNamespace(
+        method="notifications/initialized",
+        session=SimpleNamespace(client_params=params, send_request=_forbidden, send_ping=_forbidden),
+    )
+    middleware = client_defaults.SeedingMiddleware()
+    assert _run(middleware, ctx) is SENTINEL
+    assert router_config.load_router_config()["buckets_source"] == "detected"
+
+
 # ---------------------------------------------------------
 # Task 2: user consent stamps buckets_source "user"
 # ---------------------------------------------------------

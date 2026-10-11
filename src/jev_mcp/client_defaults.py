@@ -52,7 +52,8 @@ class SeedingMiddleware:
 
     def _seed(self, ctx: Any) -> None:
         params = getattr(ctx.session, "client_params", None)
-        client_info = getattr(params, "clientInfo", None)
+        # The wire key is `clientInfo`; the SDK's parsed model exposes `client_info`.
+        client_info = getattr(params, "client_info", None) or getattr(params, "clientInfo", None)
         client_name = getattr(client_info, "name", None)
         if not client_name:
             return
