@@ -2,7 +2,68 @@
 import os
 from pathlib import Path
 
-from jev_mcp import client_defaults, router_config
+import pytest
+
+from jev_mcp import app, client_defaults, model_catalog, router_config, server
+
+
+def _entry(model_id, family, released, cost):
+    return {"id": model_id, "family": family, "release_date": released, "cost": cost}
+
+
+CATALOG = {
+    "anthropic": [
+        _entry("claude-haiku-5-5", "claude-haiku", "2026-10-07", 0.1),
+        _entry("claude-sonnet-5", "claude-sonnet", "2026-06-29", 2),
+        _entry("claude-sonnet-5-5", "claude-sonnet", "2026-09-28", 2),
+        _entry("claude-opus-5-5", "claude-opus", "2026-09-22", 4),
+        _entry("claude-fable-5-1", "claude-fable", "2026-09-01", 10),
+    ]
+}
+
+STALE = {"b1": "claude-3-5-haiku", "b2": "claude-sonnet-5", "b3": "claude-opus-5-5", "b4": "my-local-llama"}
+
+
+@pytest.fixture
+def cached_catalog():
+    model_catalog.save_cache(CATALOG)
+
+
+def _write_config(**extra):
+    router_config.save_router_config({
+        "buckets": dict(STALE),
+        "rules": [{"condition": "c", "target": "b3"}],
+        "buckets_source": "detected",
+        "detected_client": "Claude Code",
+        **extra,
+    })
+
+
+# ---------------------------------------------------------
+# Task 2: user consent stamps buckets_source "user"
+# ---------------------------------------------------------
+
+def test_set_bucket_stamps_user_provenance():
+    _write_config()
+    server.jev_manage_router_config(action="set_bucket", bucket_id="b1", model_name="m")
+    assert router_config.load_router_config()["buckets_source"] == "user"
+
+
+def test_apply_updates_stamps_user_provenance(cached_catalog):
+    _write_config()
+    server.jev_manage_router_config(action="apply_updates")
+    on_disk = router_config.load_router_config()
+    assert on_disk["buckets_source"] == "user"
+    assert on_disk["buckets"]["b1"] == "claude-haiku-5-5"
+
+
+def test_background_auto_update_preserves_detected(cached_catalog, monkeypatch):
+    _write_config(auto_update=True)
+    monkeypatch.setattr(model_catalog, "refresh", lambda: None)
+    app._sync_models()
+    on_disk = router_config.load_router_config()
+    assert on_disk["buckets_source"] == "detected"
+    assert on_disk["buckets"]["b1"] == "claude-haiku-5-5"
 
 
 def test_claude_code_name_maps_to_anthropic_tiers():

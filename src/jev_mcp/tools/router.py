@@ -39,7 +39,7 @@ def jev_manage_router_config(
         updates = pending_model_updates(config)
         if not updates:
             return json.dumps({"status": "UP_TO_DATE", "message": "Every bucket already holds the newest model in its family."})
-        app.save_router_config(apply_model_updates(config, updates))
+        app.save_router_config({**apply_model_updates(config, updates), "buckets_source": "user"})
         return json.dumps({"status": "UPDATED", "updated": {bucket: u["newer"] for bucket, u in updates.items()}}, indent=2)
 
     if action == "set_auto_update":
@@ -47,14 +47,15 @@ def jev_manage_router_config(
             return "Error: enabled (true or false) required."
         updates = pending_model_updates(config) if enabled else {}
         new_config = apply_model_updates(config, updates) if updates else config
-        app.save_router_config({**new_config, "auto_update": enabled})
+        stamped = {**new_config, "buckets_source": "user"} if enabled else new_config
+        app.save_router_config({**stamped, "auto_update": enabled})
         return json.dumps({"status": "SAVED", "auto_update": enabled, "updated": {bucket: u["newer"] for bucket, u in updates.items()}}, indent=2)
 
     if action == "set_bucket":
         if not bucket_id or not model_name:
             return "Error: bucket_id and model_name required."
         config["buckets"][bucket_id] = model_name
-        app.save_router_config(config)
+        app.save_router_config({**config, "buckets_source": "user"})
         return f"Bucket {bucket_id} successfully mapped to {model_name}."
         
     if action == "add_rule":
