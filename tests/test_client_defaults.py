@@ -1,6 +1,8 @@
 """Tests for per-client router default seeding (client_defaults + router_config)."""
+import asyncio
 import os
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -37,6 +39,81 @@ def _write_config(**extra):
         "detected_client": "Claude Code",
         **extra,
     })
+
+
+# ---------------------------------------------------------
+# Task 3: SeedingMiddleware
+# ---------------------------------------------------------
+
+SENTINEL = object()
+
+
+def _forbidden(*args, **kwargs):
+    raise AssertionError("middleware must not issue server-to-client calls")
+
+
+def _fake_ctx(method, client_name="Claude Code", client_params="set"):
+    if client_params == "set":
+        params = SimpleNamespace(clientInfo=SimpleNamespace(name=client_name))
+    else:
+        params = client_params
+    session = SimpleNamespace(client_params=params, send_request=_forbidden, send_ping=_forbidden)
+    return SimpleNamespace(method=method, session=session)
+
+
+async def _call_next(ctx):
+    return SENTINEL
+
+
+def _run(middleware, ctx):
+    return asyncio.run(middleware(ctx, _call_next))
+
+
+def test_middleware_seeds_on_initialized_notification():
+    middleware = client_defaults.SeedingMiddleware()
+    result = _run(middleware, _fake_ctx("notifications/initialized", "Claude Code"))
+    assert result is SENTINEL
+    on_disk = router_config.load_router_config()
+    assert on_disk["buckets_source"] == "detected"
+    assert on_disk["detected_client"] == "Claude Code"
+
+
+def test_middleware_ignores_other_methods():
+    middleware = client_defaults.SeedingMiddleware()
+    result = _run(middleware, _fake_ctx("tools/list"))
+    assert result is SENTINEL
+    assert not os.path.exists(router_config.ROUTER_CONFIG_PATH)
+
+
+def test_middleware_never_uses_session_requests():
+    # The fake session's send_request/send_ping raise; passing through proves
+    # the middleware never awaits anything on the session (deadlock guard).
+    middleware = client_defaults.SeedingMiddleware()
+    assert _run(middleware, _fake_ctx("notifications/initialized")) is SENTINEL
+
+
+def test_middleware_seeds_at_most_once(monkeypatch):
+    calls = []
+    monkeypatch.setattr(router_config, "seed_defaults_for_client", lambda name: calls.append(name) or {})
+    middleware = client_defaults.SeedingMiddleware()
+    _run(middleware, _fake_ctx("notifications/initialized"))
+    _run(middleware, _fake_ctx("notifications/initialized"))
+    assert calls == ["Claude Code"]
+
+
+def test_middleware_survives_seeding_failure(monkeypatch):
+    def boom(name):
+        raise RuntimeError("disk on fire")
+    monkeypatch.setattr(router_config, "seed_defaults_for_client", boom)
+    middleware = client_defaults.SeedingMiddleware()
+    assert _run(middleware, _fake_ctx("notifications/initialized")) is SENTINEL
+
+
+def test_middleware_tolerates_missing_client_params():
+    middleware = client_defaults.SeedingMiddleware()
+    result = _run(middleware, _fake_ctx("notifications/initialized", client_params=None))
+    assert result is SENTINEL
+    assert not os.path.exists(router_config.ROUTER_CONFIG_PATH)
 
 
 # ---------------------------------------------------------
