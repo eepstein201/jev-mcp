@@ -921,20 +921,20 @@ def test_tool_triage_email_content():
 
 def test_tool_configure_triage_labels(monkeypatch):
     import jev_mcp.server
-    monkeypatch.setattr(jev_mcp.server, "configure_triage_labels", lambda c, l: {"status": "ok"})
+    monkeypatch.setattr(jev_mcp.tools.triage, "configure_triage_labels", lambda c, l: {"status": "ok"})
     res_str = jev_mcp.server.tool_configure_triage_labels("ctx", ["label1"])
     import json
     assert json.loads(res_str) == {"status": "ok"}
 
 def test_tool_setup_gas_workflow(monkeypatch):
     import jev_mcp.server
-    monkeypatch.setattr(jev_mcp.server, "setup_gas_workflow", lambda webhook_url, api_key: "setup done")
+    monkeypatch.setattr(jev_mcp.tools.triage, "setup_gas_workflow", lambda webhook_url, api_key: "setup done")
     res = jev_mcp.server.tool_setup_gas_workflow("url", "key")
     assert res == "setup done"
 
 def test_tool_triage_email_content(monkeypatch):
     import jev_mcp.server
-    monkeypatch.setattr(jev_mcp.server, "triage_email_content", lambda c, s, snd, b: "triaged")
+    monkeypatch.setattr(jev_mcp.tools.triage, "triage_email_content", lambda c, s, snd, b: "triaged")
     res = jev_mcp.server.tool_triage_email_content("ctx", "sub", "snd", "body")
     assert res == "triaged"
 

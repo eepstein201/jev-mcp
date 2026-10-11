@@ -19,6 +19,9 @@ EXPECTED_TOOLS = {
     "evaluate", "optimize-prompt", "calibrate", "explain-decision",
     "generate-data", "manage-router", "model-router", "handoff", "train",
     "temperature", "read-file", "compact", "scan-repo",
+    # Registered since the tool modules moved ahead of the __main__ guard.
+    "run-browser-agent", "triage_email_content", "configure_triage_labels",
+    "setup_gas_workflow",
 }
 
 

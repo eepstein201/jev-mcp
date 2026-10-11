@@ -29,6 +29,12 @@ from jev_mcp import router_config
 from jev_mcp.router_config import apply_model_updates, load_router_config, pending_model_updates, save_router_config
 from jev_mcp.provider import QuestionType, NoulQuestion, ChoiceQuestion, ScoreQuestion
 from jev_mcp.routing_provider import RoutingProvider
+from jev_mcp.tools.browser import jev_run_browser_agent
+from jev_mcp.tools.triage import (
+    tool_configure_triage_labels,
+    tool_setup_gas_workflow,
+    tool_triage_email_content,
+)
 import re
 
 @mcp.tool(
@@ -1666,65 +1672,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-@mcp.tool(
-    name="run-browser-agent",
-    description="Ultrafast Browser Agent: Automates complex web interactions (clicks, text entry, navigation) to achieve a given goal in a browser.",
-)
-def jev_run_browser_agent(
-    url: str = Field(description="The starting URL for the browser agent."),
-    goal: str = Field(description="The natural language objective for the agent to complete."),
-    max_steps: int = Field(default=20, description="Stop after this many browser actions if the goal is not reached.")
-) -> str:
-    """
-    Runs the jev-ultrafast agent in the user's Chrome until the goal is done, blocked, or the step limit.
-    Every choice is made locally by the Jev-MCP Dual-Engine router via ultrafast_adapter.
-    """
-    from jev_mcp import browser_agent
-
-    try:
-        steps = max_steps if isinstance(max_steps, int) else browser_agent.DEFAULT_MAX_STEPS
-        return json.dumps(browser_agent.run_browser_agent(url, goal, max_steps=steps), indent=2)
-    except Exception as e:
-        logger.error(f"Browser agent failed: {e}")
-        return json.dumps({"status": "ERROR", "message": str(e)})
-
-# --- Email Triage Tools ---
-from jev_mcp.email_triage.mcp_tool import triage_email_content, configure_triage_labels
-from jev_mcp.email_triage.gas_setup import setup_gas_workflow
-
-@mcp.tool(
-    name="triage_email_content",
-    description=(
-        "Evaluates an email using MLX and returns the recommended triage action.\n"
-        "If 'status' == 'needs_config', you must ask the user what labels they want to track and call configure_triage_labels."
-    )
-)
-def tool_triage_email_content(
-    context_id: str = Field(description="The mailbox or context identifier."),
-    subject: str = Field(description="Email subject."),
-    sender: str = Field(description="Email sender."),
-    body: str = Field(description="Email body content.")
-) -> str:
-    return triage_email_content(context_id, subject, sender, body)
-
-@mcp.tool(
-    name="configure_triage_labels",
-    description="Configures dynamic labels for a specific mailbox or context ID."
-)
-def tool_configure_triage_labels(
-    context_id: str = Field(description="The mailbox or context identifier."),
-    labels: List[str] = Field(description="List of desired labels/buckets.")
-) -> str:
-    import json
-    return json.dumps(configure_triage_labels(context_id, labels))
-
-@mcp.tool(
-    name="setup_gas_workflow",
-    description="Automated CLI Setup Flow for Google Apps Script. Pass webhook_url and api_key directly when running in a non-interactive environment."
-)
-def tool_setup_gas_workflow(
-    webhook_url: Optional[str] = Field(None, description="The Webhook URL to route emails to."),
-    api_key: Optional[str] = Field(None, description="The secure API Key to protect the webhook.")
-) -> str:
-    return setup_gas_workflow(webhook_url=webhook_url, api_key=api_key)
