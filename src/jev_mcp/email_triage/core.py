@@ -1,15 +1,6 @@
 from pydantic import BaseModel, Field
 
-class NoulQuestion(BaseModel):
-    question: str
-    instruction: str
-    type: str = "noul"
-
-class ChoiceQuestion(BaseModel):
-    question: str
-    instruction: str
-    choices: list[str]
-    type: str = "choice"
+from jev_mcp.provider import ChoiceQuestion, NoulQuestion, QuestionType
 
 class JevMailConfig(BaseModel):
     action_threshold: float = Field(default=0.8)
@@ -20,23 +11,23 @@ class CategoryConfig(BaseModel):
         default=["Follow Up", "Pending", "Receipts", "Newsletter", "Notifications", "Review"]
     )
 
-def build_triage_questions(categories: list[str] | None = None):
+def build_triage_questions(categories: list[str] | None = None) -> list[QuestionType]:
     if categories is None:
         categories = CategoryConfig().categories
-        
+
     return [
         NoulQuestion(
-            question="requires_action",
-            instruction="Does this email require an action from me? Examples: a question I must answer, a meeting I must schedule, a task I must complete."
+            key="requires_action",
+            prompt="Does this email require an action from me? Examples: a question I must answer, a meeting I must schedule, a task I must complete."
         ),
         NoulQuestion(
-            question="is_important",
-            instruction="Is this email important? Examples: messages from my boss, critical alerts, high-priority client emails."
+            key="is_important",
+            prompt="Is this email important? Examples: messages from my boss, critical alerts, high-priority client emails."
         ),
         ChoiceQuestion(
-            question="bucket",
-            instruction="Which category best fits this email?",
-            choices=categories
+            key="bucket",
+            prompt="Which category best fits this email?",
+            options=categories
         )
     ]
 

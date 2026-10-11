@@ -11,14 +11,28 @@ def test_build_payload_matches_jev_mail_prompts():
     questions = build_triage_questions()
     
     assert len(questions) == 3
-    assert questions[0].question == "requires_action"
-    assert questions[1].question == "is_important"
-    assert questions[2].question == "bucket"
-    
+    assert questions[0].key == "requires_action"
+    assert questions[1].key == "is_important"
+    assert questions[2].key == "bucket"
+
     # Check the Noul prompts match the core jev-mail logic
-    assert "Does this email require an action from me?" in questions[0].instruction
-    assert "Is this email important?" in questions[1].instruction
-    
+    assert "Does this email require an action from me?" in questions[0].prompt
+    assert "Is this email important?" in questions[1].prompt
+
+
+def test_triage_questions_are_the_shared_provider_question_types():
+    # One NoulQuestion/ChoiceQuestion definition in the package, not a second pair in email_triage.
+    from jev_mcp import provider
+    from jev_mcp.email_triage import core
+
+    questions = build_triage_questions(["Receipts", "Review"])
+
+    assert isinstance(questions[0], provider.NoulQuestion)
+    assert isinstance(questions[2], provider.ChoiceQuestion)
+    assert questions[2].options == ["Receipts", "Review"]
+    assert core.NoulQuestion is provider.NoulQuestion
+    assert core.ChoiceQuestion is provider.ChoiceQuestion
+
 def test_decide_action_required():
     """Asserts high requires_action yields Action label and tests importance threshold."""
     config = JevMailConfig(action_threshold=0.8, important_threshold=0.8)

@@ -373,17 +373,8 @@ case "$COMMAND" in
         source "$PWD/.venv/bin/activate"
         pip install --upgrade pip wheel -q &>/dev/null
         
-        if [ -f "requirements.txt" ]; then
-            log_info "Installing pinned dependencies from requirements.txt..."
-            pip install -r requirements.txt
-        else
-            log_warn "No requirements.txt found! Falling back to unpinned mlx/mlx-lm..."
-            pip install mlx mlx-lm
-        fi
-        
-        if [ -f "setup.py" ] || [ -f "pyproject.toml" ]; then
-            pip install -e .
-        fi
+        log_info "Installing jev-mcp and the pinned engine packages from pyproject.toml..."
+        pip install -e ".[engines]"
 
 
         manage_daemon stop
@@ -443,16 +434,8 @@ case "$COMMAND" in
 
         if [ -d ".venv" ]; then
             source "$PWD/.venv/bin/activate"
-            if [ -f "requirements.txt" ]; then
-                log_info "Installing pinned dependencies from requirements.txt..."
-                pip install -r requirements.txt
-            else
-                pip install --upgrade mlx mlx-lm
-            fi
-            
-            if [ -f "setup.py" ] || [ -f "pyproject.toml" ]; then
-                pip install -e .
-            fi
+            log_info "Installing jev-mcp and the pinned engine packages from pyproject.toml..."
+            pip install -e ".[engines]"
             
 
             SELECTED_MODEL=$(resolve_model "$TARGET_MODEL_ALIAS")
