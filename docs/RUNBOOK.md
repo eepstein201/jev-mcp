@@ -9,6 +9,7 @@ Jev MCP is a local tool: an MCP stdio server plus two `llama-server` daemons man
 | Fast engine (Kev 0.8B) | launchd `com.jev.mlx_server_fast`, port `JEV_FAST_PORT` (8080) |
 | Smart engine (Qwen 7B) | launchd `com.jev.mlx_server_smart`, port `JEV_SMART_PORT` (8081) |
 | Plists | `~/Library/LaunchAgents/com.jev.mlx_server_{fast,smart}.plist` |
+| Legacy single-daemon agent | launchd `com.jev.mlx_server` (`install`/`update` only); `hybrid` stops it and deletes its plist |
 | Daemon logs | `~/.jev/mlx_server_fast.log`, `~/.jev/mlx_server_smart.log` |
 | MCP server log | `~/.jev/jev.log` |
 | Router config | `~/.jev/router_config.json` |
@@ -21,10 +22,12 @@ Jev MCP is a local tool: an MCP stdio server plus two `llama-server` daemons man
 make start     # (re)start both daemons; downloads missing model files
 make stop      # stop both daemons, keep the install
 make update    # re-pull code, update packages, restart
-make clean     # uninstall: unload daemons, remove the venv
+make clean     # uninstall: unload daemons, remove plists, the venv and ALL of ~/.jev
 ```
 
-`hybrid` stops any existing agents before regenerating plists and starting them, so `make start` is also the restart command.
+`hybrid` stops any existing agents before regenerating plists and starting them, so `make start` is also the restart command. Stopping an agent force-kills only the engine on that agent's port, so other `llama-server` processes on the machine are left alone.
+
+`make clean` runs headless (no confirmation) and deletes `~/.jev`, which holds `router_config.json` (buckets, rules, fitted temperature), LoRA adapters, training artifacts and logs. Copy anything you want to keep first.
 
 ## Common issues
 

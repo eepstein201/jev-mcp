@@ -7,7 +7,9 @@
 | ~/.jev/jev.log | server logging | runtime log |
 | ~/.jev/adapters/{run_id} | jev_train_lora | LoRA adapters |
 | ~/.jev/training | jev_train_lora | training data/artifacts |
+| ~/.jev/mlx_server_{fast,smart}.log | jev_mac_manager.sh (launchd) | daemon logs |
 | ~/.jev-mcp/triage_configs.json | email_triage/mcp_tool.py | {context_id: [labels]} |
+| ~/.jev-mcp/client_secrets.json | email_triage/gas_setup.py | Google OAuth client (user-supplied, read only) |
 | tests/golden_dataset.json | tests/run_evals.py | calibration/eval set |
 
 ## Models (pydantic)
@@ -15,3 +17,6 @@ provider.py: NoulQuestion{prompt,key} · ChoiceQuestion{prompt,options,key} · S
 email_triage/core.py (separate, same names): NoulQuestion{question,instruction} · ChoiceQuestion{question,instruction,choices}
 CategoryConfig.categories = Follow Up|Pending|Receipts|Newsletter|Notifications|Review
 JevMailConfig{action_threshold=0.8, important_threshold=0.8}
+
+## Lifetime
+`make clean` (uninstall) runs `rm -rf ~/.jev`: router config, adapters, training artifacts and logs are all deleted. `~/.jev-mcp/` is left in place.

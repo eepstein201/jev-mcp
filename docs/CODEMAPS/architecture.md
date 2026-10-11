@@ -1,4 +1,4 @@
-<!-- Generated: 2026-10-10 | Files scanned: 19 src + 33 tests | Token estimate: ~600 -->
+<!-- Generated: 2026-10-10 | Files scanned: 19 src + 33 tests | Token estimate: ~600 | As of: 8479025 -->
 # Architecture
 
 Type: single Python package `src/jev_mcp/` (hatchling), MCP stdio server. No frontend.
@@ -23,12 +23,13 @@ routing_provider.RoutingProvider  (0.85 confidence gate)
 - Safety: security.py (sanitize_payload), linter.py, path checks in jev_read_file
 - Repo tools: scanner.py, chunker.py (tree-sitter py/js/ts)
 - Router config: router_config.py ↔ ~/.jev/router_config.json
+- Tests: tests/conftest.py stubs the MCP SDK; autouse `no_real_daemon_http` fails any unmocked daemon HTTP call
 - Email triage: email_triage/* (FastAPI webhook + MCP tools + Slack HITL + Google Apps Script)
 - Browser agent: ultrafast_adapter.py ↔ jev-ultrafast submodule (stub dispatch in server)
 - LoRA training: jev_train_lora (mlx_lm.lora → fuse → restart llama-server)
 
 ## Antigravity touchpoints (takeover checklist)
 - jev_mac_manager.sh:134 writes MCP entry to `~/.gemini/config/mcp_config.json`
-- README.md:9,166,695,732 name Antigravity as a client
+- README.md:9,167,768,805 name Antigravity as a client
 - tests/test_browser_agent_e2e.py references it
 - AGENTS.md = commit gate (green tests, ≥95% per modified file, ≥85% overall) — inherited from Antigravity
