@@ -45,7 +45,7 @@ def isolated_jev_files(tmp_path, monkeypatch):
 
 
 # Tests that genuinely need real HTTP (they talk to a server they start themselves).
-REAL_HTTP_MODULES = {"test_browser_agent_e2e", "test_stdio_e2e"}
+REAL_HTTP_MODULES = {"test_browser_agent_e2e", "test_stdio_e2e", "test_email_triage_auth_jwks"}
 
 
 @pytest.fixture(autouse=True)
