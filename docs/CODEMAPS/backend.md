@@ -1,44 +1,45 @@
-<!-- Generated: 2026-10-10 | Files scanned: server.py 1748 lines + 18 modules (email_triage as of 4f2f356) | Token estimate: ~900 -->
+<!-- Generated: 2026-10-10 | Files scanned: server.py 1772 lines + 18 modules | Token estimate: ~900 | As of: 8479025 -->
 # Backend (MCP tools)
 
 ## Tools (server.py) → impl
-evaluate           → jev_evaluate_batch L155   (state + QuestionType[] → RoutingProvider)
-optimize-prompt    → jev_optimize_prompt L402
-calibrate          → jev_calibrate_threshold L522 (golden set, Platt)
-explain-decision   → jev_explain_decision L713
-generate-data      → jev_generate_synthetic_dataset L779
-manage-router      → jev_manage_router_config L930 (~/.jev/router_config.json)
-model-router       → jev_determine_best_model L969
-handoff            → jev_agent_handoff L1099
-train              → jev_train_lora L1132 (engine mlx|llama.cpp, fuse, target_gguf_path)
-temperature        → jev_manage_temperature L1297 (view|set|reset)
-read-file          → jev_read_file L1332 (path-secured, chunked)
-compact            → jev_compact_context L1443
-scan-repo          → jev_scan_repo L1529
-run-browser-agent  → jev_run_browser_agent L1685 (checks ./jev-ultrafast; returns dispatch msg only)
-triage_email_content / configure_triage_labels / setup_gas_workflow → email_triage/* L1721-1748
+evaluate           → jev_evaluate_batch L159   (state + QuestionType[] → RoutingProvider)
+optimize-prompt    → jev_optimize_prompt L406
+calibrate          → jev_calibrate_threshold L526 (golden set, Platt; 5-fold StratifiedKFold when each class ≥ PLATT_CV_FOLDS=5)
+explain-decision   → jev_explain_decision L735
+generate-data      → jev_generate_synthetic_dataset L801
+manage-router      → jev_manage_router_config L952 (~/.jev/router_config.json)
+model-router       → jev_determine_best_model L991
+handoff            → jev_agent_handoff L1121
+train              → jev_train_lora L1154 (engine mlx|llama.cpp, fuse, target_gguf_path)
+temperature        → jev_manage_temperature L1315 (view|set|reset)
+read-file          → jev_read_file L1350 (path-secured, chunked)
+compact            → jev_compact_context L1461 (confidence_threshold default 0.3)
+scan-repo          → jev_scan_repo L1555
+run-browser-agent  → jev_run_browser_agent L1711 (checks ./jev-ultrafast; returns dispatch msg only)
+triage_email_content / configure_triage_labels / setup_gas_workflow → email_triage/* L1738-1772
 
-## Prompts (server.py L1032-1290, 1646-1657)
+## Prompts (server.py L1054-1114, 1297-1308, 1672-1683)
 calibrate compact evaluate explain-decision generate-data handoff model-router manage-router
 optimize-prompt temperature train scan-repo read-file
 
 ## Helpers
 _clean_json L37 · _safe_truncate L66 (24k chars) · _chat_completion(_json) L74/109
-call_fast_autofixer L120 · get_temp_notice L910 · main L1660
+call_fast_autofixer L124 · get_temp_notice L932 · main L1686
 
 ## Email triage (email_triage/)
 POST /api/v1/triage/email → api.triage_email (Depends get_auth ← auth.verify_auth_token)
   → mcp_tool.triage_email_content → evaluate_email_with_mlx → core.build_triage_questions
-      body > 2000 chars → server.jev_compact_context(goal=labels, conf 0.6) → body = compressed_context
+      body > 2000 chars (COMPACTION_MIN_BODY_CHARS) → server.jev_compact_context(goal=labels, conf COMPACTION_CONFIDENCE=0.3) → body = compressed_context
       (lazy import of server inside fn; any failure/empty result silently keeps original body)
   → core.decide_routing → slack.build_escalation_message / build_hitl_message
 gas_setup.setup_gas_workflow → examples/gas_triage.js (Google Apps Script)
 
 ## Linter thresholds (linter.py)
-MAX_STATE_TOKENS=3500 · MAX_OPTIONS=10 · MAX_OPTION_LENGTH_RATIO=3.5
+MAX_STATE_TOKENS=3500 · MIN_OPTIONS=2 · MAX_OPTIONS=10 · MAX_OPTION_LENGTH_RATIO=3.5
 
 ## Observed smells (for review, not fixed here)
-- server.py is 1748 lines (>800 guideline)
+- server.py is 1772 lines (>800 guideline)
 - Two unrelated `ChoiceQuestion`/`NoulQuestion` classes: provider.py (prompt/options/key, used by ultrafast_adapter + server) vs email_triage/core.py (question/instruction/choices) — name clash, easy to import the wrong one
-- jev_run_browser_agent (L1685): local `import subprocess, tempfile` unused; "jev-ultrafast" path is CWD-relative; only returns a dispatch message
-- router_config defaults reference stale model names (claude-3-5-*, claude-fable)
+- jev_run_browser_agent (L1711): "jev-ultrafast" path is CWD-relative; only returns a dispatch message, never spawns the agent
+- ROUTER_CONFIG_PATH is defined twice (router_config.py L4, server.py L927)
+- router_config defaults reference stale model names (claude-3-5-*, claude-3-opus, claude-fable)

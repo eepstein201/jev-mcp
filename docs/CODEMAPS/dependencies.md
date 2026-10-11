@@ -9,6 +9,8 @@ python-dotenv is declared in pyproject (loaded by server.py / daemon_provider.py
 
 ## Runtime engines (not imports)
 llama.cpp llama-server ×2 (8080 Kev-0.8B, 8081 Qwen-2.5-7B) · mlx_lm (lora/fuse) · launchd
+launchd agents: com.jev.mlx_server_fast / _smart (hybrid) · com.jev.mlx_server (legacy single-daemon; `hybrid` deletes its plist)
+`manage_daemon stop <plist>` force-kills only the engine on that plist's port
 Submodule: jev-ultrafast (github.com/browser-use/jev-ultrafast)
 
 ## Env vars
@@ -16,7 +18,7 @@ JEV_FAST_PORT JEV_SMART_PORT JEV_DAEMON_PORT JEV_FAST_ENGINE JEV_BATCH_SIZE
 JEV_MCP_API_KEY (webhook bearer token; JEV_MCP_WEBHOOK_URL / JEV_MCP_API_KEY are also constants inside the generated Apps Script, not process env)
 
 ## Build / CI
-make start|stop|test|lint|format|train · ci.yml (macos-latest, py3.12, checkout with submodules): mypy src/jev_mcp/ + pytest --cov-fail-under=85
+make install|update|start|hybrid|stop|clean|test|lint|format|eval|train · ci.yml (macos-latest, py3.12, checkout with submodules): mypy src/jev_mcp/ + pytest --cov-fail-under=85
 Commit gate: AGENTS.md (95% per file, 85% overall)
 
 ## External integrations
