@@ -68,6 +68,11 @@ Found during the 2026-10-10 documentation and benchmark review. Each item lists 
   A JSON state has no blank lines, so it is treated as one blob and cut every 2000 characters (`server.py:1459-1474`), splitting mid-sentence.
   - Fix: chunk by top-level key / list item for dict states.
 
+- [ ] **`compact` relevance threshold drops useful context.** (verified)
+  With goal "Fine-tune a LoRA adapter on the Qwen 7B model" and `confidence_threshold=0.5`, it kept the training sentence, correctly dropped an unrelated one, but also dropped "After training, fuse the LoRA adapter into the Qwen model with mlx_lm.fuse --dequantize". The default threshold is higher still (0.85), and email triage uses 0.6.
+  - Chunks are scored by the fast engine only (`provider.fast_provider`), with the question "Does this text snippet contain information strictly relevant to achieving the goal".
+  - Fix options: measure keep/drop accuracy on a labelled set and pick the threshold from that (the golden-set tooling in `tests/run_evals.py` can score it); soften "strictly relevant" in the prompt; escalate borderline chunks to the smart engine instead of dropping them; return the per-chunk scores so callers can see what was close.
+
 - [ ] **`calibrate` is single-question and in-sample.**
   One `question` per call, and the Platt fit is evaluated on the rows it was fitted on.
   - Fix: accept per-row questions; report cross-validated numbers; optionally persist the fitted temperature (the tool currently never writes it).
