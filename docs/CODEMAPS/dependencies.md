@@ -1,11 +1,11 @@
 <!-- Generated: 2026-10-10 | Files scanned: pyproject.toml, requirements.txt, Makefile, ci.yml, jev_mac_manager.sh (as of 559930f) | Token estimate: ~450 -->
 # Dependencies
 
-## Python (pyproject.toml, py>=3.11)
+## Python (pyproject.toml, py>=3.12)
 mcp[cli]>=2.2,<3 · pydantic>=2 · fastapi>=0.143 · scikit-learn · tree-sitter(+python/js/ts)
 browser-harness · h2 · google-api-python-client · google-auth-oauthlib
 requirements.txt (pinned, used by CI): mlx · mlx-lm · mcp · pydantic · python-dotenv · kev (git, needs py>=3.12) · dev tools
-Mismatch: pyproject says py>=3.11 but requirements.txt's kev needs >=3.12 (CI runs 3.12)
+python-dotenv is declared in pyproject (loaded by server.py / daemon_provider.py)
 
 ## Runtime engines (not imports)
 llama.cpp llama-server ×2 (8080 Kev-0.8B, 8081 Qwen-2.5-7B) · mlx_lm (lora/fuse) · launchd

@@ -4,7 +4,7 @@
 
 - Apple Silicon Mac. `jev_mac_manager.sh` exits on anything other than `arm64`.
 - `llama-server` (llama.cpp); the manager checks for it before starting daemons.
-- Python ≥3.11 (declared in `pyproject.toml`). CI runs 3.12 because `kev` in `requirements.txt` needs ≥3.12, so use 3.12 locally.
+- Python ≥3.12 (`requires-python` in `pyproject.toml`; matches CI and `kev` in `requirements.txt`).
 - Git with submodules: `git clone --recurse-submodules https://github.com/eepstein201/jev-mcp.git`. The `jev-ultrafast` submodule is required by `tests/test_browser_agent_e2e.py`.
 
 ## Setup
@@ -28,6 +28,7 @@ Copy `.env.example` to `.env` if you need non-default ports or batch size.
 | `make format` | `ruff format .` in `.venv` |
 | `make lint` | `mypy src/jev_mcp/` in `.venv` |
 | `make test` | `pytest --cov=src --cov-report=term-missing --cov-fail-under=85 tests/` in `.venv` |
+| `make eval` | `python tests/run_evals.py`: warm-up + timed benchmark of both engines on `tests/golden_dataset.json` (daemons must be running) |
 | `make train` | Prints a pointer; training runs through the `train` MCP tool |
 <!-- /AUTO-GENERATED -->
 
