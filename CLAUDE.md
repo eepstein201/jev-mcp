@@ -9,7 +9,7 @@ Both engines run side by side (`make start`); requests route between them automa
 ## Tech Stack
 
 - Python ≥3.12 (`requires-python`; matches CI and `kev` in the `engines` extra of `pyproject.toml`, the only dependency list), single package `src/jev_mcp/` (hatchling build).
-- MCP SDK `mcp` 2.2.0 (`>=2.2,<3`), pydantic 2.x for question models.
+- MCP SDK `mcp` (`>=2.2,<3`; middleware verified identical on 2.2.0 and 2.3.0), pydantic 2.x for question models.
 - Runtime engines (not imports): `llama.cpp` (`llama-server`) daemons — Kev-0.8B on `JEV_FAST_PORT` (8080), Qwen-2.5-7B on `JEV_SMART_PORT` (8081), managed by `jev_mac_manager.sh` (launchd).
 - scikit-learn (Platt scaling), tree-sitter (AST chunking, py/js/ts).
 - Tools: pytest + pytest-mock, mypy (`make lint`, CI gate), ruff format. No mypy/ruff/pytest config files — defaults apply.
