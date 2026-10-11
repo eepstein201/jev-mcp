@@ -1,7 +1,12 @@
+def _escape(text: object) -> str:
+    """Escape Slack's three mrkdwn control characters, so email text cannot become a mention or link."""
+    return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
 def build_hitl_message(email_data: dict, decision_data: dict) -> dict:
     """Builds an interactive Slack Block Kit message for Human-in-the-Loop review."""
-    subject = email_data.get("subject", "No Subject")
-    sender = email_data.get("sender", "Unknown Sender")
+    subject = _escape(email_data.get("subject", "No Subject"))
+    sender = _escape(email_data.get("sender", "Unknown Sender"))
     
     return {
         "blocks": [
@@ -37,8 +42,8 @@ def build_hitl_message(email_data: dict, decision_data: dict) -> dict:
 
 def build_escalation_message(email_data: dict, decision_data: dict) -> dict:
     """Builds an urgent Slack Block Kit message for high-priority Action items."""
-    subject = email_data.get("subject", "No Subject")
-    sender = email_data.get("sender", "Unknown Sender")
+    subject = _escape(email_data.get("subject", "No Subject"))
+    sender = _escape(email_data.get("sender", "Unknown Sender"))
     
     return {
         "blocks": [

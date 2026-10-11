@@ -2,6 +2,7 @@
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 from typing import Literal, Optional
@@ -89,6 +90,7 @@ def jev_train_lora(dataset_path: str = "", model_name: str = "mlx-community/Qwen
             
             # The default approach: MLX for training, then convert to gguf via llama.cpp
             run_script_path = os.path.join(adapter_path, "run_train.sh")
+            q = shlex.quote
             if fuse:
                 problem = lora_training.ensure_converter()
                 if problem:
@@ -103,18 +105,16 @@ def jev_train_lora(dataset_path: str = "", model_name: str = "mlx-community/Qwen
                     label=restart_label,
                 )
             else:
-                fuse_cmd = f"""
-echo "Training complete. Adapter saved to {adapter_path} (fusion skipped)."
-"""
+                fuse_cmd = "\necho " + q(f"Training complete. Adapter saved to {adapter_path} (fusion skipped).") + "\n"
 
             with open(run_script_path, "w") as f:
                 f.write(f'''#!/bin/bash
 set -e
 echo "Starting MLX LoRA training..."
-{sys.executable} -m mlx_lm.lora \
-    --model {model_name} \
-    --data {run_root} \
-    --adapter-path {adapter_path} \
+{q(sys.executable)} -m mlx_lm.lora \
+    --model {q(model_name)} \
+    --data {q(run_root)} \
+    --adapter-path {q(adapter_path)} \
     --train \
     --iters {iters}
 {fuse_cmd}

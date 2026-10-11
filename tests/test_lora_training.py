@@ -461,3 +461,33 @@ def test_train_fetches_the_converter_itself_and_reports_its_commit(mock_popen, l
     assert res["status"] == "TRAINING_STARTED", res.get("message")
     assert res["converter_commit"] == COMMIT
     assert str(llama) in _started_script(mock_popen)
+
+
+def test_fuse_script_does_not_let_the_shell_expand_a_target_path():
+    import shlex
+
+    target = "/models/$(touch pwned).gguf"
+    script = _fuse_script(target=target, label=SMART_LABEL)
+
+    assert "echo " + shlex.quote(f"Backed up the original model to {target}.bak") in script
+    for line in script.splitlines():
+        if "touch pwned" in line:
+            assert '"' not in line, line
+
+
+def test_fuse_script_quotes_the_output_path_in_its_messages():
+    import shlex
+
+    script = lora_training.build_fuse_script(
+        python="/venv/bin/python",
+        model_name="mlx-community/Qwen2.5-7B-Instruct-4bit",
+        adapter_path="/my adapters/$(id)",
+        converter_src="/src/llama.cpp",
+        target_gguf_path=None,
+        label=None,
+    )
+
+    saved = [line for line in script.splitlines() if "Fused model saved to" in line]
+    assert len(saved) == 1
+    assert shlex.split(saved[0])[0] == "echo"
+    assert '"' not in saved[0]

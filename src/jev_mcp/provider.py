@@ -6,6 +6,11 @@ import urllib.request
 
 from pydantic import BaseModel
 
+
+class EngineUnavailableError(RuntimeError):
+    """No local engine produced an answer, so there is no score to act on."""
+
+
 # Polymorphic question definitions (drive MCP JSON-schema generation and
 # provider serialization).
 

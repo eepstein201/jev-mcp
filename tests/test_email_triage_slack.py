@@ -26,3 +26,14 @@ def test_format_urgent_escalation():
     blocks_str = str(payload)
     assert "URGENT ACTION REQUIRED" in blocks_str
     assert email_data["subject"] in blocks_str
+
+
+def test_slack_messages_escape_mrkdwn_control_characters():
+    # Subject and sender come from the email, so they must not become mentions or links.
+    email_data = {"subject": "<!channel> & <https://evil.test|click>", "sender": "x <a@b.test>", "id": "1"}
+
+    for build in (build_hitl_message, build_escalation_message):
+        sections = [b for b in build(email_data, {})["blocks"] if b["type"] == "section"]
+        text = sections[0]["text"]["text"]
+        assert "<" not in text and ">" not in text
+        assert "&lt;!channel&gt; &amp; &lt;https://evil.test|click&gt;" in text

@@ -4,7 +4,7 @@
 ## Python (pyproject.toml, py>=3.12)
 mcp[cli]>=2.2,<3 · pydantic>=2 · fastapi>=0.143 · scikit-learn · tree-sitter(+python/js/ts)
 browser-harness · h2 · google-api-python-client · google-auth-oauthlib · pyjwt[crypto] · uvicorn · python-dotenv
-extras: engines = mlx==0.32.2 · mlx-lm==0.31.3 · kev (git, needs py>=3.12) | dev = ruff · mypy · pytest · pytest-cov
+extras: engines = mlx==0.32.2 · mlx-lm==0.31.3 · kev (git, pinned to a commit, needs py>=3.12) | dev = ruff · mypy · pytest · pytest-cov
 pyproject.toml is the only dependency list (no requirements.txt); CI and the manager install `-e ".[dev,engines]"` / `-e ".[engines]"`
 
 ## Runtime engines (not imports)
