@@ -97,3 +97,43 @@ def test_webhook_hitl_branch(monkeypatch):
         )
         assert response.status_code == 200
         assert "Archive" in str(response.json()["slack_payload"])
+
+
+def test_webhook_answers_503_when_no_engine_is_running(monkeypatch, tmp_path):
+    import json
+    from jev_mcp.provider import EngineUnavailableError
+
+    monkeypatch.setenv("JEV_MCP_API_KEY", "test-key")
+    config_path = tmp_path / "triage_configs.json"
+    config_path.write_text(json.dumps({"me@example.com": ["Engineering"]}))
+    monkeypatch.setattr("jev_mcp.email_triage.mcp_tool.get_config_path", lambda: config_path)
+
+    def down(*args, **kwargs):
+        raise EngineUnavailableError("No engine answered: requires_action")
+
+    monkeypatch.setattr("jev_mcp.email_triage.mcp_tool.evaluate_email_with_mlx", down)
+
+    response = client.post(
+        "/api/v1/triage/email",
+        json={"context_id": "me@example.com", "subject": "Hi", "sender": "a@b.c", "body": "text"},
+        headers={"Authorization": "Bearer test-key"},
+    )
+
+    assert response.status_code == 503
+
+
+def test_webhook_rejects_an_oversized_body_before_any_engine_work(monkeypatch):
+    monkeypatch.setenv("JEV_MCP_API_KEY", "test-key")
+
+    def must_not_run(*args, **kwargs):
+        raise AssertionError("triage ran on an oversized payload")
+
+    monkeypatch.setattr("jev_mcp.email_triage.api.triage_email_content", must_not_run)
+
+    response = client.post(
+        "/api/v1/triage/email",
+        json={"context_id": "ctx", "body": "x" * 1_000_001},
+        headers={"Authorization": "Bearer test-key"},
+    )
+
+    assert response.status_code == 422

@@ -1,5 +1,7 @@
+import contextlib
 import os
 import json
+import tempfile
 from datetime import datetime
 from typing import Any
 
@@ -24,22 +26,25 @@ def load_router_config():
     with open(ROUTER_CONFIG_PATH, "r") as f:
         return json.load(f)
 
-def save_router_config(config):
+def write_json_atomic(path: str, data: Any) -> None:
     # Write to a sibling temp file and rename over the target, so a write that
-    # dies partway through never leaves a truncated config behind.
-    os.makedirs(os.path.dirname(ROUTER_CONFIG_PATH), exist_ok=True)
-    tmp_path = ROUTER_CONFIG_PATH + ".tmp"
+    # dies partway through never leaves a truncated file behind. Each write gets
+    # its own temp file, so two writers cannot interleave into one.
+    folder = os.path.dirname(path)
+    os.makedirs(folder, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(dir=folder, prefix=os.path.basename(path) + ".", suffix=".tmp")
     try:
-        with open(tmp_path, "w") as f:
-            json.dump(config, f, indent=2)
-        os.replace(tmp_path, ROUTER_CONFIG_PATH)
-    except OSError:
-        if os.path.exists(tmp_path):
-            try:
-                os.remove(tmp_path)
-            except OSError:
-                pass
+        with os.fdopen(fd, "w") as f:
+            json.dump(data, f, indent=2)
+        os.replace(tmp_path, path)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.remove(tmp_path)
         raise
+
+
+def save_router_config(config):
+    write_json_atomic(ROUTER_CONFIG_PATH, config)
 
 def seed_defaults_for_client(client_name: str) -> dict[str, Any] | None:
     """Seed router buckets from the connecting client when the user hasn't chosen them.

@@ -6,8 +6,8 @@ from typing import Any, Dict, List, Optional
 from pydantic import Field
 
 from jev_mcp import app
-from jev_mcp.app import logger, mcp
-from jev_mcp.provider import NoulQuestion
+from jev_mcp.app import json_errors, logger, mcp
+from jev_mcp.provider import EngineUnavailableError, NoulQuestion
 from jev_mcp.routing_provider import RoutingProvider
 
 
@@ -15,6 +15,7 @@ from jev_mcp.routing_provider import RoutingProvider
     name="read-file",
     description="File Context Filter: Reads a file locally and uses the Dual-Engine logit cascade to mathematically evaluate if the file is relevant to the current task. Prevents context bloat by blocking irrelevant files or filtering them down to only the relevant chunks.",
 )
+@json_errors
 def jev_read_file(
     file_path: str = Field(
         description="The absolute path to the file you want to read."
@@ -139,16 +140,17 @@ def jev_compact_context(
     )
 ) -> str:
     import json
-    import textwrap
     logger.info("Starting Confidence-Gated Context Compaction...")
 
-    state_str = state.get("text", "") if isinstance(state, dict) and "text" in state else json.dumps(state)
+    # Only a string under "text" is treated as prose; anything else is scored as JSON, key by key.
+    has_text = isinstance(state, dict) and isinstance(state.get("text"), str)
+    state_str = state["text"] if has_text else json.dumps(state)
     if not state_str.strip():
         return json.dumps({"status": "ERROR", "message": "State is empty."})
         
     # Semantic chunking (simple paragraph/block chunking for now)
     # Using double newline or single newline if too long
-    if isinstance(state, dict) and state and "text" not in state:
+    if isinstance(state, dict) and state and not has_text:
         # One chunk per top-level key, so unrelated fields are scored separately.
         raw_chunks = [f"{k}: {v if isinstance(v, str) else json.dumps(v)}" for k, v in state.items()]
     else:
@@ -156,10 +158,11 @@ def jev_compact_context(
         if not raw_chunks:
             raw_chunks = [c.strip() for c in state_str.split("\n") if c.strip()]
         
-    chunks = []
+    chunks: List[str] = []
     for c in raw_chunks:
         if len(c) > 2000:
-            chunks.extend(textwrap.wrap(c, 2000))
+            # Fixed-width slices keep the text verbatim; re-wrapping would collapse its whitespace.
+            chunks.extend(c[i:i + 2000] for i in range(0, len(c), 2000))
         else:
             chunks.append(c)
 
@@ -183,7 +186,10 @@ def jev_compact_context(
                 res = app.provider.fast_provider.evaluate_batch({"text": chunk}, [q])
             else:
                 res = app.provider.evaluate_batch({"text": chunk}, [q])
-                
+
+            if q.key not in res:
+                # The fast engine reports an outage as an empty result, not an exception.
+                raise EngineUnavailableError(f"No engine answered {q.key}")
             chunk_res = res.get(q.key, {})
             score = chunk_res.get("noul", 0.0)
             chunk_scores.append(round(score, 3))
@@ -203,6 +209,9 @@ def jev_compact_context(
     compression_ratio = (1.0 - (len(kept_chunks) / total_chunks)) * 100 if total_chunks > 0 else 0
     
     status_msg = "COMPACTION_COMPLETE"
+    if chunk_scores and all(score is None for score in chunk_scores):
+        # Nothing was scored, so everything was kept: say so rather than report a compaction.
+        status_msg = "ENGINE_UNAVAILABLE"
     if was_truncated:
         status_msg += " (TRUNCATED TO PROTECT CONTEXT WINDOW)"
         
@@ -220,6 +229,7 @@ def jev_compact_context(
     name="scan-repo",
     description="Repository Scanner: Walks a codebase, uses Tree-sitter to break code into semantic blocks (functions/classes), and mathematically filters them using the Dual-Engine cascade to find only the code relevant to the task.",
 )
+@json_errors
 def jev_scan_repo(
     directory_path: str = Field(description="The absolute path to the directory to scan."),
     task_description: str = Field(description="The goal or bug description used to filter the codebase.")
@@ -251,7 +261,7 @@ def jev_scan_repo(
         logger.info(f"Repository is massive ({len(files)} files). Escalating to Smart Model for Surgical Pointing...")
         repo_map = generate_repo_map(files, directory_path)
         
-        prompt = f"Given the following task: '{task_description}'\\n\\nHere is the repository structure:\\n{repo_map}\\n\\nRespond with ONLY a comma-separated list of the 5-10 file paths most likely to contain the code needed for this task. Do not include any other text."
+        prompt = f"Given the following task: '{task_description}'\n\nHere is the repository structure:\n{repo_map}\n\nRespond with ONLY a comma-separated list of the 5-10 file paths most likely to contain the code needed for this task. Do not include any other text."
         
         try:
             content = app._chat_completion(
@@ -261,7 +271,7 @@ def jev_scan_repo(
                 timeout=120,
             )
 
-            suggested_paths = [p.strip() for p in content.replace("\\n", ",").split(",") if p.strip()]
+            suggested_paths = [p.strip() for p in content.replace("\n", ",").split(",") if p.strip()]
 
             target_files = []
             for sp in suggested_paths:
@@ -288,10 +298,10 @@ def jev_scan_repo(
             file_chunks = chunker.get_semantic_chunks(fpath, code)
             for c in file_chunks:
                 rel_path = os.path.relpath(fpath, directory_path)
-                contextualized_chunk = f"### FILE: {rel_path}\\n{c}"
+                contextualized_chunk = f"### FILE: {rel_path}\n{c}"
                 all_chunks.append(contextualized_chunk)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Skipping {fpath}: could not read or chunk it: {e}")
 
     if not all_chunks:
         return json.dumps({"status": "BLOCKED", "message": "Failed to extract chunks from repository."})

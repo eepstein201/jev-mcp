@@ -14,9 +14,10 @@ try:
     load_dotenv()
 except ImportError:
     pass
+import functools
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 # Must immediately hijack stdout to prevent ANY random library (like torch)
 # from printing warnings that would corrupt the JSON-RPC stream.
@@ -38,6 +39,18 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger("jev-mcp")
+
+def json_errors(tool: Callable[..., str]) -> Callable[..., str]:
+    """Make a tool answer `{"status": "ERROR", ...}` instead of raising across the MCP boundary."""
+    @functools.wraps(tool)
+    def wrapper(*args: Any, **kwargs: Any) -> str:
+        try:
+            return tool(*args, **kwargs)
+        except Exception as e:
+            logger.error(f"{tool.__name__} failed: {e}")
+            return json.dumps({"status": "ERROR", "message": str(e)})
+    return wrapper
+
 
 def _clean_json(text: str) -> str:
     text = text.strip()

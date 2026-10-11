@@ -2,6 +2,8 @@ import json
 import logging
 from pathlib import Path
 
+from jev_mcp.router_config import write_json_atomic
+
 logger = logging.getLogger(__name__)
 
 # Bodies longer than this are compacted before evaluation, keeping chunks scored at or above the confidence.
@@ -22,9 +24,8 @@ def configure_triage_labels(context_id: str, labels: list[str]) -> dict:
         data = json.loads(config_path.read_text())
     else:
         data = {}
-        
-    data[context_id] = labels
-    config_path.write_text(json.dumps(data, indent=2))
+
+    write_json_atomic(str(config_path), {**data, context_id: labels})
     
     return {"status": "success", "message": f"Saved {len(labels)} labels for {context_id}"}
 

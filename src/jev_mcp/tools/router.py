@@ -5,15 +5,24 @@ from typing import Any, Dict, Literal, Optional
 from pydantic import Field
 
 from jev_mcp import app, router_config
-from jev_mcp.app import logger, model_update_notice, mcp
+from jev_mcp.app import json_errors, logger, model_update_notice, mcp
 from jev_mcp.provider import ChoiceQuestion, NoulQuestion, ScoreQuestion
 from jev_mcp.router_config import apply_model_updates, pending_model_updates
+
+
+def _error(message: str) -> str:
+    return json.dumps({"status": "ERROR", "message": message})
+
+
+def _saved(message: str) -> str:
+    return json.dumps({"status": "SAVED", "message": message})
 
 
 @mcp.tool(
     name="manage-router",
     description="Interactive configuration manager for Jev's Model Router. Use this to view, add, or remove custom bucket models and exception rules. view_all also reports newer models available for each bucket; apply_updates switches to them; set_auto_update (enabled=true/false) records whether Jev should do that automatically at start-up.",
 )
+@json_errors
 def jev_manage_router_config(
     action: Literal["view_all", "add_rule", "remove_rule", "set_bucket", "apply_updates", "set_auto_update"] = Field(description="The action to perform."),
     bucket_id: Optional[str] = Field(default=None, description="The bucket (b1, b2, b3, b4) to modify."),
@@ -44,7 +53,7 @@ def jev_manage_router_config(
 
     if action == "set_auto_update":
         if not isinstance(enabled, bool):
-            return "Error: enabled (true or false) required."
+            return _error("enabled (true or false) required.")
         updates = pending_model_updates(config) if enabled else {}
         new_config = apply_model_updates(config, updates) if updates else config
         stamped = {**new_config, "buckets_source": "user"} if enabled else new_config
@@ -53,30 +62,34 @@ def jev_manage_router_config(
 
     if action == "set_bucket":
         if not bucket_id or not model_name:
-            return "Error: bucket_id and model_name required."
-        config["buckets"][bucket_id] = model_name
-        app.save_router_config({**config, "buckets_source": "user"})
-        return f"Bucket {bucket_id} successfully mapped to {model_name}."
-        
+            return _error("bucket_id and model_name required.")
+        buckets = {**config["buckets"], bucket_id: model_name}
+        app.save_router_config({**config, "buckets": buckets, "buckets_source": "user"})
+        return _saved(f"Bucket {bucket_id} successfully mapped to {model_name}.")
+
     if action == "add_rule":
         if not condition or not target:
-            return "Error: condition and target required."
+            return _error("condition and target required.")
         from jev_mcp.security import sanitize_payload
-        config["rules"].append({"condition": sanitize_payload(condition), "target": target})
-        app.save_router_config(config)
-        return f"Rule added. If '{condition}', route to '{target}'."
-        
+        rule = {"condition": sanitize_payload(condition), "target": target}
+        app.save_router_config({**config, "rules": [*config["rules"], rule]})
+        return _saved(f"Rule added. If '{condition}', route to '{target}'.")
+
     if action == "remove_rule":
         if rule_id is None or rule_id < 0 or rule_id >= len(config["rules"]):
-            return "Error: Valid rule_id required."
-        removed = config["rules"].pop(rule_id)
-        app.save_router_config(config)
-        return f"Rule removed: {removed}"
+            return _error("Valid rule_id required.")
+        removed = config["rules"][rule_id]
+        remaining = [rule for index, rule in enumerate(config["rules"]) if index != rule_id]
+        app.save_router_config({**config, "rules": remaining})
+        return _saved(f"Rule removed: {removed}")
+
+    return _error(f"Unknown action: {action}")
 
 @mcp.tool(
     name="model-router",
     description="Complexity Index Router: Analyzes a task description using the Hybrid local engine and custom rules to determine the mathematically optimal LLM model to use.",
 )
+@json_errors
 def jev_determine_best_model(
     task_description: str = Field(description="The prompt or goal the CLI is about to execute."),
     estimated_tokens: Optional[int] = Field(default=0, description="The estimated token count of the context payload.")
@@ -148,6 +161,7 @@ def jev_determine_best_model(
     name="handoff",
     description="Uses multi-class logit routing to mathematically determine which specialized agent should take over the current task based on their full descriptions."
 )
+@json_errors
 def jev_agent_handoff(task_description: str, available_agents: Dict[str, str]) -> str:
     """
     Passes the task description and agent profiles to Jev as a ChoiceQuestion. 

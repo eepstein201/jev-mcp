@@ -1,5 +1,6 @@
 """The calibrate and temperature tools."""
 import json
+import math
 from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import Field
@@ -44,7 +45,15 @@ def jev_calibrate_threshold(
     try:
         results = app.provider.evaluate_dataset(dataset, q_obj)
     except Exception as e:
-        return f"Calibration Failed: {str(e)}"
+        return json.dumps({"status": "ERROR", "message": f"Calibration Failed: {str(e)}"})
+
+    def expected_answers(expected: Any) -> set[str]:
+        """Keys a correct result may carry: the expected value, or its option letter for a choice."""
+        text = str(expected).lower()
+        answers = {text}
+        if isinstance(q_obj, ChoiceQuestion):
+            answers.update(chr(97 + idx) for idx, opt in enumerate(q_obj.options) if str(opt).lower() == text)
+        return answers
 
     def evaluate_thresholds(current_results):
         thresholds = [0.50, 0.60, 0.70, 0.80, 0.85, 0.90, 0.95, 0.99]
@@ -80,14 +89,7 @@ def jev_calibrate_threshold(
                         pred_val = ""
                         conf = 0.0
                     
-                    expected_str = str(expected).lower()
-                    if isinstance(q_obj, ChoiceQuestion):
-                        for opt_idx, opt_str in enumerate(q_obj.options):
-                            if str(opt_str).lower() == expected_str:
-                                expected_str = chr(97 + opt_idx)
-                                break
-                                
-                    is_positive = expected_str == str(pred_val).lower()
+                    is_positive = str(pred_val).lower() in expected_answers(expected)
 
                     if conf > t:
                         automated += 1
@@ -152,15 +154,8 @@ def jev_calibrate_threshold(
                     
                     log_odds = math.log(p_a) - math.log(p_b)
                     
-                    expected_str = str(expected).lower()
-                    if isinstance(q_obj, ChoiceQuestion):
-                        for opt_idx, opt_str in enumerate(q_obj.options):
-                            if str(opt_str).lower() == expected_str:
-                                expected_str = chr(97 + opt_idx)
-                                break
-                    
                     # 1 if expected matches keys[0], 0 otherwise
-                    is_positive = 1 if expected_str == keys[0] else 0
+                    is_positive = 1 if str(keys[0]).lower() in expected_answers(expected) else 0
                     
                     X_raw.append([log_odds])
                     y_true.append(is_positive)
@@ -278,6 +273,9 @@ def jev_manage_temperature(action: Literal["view", "set", "reset"], value: Optio
         elif action == "set":
             if value is None:
                 return json.dumps({"status": "ERROR", "message": "You must provide a 'value' when using action='set'."})
+            # Logits are divided by this, so zero, a negative, NaN or infinity would corrupt every evaluation.
+            if not math.isfinite(float(value)) or float(value) <= 0:
+                return json.dumps({"status": "ERROR", "message": "Temperature must be a positive, finite number."})
             config["fitted_temperature"] = round(float(value), 3)
             config["temperature_updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             app.save_router_config(config)

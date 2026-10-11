@@ -67,3 +67,84 @@ def test_scan_repo_falls_back_when_pointing_raises(mock_eval, mock_chat, tmp_pat
         (tmp_path / f"mod{i}.py").write_text(f"def f{i}():\n    return {i}\n")
     res = json.loads(server.jev_scan_repo(str(tmp_path), "find f0"))
     assert res["status"] == "SUCCESS"
+
+
+def _all_relevant(state, questions):
+    return {q.key: {"probabilities": {"true": 0.9}} for q in questions}
+
+
+def _engine_down(state, questions):
+    from jev_mcp.provider import EngineUnavailableError
+    raise EngineUnavailableError("No engine answered: chunk_0")
+
+
+@patch("jev_mcp.routing_provider.RoutingProvider.evaluate_batch", side_effect=_engine_down)
+def test_read_file_reports_an_unavailable_engine_instead_of_blocking(mock_eval, tmp_path):
+    f = tmp_path / "mod.py"
+    f.write_text("def relevant():\n    return 1\n")
+
+    chunked = json.loads(server.jev_read_file(str(f), "find the thing", filter_by_chunk=True))
+    whole = json.loads(server.jev_read_file(str(f), "find the thing", filter_by_chunk=False))
+
+    assert chunked["status"] == "ERROR" and "No engine answered" in chunked["message"]
+    assert whole["status"] == "ERROR" and "No engine answered" in whole["message"]
+
+
+@patch("jev_mcp.routing_provider.RoutingProvider.evaluate_batch", side_effect=_engine_down)
+def test_scan_repo_reports_an_unavailable_engine_instead_of_blocking(mock_eval, tmp_path):
+    (tmp_path / "mod.py").write_text("def f():\n    return 1\n")
+
+    res = json.loads(server.jev_scan_repo(str(tmp_path), "find f"))
+
+    assert res["status"] == "ERROR"
+    assert "No engine answered" in res["message"]
+
+
+@patch("jev_mcp.routing_provider.RoutingProvider.evaluate_batch", side_effect=_all_relevant)
+def test_scan_repo_reads_the_files_the_smart_tier_lists_one_per_line(mock_eval, tmp_path):
+    for i in range(25):
+        (tmp_path / f"mod{i}.py").write_text(f"def f{i}():\n    return {i}\n")
+
+    with patch("jev_mcp.app._chat_completion", MagicMock(return_value="mod3.py\n- mod7.py")) as mock_chat:
+        res = json.loads(server.jev_scan_repo(str(tmp_path), "find f3"))
+
+    assert "scanned 2 files" in res["message"]
+    assert "### FILE: mod3.py\ndef f3" in res["content"]
+    assert "\\n" not in res["content"]
+    assert "\\n" not in mock_chat.call_args[0][0]
+
+
+def test_compact_says_so_when_no_engine_scored_any_chunk():
+    with patch("jev_mcp.app.provider") as mock_provider:
+        mock_provider.fast_provider.evaluate_batch.return_value = {}  # daemon down: no answers
+        res = json.loads(server.jev_compact_context(state={"text": "alpha\n\nbeta"}, goal="g"))
+
+    assert res["status"] == "ENGINE_UNAVAILABLE"
+    assert res["compacted_state"] == "alpha\n\nbeta"
+    assert res["chunk_scores"] == [None, None]
+
+
+def test_compact_keeps_a_long_chunk_verbatim():
+    text = "\n".join(f"        row_{i} = load(  {i}  )" for i in range(200))
+    with patch("jev_mcp.app.provider") as mock_provider:
+        mock_provider.fast_provider.evaluate_batch.side_effect = _echo_scores
+        res = json.loads(server.jev_compact_context(state={"text": text}, goal="g", confidence_threshold=0.3))
+    assert res["status"] == "COMPACTION_COMPLETE"
+    assert "        row_1 = load(  1  )\n        row_2 = load(  2  )" in res["compacted_state"]
+
+
+def test_compact_accepts_a_text_field_that_is_not_a_string():
+    with patch("jev_mcp.app.provider") as mock_provider:
+        mock_provider.fast_provider.evaluate_batch.side_effect = _echo_scores
+        res = json.loads(server.jev_compact_context(state={"text": 123, "note": "keep"}, goal="g"))
+    assert res["status"] == "COMPACTION_COMPLETE"
+
+
+@patch("jev_mcp.routing_provider.RoutingProvider.evaluate_batch", side_effect=_all_relevant)
+def test_scan_repo_logs_a_file_it_could_not_read(mock_eval, tmp_path):
+    (tmp_path / "good.py").write_text("def ok():\n    return 1\n")
+    (tmp_path / "bad.py").write_bytes(b"\xff\xfe\x00broken")
+    with patch("jev_mcp.tools.files.logger") as mock_logger:
+        server.jev_scan_repo(str(tmp_path), "find ok")
+    warnings = " ".join(str(c) for c in mock_logger.warning.call_args_list)
+    assert "bad.py" in warnings

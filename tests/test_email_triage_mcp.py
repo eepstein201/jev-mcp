@@ -213,3 +213,23 @@ def test_triage_logs_a_warning_when_compaction_fails(tmp_path, monkeypatch, capl
     # Assert: the original body is still triaged, and the failure is visible.
     assert response["status"] == "success"
     assert any("compaction failed" in record.getMessage().lower() for record in caplog.records)
+
+
+def test_configure_triage_labels_keeps_the_old_file_when_the_write_fails(tmp_path, monkeypatch):
+    import os
+    import pytest
+
+    config_file = tmp_path / "triage_configs.json"
+    monkeypatch.setattr("jev_mcp.email_triage.mcp_tool.get_config_path", lambda: config_file)
+    configure_triage_labels("a@mailbox.com", ["Sales"])
+    before = config_file.read_text()
+
+    def failing_replace(src, dst):
+        raise OSError("rename blocked")
+
+    monkeypatch.setattr(os, "replace", failing_replace)
+
+    with pytest.raises(OSError):
+        configure_triage_labels("b@mailbox.com", ["HR"])
+    assert config_file.read_text() == before
+    assert os.listdir(tmp_path) == ["triage_configs.json"]

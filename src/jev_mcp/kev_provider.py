@@ -54,8 +54,9 @@ class KevProvider(JevProvider):
         best_label = q.labels[0] if q.labels else "0"
         best_prob = -1
         for idx_str, p in raw_probs.items():
-            idx = int(idx_str)
-            label = q.labels[idx] if idx < len(q.labels) else str(idx)
+            # Only a plain index into the labels is translated; any other key is kept as sent.
+            key = str(idx_str)
+            label = q.labels[int(key)] if key.isdigit() and int(key) < len(q.labels) else key
             mapped_probs[label] = p
             if p > best_prob:
                 best_prob = p

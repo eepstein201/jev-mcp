@@ -1,5 +1,4 @@
 import logging
-import textwrap
 
 logger = logging.getLogger(__name__)
 
@@ -9,10 +8,11 @@ def fallback_chunker(code: str, chunk_size: int = 1500) -> list[str]:
     if not raw_chunks:
         raw_chunks = [c.strip() for c in code.split("\n") if c.strip()]
         
-    chunks = []
+    chunks: list[str] = []
     for c in raw_chunks:
         if len(c) > chunk_size:
-            chunks.extend(textwrap.wrap(c, chunk_size))
+            # Fixed-width slices: re-wrapping would collapse the indentation and line breaks of code.
+            chunks.extend(c[i:i + chunk_size] for i in range(0, len(c), chunk_size))
         else:
             chunks.append(c)
     return chunks
