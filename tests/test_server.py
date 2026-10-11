@@ -662,6 +662,24 @@ def test_jev_train_lora_starts_training(mock_popen, tmp_path, monkeypatch):
     data_dir = res["data_dir"]
     assert os.path.exists(os.path.join(data_dir, "train.jsonl"))
 
+@patch("subprocess.Popen")
+def test_jev_train_lora_restages_dataset_named_train_jsonl(mock_popen, tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    mock_popen.return_value = MagicMock(pid=1)
+    # A stale (e.g. dangling) train.jsonl link left in the run dir by an earlier
+    # run must be replaced, not trusted, when the dataset itself is named train.jsonl.
+    run_root = tmp_path / ".jev" / "training"
+    run_root.mkdir(parents=True)
+    (run_root / "train.jsonl").symlink_to(tmp_path / "purged-tmp-data.jsonl")
+    ds = tmp_path / "elsewhere" / "train.jsonl"
+    ds.parent.mkdir()
+    ds.write_text('{"messages": []}\n')
+
+    res = json.loads(server.jev_train_lora(str(ds), fuse=False))
+
+    assert res["status"] == "TRAINING_STARTED", res.get("message", "unknown error")
+    assert os.path.realpath(os.path.join(res["data_dir"], "train.jsonl")) == str(ds)
+
 def _read_train_script(mock_popen):
     with open(mock_popen.call_args[0][0][1], "r") as f:
         return f.read()
@@ -715,7 +733,8 @@ def test_jev_train_lora_rejects_bad_model_name(mock_popen, tmp_path):
     mock_popen.assert_not_called()
 
 @patch("subprocess.Popen")
-def test_jev_train_lora_returns_json_error_on_failure(mock_popen, tmp_path):
+def test_jev_train_lora_returns_json_error_on_failure(mock_popen, tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))  # staging runs before Popen fails
     ds = tmp_path / "data.jsonl"
     ds.write_text("{}\n")
     mock_popen.side_effect = OSError("spawn failed")

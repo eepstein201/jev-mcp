@@ -53,11 +53,12 @@ def jev_train_lora(dataset_path: str = "", model_name: str = "mlx-community/Qwen
             return json.dumps({"status": "ERROR", "message": f"iters must be a positive integer, got: {iters}"})
 
         # Reuse a single training dir under ~/.jev (no mkdtemp litter) and link
-        # the dataset in under the name mlx_lm.lora expects.
+        # the dataset in under the name mlx_lm.lora expects. Always restage: a
+        # train.jsonl left there by an earlier run may be stale or dangling.
         run_root = os.path.expanduser("~/.jev/training")
         os.makedirs(run_root, exist_ok=True)
-        if os.path.basename(dataset_path) != "train.jsonl":
-            link = os.path.join(run_root, "train.jsonl")
+        link = os.path.join(run_root, "train.jsonl")
+        if os.path.abspath(dataset_path) != link:
             if os.path.lexists(link):
                 os.remove(link)
             os.symlink(os.path.abspath(dataset_path), link)
