@@ -12,6 +12,8 @@ from jev_mcp.security import sanitize_payload
 
 logger = logging.getLogger(__name__)
 
+SMALL_MODEL_MARKER = "0.5b"
+
 
 class DaemonProvider(JevProvider):
     """
@@ -115,6 +117,15 @@ class DaemonProvider(JevProvider):
                             math.exp(curr_lp - max_val) + math.exp(lp - max_val)
                         )
 
+            # A target outside the top-k is censored, not impossible: its log-prob is
+            # at most the smallest one listed. Bounding it keeps scores small but never
+            # an exact 0.0 (the sentinel produced false certainty and tied AUC ranks).
+            if top_logprobs:
+                floor = min(item.get("logprob", -9999.0) for item in top_logprobs)
+                for target, lp in result.items():
+                    if lp == -9999.0 and floor != -9999.0:
+                        result[target] = floor
+
             return result, model_id
         except Exception as e:
             logger.error(f"Daemon API call failed: {e}\nPLEASE ENSURE THE DAEMON IS RUNNING! Run: ./jev_mac_manager.sh hybrid")
@@ -201,12 +212,10 @@ class DaemonProvider(JevProvider):
         state_str = sanitize_payload(state_str)
         daemon_pid = self._get_daemon_pid()
 
-        # Detect the engine once per batch, not once per question.
-        try:
-            out = subprocess.check_output(["pgrep", "-fl", "mlx_lm"]).decode()
-            is_small_model = "0.5B" in out
-        except Exception:
-            is_small_model = True
+        # This is the smart tier: untrusted state always gets the XML sandbox. Only a
+        # model the daemon itself reported as 0.5B gets the plain prompt; the choice
+        # never depends on which other processes (e.g. a training run) are alive.
+        is_small_model = SMALL_MODEL_MARKER in self.current_model_id.lower()
 
         for q in questions:
             prompt_str = sanitize_payload(q.prompt)
@@ -261,7 +270,8 @@ class DaemonProvider(JevProvider):
             # Key on format_hint, not the full empty prompt: the 7B sandbox
             # template embeds a per-question salt tag, which would make every
             # cache key unique and refetch the prior on every question.
-            cache_key = f"{daemon_pid}::{model_id}::{format_hint}"
+            style = "plain" if is_small_model else "sandbox"
+            cache_key = f"{daemon_pid}::{model_id}::{style}::{format_hint}"
             if cache_key not in self._prior_cache:
                 if len(self._prior_cache) > 256:
                     # Bound process-lifetime growth (pid churn mints new key families).
