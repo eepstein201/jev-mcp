@@ -10,6 +10,7 @@ class FakeBrowser:
 
     instances: list["FakeBrowser"] = []
     kind = "click"
+    page_text = None  # set to put specific text on the fake page
 
     def __init__(self, url):
         self.url = url
@@ -21,7 +22,7 @@ class FakeBrowser:
         return {
             "url": self.url,
             "title": "Fake page",
-            "text": f"{len(self.acted)} actions so far",
+            "text": self.page_text if self.page_text is not None else f"{len(self.acted)} actions so far",
             "actions": [{"id": "a1", "kind": self.kind, "label": "Submit", "node": 1, "role": "button"}],
             "fingerprint": f"fp-{len(self.acted)}",
         }
@@ -63,11 +64,89 @@ def fake_agent(monkeypatch):
     agent_module, _ = browser_agent.load_ultrafast()
     FakeBrowser.instances = []
     FakeBrowser.kind = "click"
+    FakeBrowser.page_text = None
     ScriptedRouter.operations = ["CLICK", "DONE"]
     ScriptedRouter.prompts = []
     monkeypatch.setattr(agent_module, "Browser", FakeBrowser)
     monkeypatch.setattr("jev_mcp.ultrafast_adapter.RoutingProvider", ScriptedRouter)
     return agent_module
+
+
+def test_done_is_forced_when_the_goal_marker_is_on_the_page(fake_agent):
+    # The engine never says DONE here (script is all CLICK); the visible success
+    # marker must end the run before any action is taken.
+    FakeBrowser.page_text = "MISSION_COMPLETE"
+    ScriptedRouter.operations = ["CLICK"]
+
+    result = browser_agent.run_browser_agent(
+        "https://example.test/form",
+        "Click Submit. The page shows MISSION_COMPLETE only when you click the right one.")
+
+    assert result["result"] == "done"
+    assert result["steps"] == []
+    assert FakeBrowser.instances[0].acted == []
+
+
+def test_premature_done_is_demoted_when_the_marker_is_absent(fake_agent):
+    # The engine says DONE at once, but the stated success marker is nowhere on
+    # the page: the gate must fall back to the runner-up operation (CLICK).
+    ScriptedRouter.operations = ["DONE"]
+
+    result = browser_agent.run_browser_agent(
+        "https://example.test/form",
+        "Click Submit. The page shows MISSION_COMPLETE only when you click the right one.")
+
+    assert result["steps"] and all(s["kind"] == "click" for s in result["steps"])
+    assert FakeBrowser.instances[0].acted
+
+
+def test_done_without_a_stated_marker_passes_through_unchanged(fake_agent):
+    # No success marker in the goal: the engine's DONE is trusted, as before.
+    ScriptedRouter.operations = ["DONE"]
+
+    result = browser_agent.run_browser_agent("https://example.test/form", "Click the Submit button.")
+
+    assert result["result"] == "done"
+    assert result["steps"] == []
+
+
+def test_recently_tried_elements_are_flagged_in_the_target_listing(fake_agent):
+    ScriptedRouter.operations = ["CLICK"]
+
+    browser_agent.run_browser_agent("https://example.test/form", "Click the Submit button.", max_steps=3)
+
+    target_prompts = [p for p in ScriptedRouter.prompts if "Choose the target index" in p]
+    assert target_prompts and any("(tried" in p for p in target_prompts)
+
+
+def test_operation_prompt_states_the_completion_criterion(fake_agent):
+    from jev_mcp import ultrafast_adapter
+
+    operations = {"CLICK": "Click an element.", "DONE": "Every requirement is visibly satisfied."}
+    targets = {"CLICK": {"1": {"label": "Submit", "element": "Submit"}}}
+    ultrafast_adapter.local_choose(
+        {"page": {"url": "u", "title": "t", "text": "x"}},
+        "Click Submit. The page shows MISSION_COMPLETE only when you click the right one.",
+        [], operations, targets, {})
+
+    operation_prompts = [p for p in ScriptedRouter.prompts if "Choose the best operation" in p]
+    assert operation_prompts and "only when the page shows MISSION_COMPLETE" in operation_prompts[-1]
+
+
+def test_alternating_picks_add_a_warning_to_the_operation_prompt(fake_agent):
+    from jev_mcp import ultrafast_adapter
+
+    history = [
+        {"action": "A", "kind": "click", "text": None, "page_changed": True},
+        {"action": "B", "kind": "click", "text": None, "page_changed": True},
+    ] * 2
+    operations = {"CLICK": "Click an element.", "DONE": "Every requirement is visibly satisfied."}
+    targets = {"CLICK": {"1": {"label": "A", "element": "A"}, "2": {"label": "B", "element": "B"}}}
+    ultrafast_adapter.local_choose(
+        {"page": {"url": "u", "title": "t", "text": "x"}}, "goal", history, operations, targets, {})
+
+    operation_prompts = [p for p in ScriptedRouter.prompts if "Choose the best operation" in p]
+    assert operation_prompts and "alternating" in operation_prompts[-1]
 
 
 def test_agent_clicks_the_chosen_element_then_reports_done(fake_agent):

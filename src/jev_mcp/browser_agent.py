@@ -17,7 +17,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from jev_mcp.provider import post_json
-from jev_mcp.ultrafast_adapter import local_choose
+from jev_mcp.ultrafast_adapter import local_choose, success_marker
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +54,23 @@ def load_ultrafast() -> tuple[Any, Any]:
 
 def choose_locally(model: Any, page: dict[str, Any], goal: str, history: list[Any]) -> dict[str, Any]:
     """Local stand-in for jev_ultrafast.model.choose: same decision shape, no hosted API."""
+    marker = success_marker(goal)
+    marker_on_page = bool(marker) and (
+        marker in (page.get("text") or "") or marker in (page.get("title") or "")
+    )
+    if marker_on_page:
+        # Evidence outranks the engine: the goal's stated success condition is
+        # on the page, so the run is complete regardless of what it would pick.
+        return {
+            "choice": "DONE",
+            "operation": "DONE",
+            "target": None,
+            "confidence": 1.0,
+            "probabilities": {"DONE": 1.0},
+            "usage": {},
+            "latency_ms": 0,
+        }
+
     started = time.perf_counter()
     _, targets, controls = model.action_space(page["actions"])
     operations = {key: OPERATION_LABELS[key] for key in targets}
@@ -65,6 +82,21 @@ def choose_locally(model: Any, page: dict[str, Any], goal: str, history: list[An
     # so a confused model can never trigger an action that was not observed on the page.
     operation_answer = model.validate_choice(answers.get("operation", {}), operations)
     operation = operation_answer["choice"]
+    if operation == "DONE" and marker and not marker_on_page:
+        # Premature DONE: the stated success condition is not on the page, so
+        # fall back to the engine's best non-terminal operation instead.
+        runner_up = max(
+            (op for op in operation_answer["probabilities"] if op not in ("DONE", "BLOCKED")),
+            key=operation_answer["probabilities"].get,
+            default=None,
+        )
+        if runner_up:
+            operation = runner_up
+            operation_answer = {
+                **operation_answer,
+                "choice": runner_up,
+                "confidence": operation_answer["probabilities"][runner_up],
+            }
     target = None
     if operation in targets:
         target_answer = model.validate_choice(answers.get(operation.lower() + "_target", {}), targets[operation])
