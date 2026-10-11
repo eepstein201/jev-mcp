@@ -10,6 +10,7 @@ import os
 import queue
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 
@@ -25,12 +26,14 @@ EXPECTED_TOOLS = {
 }
 
 
-def _start_server(home=None):
+def _start_server(home="auto"):
     env = os.environ.copy()
     env["PYTHONUNBUFFERED"] = "1"
+    if home == "auto":
+        # Isolation is the default: the child resolves ~/.jev from a scratch
+        # HOME, so no e2e run can ever read or write the real router config.
+        home = tempfile.mkdtemp(prefix="jev-e2e-home-")
     if home is not None:
-        # Full isolation: the child resolves ~/.jev from this HOME, so the
-        # real router config is never read or written.
         env["HOME"] = str(home)
     return subprocess.Popen(
         [sys.executable, "-m", "jev_mcp.server"],
