@@ -1,4 +1,4 @@
-.PHONY: install test lint clean format update start stop hybrid train
+.PHONY: install test lint clean format update start stop hybrid train eval
 
 install:
 	@echo "Installing Jev MCP Environment..."
@@ -28,6 +28,10 @@ lint:
 test:
 	@echo "Running Pytest with Strict 85% Code Coverage Requirement..."
 	bash -c "source .venv/bin/activate && pytest --cov=src --cov-report=term-missing --cov-fail-under=85 tests/"
+
+eval:
+	@echo "Benchmarking Kev 0.8B and Qwen 7B on tests/golden_dataset.json (daemons must be running)..."
+	bash -c "source .venv/bin/activate && python tests/run_evals.py"
 
 clean:
 	@echo "Completely uninstalling Jev MCP artifacts..."

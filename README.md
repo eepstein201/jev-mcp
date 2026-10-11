@@ -3,7 +3,7 @@
 Jev MCP is a high-performance, mathematically rigorous FastMCP server designed for macOS Apple Silicon. It replaces slow, error-prone generative API calls by wrapping two local AI models in a unified **Dual-Engine Architecture**.
 
 Instead of asking a cloud LLM to blindly generate text for routing or classification, Jev runs a hybrid local pipeline:
-1. **The Fast Engine (Kev 0.8B):** Instantly intercepts simple boolean, multiple-choice, and multi-agent routing logic. By utilizing a native pointer-head to extract raw mathematical probability distributions (logit extraction) without generating text, it subtracts statistical bias and yields calibrated confidence scores in ~120ms that can be strictly thresholded for 100% precision automation.
+1. **The Fast Engine (Kev 0.8B):** Instantly intercepts simple boolean, multiple-choice, and multi-agent routing logic. By utilizing a native pointer-head to extract raw mathematical probability distributions (logit extraction) without generating text, it subtracts statistical bias and yields calibrated confidence scores in roughly 40 ms per warm request (see [Performance Benchmarks](#-performance-benchmarks)) that you can threshold (use `calibrate`) to trade automation rate against precision.
 2. **The Smart Engine (Qwen2.5 7B):** When tasks require deep inferential reasoning, synthetic edge-case generation, or massive context compression, Jev dynamically escalates the request to a powerful 7B reasoning model running on Apple's `mlx_lm` C++ backend.
 
 By combining the strict mathematical safety of Kev with the reasoning depth of Qwen, Jev provides your downstream MCP clients (like Claude Desktop or Antigravity) with the ultimate local safety gate and dynamic task router.
@@ -91,10 +91,10 @@ class node_fastservice,node_smartservice toneIndigo
 - **Parallelized AST Analysis**: Thread-safe, multi-worker chunking allows instantaneous evaluation of massive codebases without triggering MCP request timeouts.
 - **Enterprise Reliability**: Adheres strictly to SOLID programming principles (SRP, OCP), enforcing 95%+ mathematical unit test coverage and DRY architectural patterns across the Python codebase.
 
-### ⚡ Legacy Highlights
-By bypassing traditional text generation, Jev unlocks massive performance gains on Apple Silicon using two distinct model profiles:
-- **The `0.8B` Fast Profile (Kev):** Achieves lightning-fast mathematical evaluations in **~120ms**. Powered by a native pointer-head, it intercepts routing mechanics perfectly without generating text, yielding an exceptionally reliable `0.866` ROC AUC.*
-- **The `7B` Intel Profile:** Delivers evaluations in **~800ms**. While slightly slower than the 0.8B fast engine, it possesses deep inferential reasoning capabilities, achieving a mathematically perfect **1.0 ROC AUC** on edge cases. This easily outperforms standard cloud API text-generation methods in both accuracy and reliability for complex logic.
+### ⚡ Engine Highlights
+By bypassing traditional text generation, Jev unlocks large latency gains on Apple Silicon using two distinct model profiles (measured figures and caveats: [Performance Benchmarks](#-performance-benchmarks)):
+- **The `0.8B` Fast Profile (Kev):** Evaluates in roughly **40 ms** per warm request. Powered by a native pointer-head, it scores without generating text, reaching `0.93` ROC AUC and 90% accuracy at a 0.5 threshold on the 88-row golden set.
+- **The `7B` Smart Profile:** Evaluates in roughly **245 ms** per warm request. It reached `0.98` ROC AUC on the same set but, at a 0.5 threshold, the same 90% accuracy as Kev; its scores are close to hard 0/1 (80% saturated), so use thresholds with care.
 - **Enterprise-Grade Security:** Because Jev evaluates raw, untrusted user data, all payloads are strictly sterilized via NFKC Unicode normalization and recursive Control Token stripping. For the 7B profile, prompts are additionally wrapped in strict XML sandboxing to isolate prompt injection payloads.
 - **Browser Automation Gateway:** Integrated tightly with the `jev-ultrafast` local browser agent, Jev-MCP supplies the core probabilistic evaluation engine for TypeSafe AI browser navigation, seamlessly converting DOM state and objective logic into fully-local, dual-engine llama.cpp routing decisions without requiring external cloud API keys.
 
@@ -127,7 +127,7 @@ Jev's ML pipeline is 100% local. After using the dataset generator to curate you
 ### 🎯 The Machine Learning Engineer (Deterministic Optimization)
 **The Problem:** You are trying to write a complex system prompt, but your LLM occasionally gets the categories wrong. You don't know how to phrase the prompt to enforce strict adherence, and you don't have the data to finetune a custom BERT model.
 **The Jev-MCP Solution:**
-Jev provides an instant ML pipeline locally in your chat window. First, use `/jev-mcp:generate-data` to have the Smart Engine auto-generate 50 adversarial edge cases. Then, use `/jev-mcp:optimize-prompt` to test prompt variations against the local logit engine, discovering the statistically optimal phrasing. Finally, use `/jev-mcp:calibrate-threshold` to run a **Scikit-Learn Platt Scaling** regression that outputs a beautiful Markdown ROC Matrix, mathematically proving your precision threshold with zero code required.
+Jev provides an instant ML pipeline locally in your chat window. First, use `/jev-mcp:generate-data` to have the Smart Engine auto-generate 50 adversarial edge cases. Then, use `/jev-mcp:optimize-prompt` to test prompt variations against the local logit engine, discovering the statistically optimal phrasing. Finally, use `/jev-mcp:calibrate` to run a **Scikit-Learn Platt Scaling** regression that outputs a beautiful Markdown ROC Matrix, mathematically proving your precision threshold with zero code required.
 
 ---
 
@@ -138,15 +138,16 @@ Jev MCP includes a highly robust management script (`jev_mac_manager.sh`) that b
 
 **To install and start Jev:**
 ```bash
-git clone https://github.com/your-username/jev-mcp.git
+git clone --recurse-submodules https://github.com/eepstein201/jev-mcp.git
 cd jev-mcp
 
-# Install the environment and launch the dual-engine architecture
+# Install the environment, download both models, and start the dual-engine daemons
 make install
-
-# OR install and launch the 7B model (Highly intelligent, supports generative tools natively)
-make install MODEL=7b
 ```
+
+`make install` runs `./jev_mac_manager.sh install` followed by `hybrid`: it downloads the Kev 0.8B model (`ggml-org/Kev-0.8B-GGUF`, served on `JEV_FAST_PORT`, default `8080`) and the Qwen2.5 7B model (`bartowski/Qwen2.5-7B-Instruct-GGUF`, served on `JEV_SMART_PORT`, default `8081`), then starts one `llama-server` launchd agent for each. The `--recurse-submodules` flag fetches `jev-ultrafast`, which the browser-agent tests need.
+
+To install a single profile instead, call the manager directly: `./jev_mac_manager.sh install 7b` (the profile is the second argument, `0.5b` or `7b`, default `0.5b`).
 
 **To update your codebase and restart the daemon:**
 ```bash
@@ -161,7 +162,7 @@ make clean
 ```
 
 
-### 3. Using the MCP Features (Slash Commands & Tools)
+### 2. Using the MCP Features (Slash Commands & Tools)
 Jev MCP exposes native **MCP Prompts** (user-facing slash commands) and **MCP Tools** (agent-facing functions). When using a client like Claude Desktop or Claude Code, you can trigger these workflows instantly using the slash commands below. The LLM will then orchestrate the underlying tool calls automatically.
 Once installed, Jev exposes the following specialized tools to your MCP client (e.g., Claude, Antigravity, or any agent framework):
 
@@ -201,6 +202,8 @@ Once installed, Jev exposes the following specialized tools to your MCP client (
 *   **Underlying Tool:** `calibrate`
 *   **Natural Language Triggers:** *"Can you calibrate my dataset?"*, *"Help me fit the threshold for..."*
 *   **What it does:** The core feature of Jev. It takes your dataset and evaluates every single case against the local daemon by extracting direct `get_logprobs` mathematical arrays. It subtracts statistical bias and returns a beautiful Markdown Confusion Matrix, showing exactly what Probability Threshold (`>0.95`) you need to achieve 100% Precision.
+*   **Which engine it calibrates:** `calibrate` scores through the same hybrid router as `evaluate` (Kev first, escalating to Qwen when Kev's confidence is below 0.85 or the state exceeds 4,000 tokens), so the report describes the cascade you run in production rather than a single engine. A threshold that automates decisions without ever catching a positive is marked `❌ Unusable`.
+*   **Scope of the report:** one `question` per call, and the table (including any Platt fit) is computed on the same rows you pass in, so treat it as an optimistic, in-sample estimate.
 *   **Arguments:**
     *   `dataset` *(array of objects)*: Array of dicts representing the edge cases: `[{"state": {...}, "expected": True/False/String}]`.
     *   `question` *(object)*: The question object schema to calibrate.
@@ -222,9 +225,9 @@ Once installed, Jev exposes the following specialized tools to your MCP client (
 Occasionally, larger RLHF-tuned models (like 7B) exhibit "Mode Collapse" or "Logit Sharpening." Because they are trained to be highly decisive assistants, they may assign >99% epistemic certainty to the argmax token, causing all standard thresholds to fail.
 
 `calibrate` features native **Automated Platt Scaling (Logistic Calibration)**. 
-By default (`apply_platt_scaling="auto"`), Jev actively monitors for extreme overconfidence. If triggered, it automatically extracts the raw log-odds (`log(P_A) - log(P_B)`) and uses `scikit-learn` to fit a Logistic Regression model against your expected dataset outcomes—mathematically squishing the >99% confidence scores back down to their true fractional uncertainty. It achieves this by automatically deriving a new Global Calibration Temperature specifically for the **Qwen 7B Smart Engine**, which it saves to your config.
+By default (`apply_platt_scaling="auto"`), Jev actively monitors for extreme overconfidence. If triggered, it automatically extracts the raw log-odds (`log(P_A) - log(P_B)`) and uses `scikit-learn` to fit a Logistic Regression model against your expected dataset outcomes—mathematically squishing the >99% confidence scores back down to their true fractional uncertainty. The calibrated probabilities are used for the returned report only; `calibrate` does not write anything to your config.
 
-*Note: You can manually inspect or reset this newly fitted temperature using the `/jev-mcp:temperature` command! Furthermore, if you want to permanently bake this calibrated statistical distribution directly into the model's weights, use the `/jev-mcp:train` command to instantly fine-tune a native LoRA adapter for the 7B model on the dataset you just used to calibrate.*
+*Note: The global calibration temperature for the **Qwen 7B Smart Engine** (`fitted_temperature` in `~/.jev/router_config.json`) is a separate setting that you view, set, or reset with the `/jev-mcp:temperature` command. Furthermore, if you want to permanently bake this calibrated statistical distribution directly into the model's weights, use the `/jev-mcp:train` command to instantly fine-tune a native LoRA adapter for the 7B model on the dataset you just used to calibrate.*
 
 **Real-World Example:**
 Imagine an unfair coin weighted to land Heads 75% of the time. When asked to predict 100 flips without context, the 7B model accurately deduces that Heads is the optimal guess, but erroneously assigns >99% confidence to *every single guess*.
@@ -261,13 +264,21 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
 *   **Command:** `/jev-mcp:train`
 *   **Underlying Tool:** `train`
 *   **Natural Language Triggers:** *"Train a custom adapter on this data,"*, *"Fine-tune a local model..."*
-*   **What it does:** Instantly trains a local LoRA adapter on your Apple Silicon GPU using your optimized dataset. By default (`fuse=True`), Jev will automatically merge the new adapter into your base `.gguf` model, backup the original, and dynamically restart your active `llama-server` inference daemon to instantly apply the new weights without downtime!
+*   **What it does:** Starts a detached `mlx_lm.lora` run (`iters` iterations, default 500) on your Apple Silicon GPU and returns the process id, adapter directory (`~/.jev/adapters/<run_id>`), and log path. With `fuse=True` it then runs `mlx_lm.fuse --export-gguf`; if a fused GGUF is produced and `target_gguf_path` is set, it moves the existing model to `<target>.bak`, installs the new file, and restarts a running `llama-server`.
+*   **Current limitations (read from the code and `mlx_lm` 0.31.3, not yet exercised end to end):**
+    *   `mlx_lm.fuse --export-gguf` only supports unquantized `llama`, `mistral`, and `mixtral` models, so with the default base (`mlx-community/Qwen2.5-7B-Instruct-4bit`, a quantized `qwen2` model) the fuse step cannot produce a GGUF. The adapter itself is still written. A working route for Qwen is `mlx_lm.fuse --dequantize --save-path <dir>` followed by llama.cpp's `convert_hf_to_gguf.py` and `llama-quantize`; the converter script is not shipped with the Homebrew `llama.cpp` package.
+    *   The restart step kills the first `llama-server` process it finds, which is not necessarily the one serving `target_gguf_path` when both engines are running, and the launchd agents use `KeepAlive`. After a replacement, prefer `make start` to restart both daemons cleanly.
+    *   There is a backup (`<target>.bak`) but no restore command: to roll back, move the `.bak` file back and run `make start`.
+    *   On a 16 GB machine, stop the daemons before training a 7B model; training and both `llama-server` processes do not fit in memory together.
 *   **Arguments:**
     *   `dataset_path` *(string)*: Absolute path to the `.jsonl` dataset.
     *   `model_name` *(string, default: "mlx-community/Qwen2.5-7B-Instruct-4bit")*: The base model to fine-tune.
     *   `engine` *(string, default: "mlx")*: The training backend. Supports `"mlx"` (Apple Silicon Native) or `"llama.cpp"` (Experimental).
-    *   `fuse` *(bool, default: True)*: Automatically fuses the adapter into a single `.gguf` file.
-    *   `target_gguf_path` *(string, optional)*: Overwrites this inference model with the newly fused `.gguf` (backs up original to `.bak`) and triggers auto-restart.
+    *   `fuse` *(bool, default: True)*: Attempts to fuse the adapter and export a single `.gguf` file (see the limitations above).
+    *   `target_gguf_path` *(string, optional)*: If a fused GGUF is produced, replaces this inference model with it (moving the original to `.bak`) and restarts `llama-server`.
+    *   `iters` *(integer, default: 500)*: Number of training iterations. Lower it for small datasets to limit overfitting.
+
+    With `fuse=False` the run stops after training and leaves the MLX adapter in the adapter directory; nothing is downloaded or converted.
 
 
 #### ⚡ Evaluate Batch
@@ -287,7 +298,7 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
        - **Arithmetic/Chronological Intent:** *"Count the number of items"* or *"Did this happen after Tuesday?"* (LLMs struggle with math and time).
        - **Missing Fallback:** Multiple choice questions lacking an *"Unknown"*, *"Other"*, or *"N/A"* fallback option (which forces the model to hallucinate if the answer isn't in the text).
     2. **Auto-Fixer:** Automatically repairs broken questions and returns the fixed JSON.
-    3. **QFE Compression Middleware:** If your state exceeds the context window limits (e.g., 10,000 tokens), it dynamically intercepts the payload and losslessly compresses it down to ~1,000 tokens before running the math.
+    3. **QFE Compression Middleware:** If `state` exceeds the router's token limit (8,192: the smart engine's limit, because large states are routed to it), Query-Focused Extraction (QFE) compresses it before the math runs; if the compressed state still doesn't fit, the tool returns a `CRITICAL SYSTEM ERROR` message instead of evaluating. The tool description asks callers to keep `state` under 2048 tokens as a guideline.
     
     **Example Input & Output:**
     ```json
@@ -368,9 +379,11 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
 *   **Natural Language Triggers:** *"Show me my router rules,"*, *"Route tasks mentioning SQL to Opus..."*
 *   **What it does:** View, add, or remove custom rule overrides for the Multi-Class Logit Router.
 *   **Arguments:**
-    *   `action` *(string)*: Must be `"view"`, `"add_rule"`, or `"remove_rule"`.
-    *   `condition` *(string, default: "")*: The textual condition for adding a rule (e.g., `"Task mentions SQL"`).
-    *   `target` *(string, default: "")*: The model tier bucket (e.g., `"b3"`).
+    *   `action` *(string)*: One of `"view_all"`, `"add_rule"`, `"remove_rule"`, or `"set_bucket"`.
+    *   `bucket_id` *(string, optional)*: The bucket to modify (`"b1"`–`"b4"`), used with `"set_bucket"`.
+    *   `model_name` *(string, optional)*: The model name to assign to that bucket, used with `"set_bucket"`.
+    *   `condition` *(string, optional)*: The natural-language condition for a new rule (e.g., `"Task mentions SQL"`).
+    *   `target` *(string, optional)*: The bucket or model to route to when the condition matches (e.g., `"b3"`).
     *   `rule_id` *(integer, optional)*: The index of the rule to remove.
 
 #### ⚡ Read File (Gated Context)
@@ -407,7 +420,24 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
 
 
 
-### 4. First-Class Response Types (Question Schemas)
+#### ⚡ Triage Email
+*   **Tools:** `triage_email_content` and `configure_triage_labels` (tool-only; there are no slash-command prompts for these).
+*   **What it does:** Classifies an incoming email into one of the labels you configured for a mailbox. `triage_email_content(context_id, subject, sender, body)` asks the local engines whether the email requires action, whether it is important, and which label fits, then returns a decision plus a suggested routing. Bodies over 2000 characters are first compacted with `compact` (confidence 0.6); if compaction fails, the original body is used.
+*   **First use:** if no labels exist for the `context_id`, the tool returns `{"status": "needs_config", ...}`. Call `configure_triage_labels(context_id, labels)` to save them (stored in `~/.jev-mcp/triage_configs.json`).
+*   **Routing rules** (`core.decide_routing`, defaults `action_threshold=0.8`, `important_threshold=0.8`):
+    *   `requires_action` score above `0.8` → `Action`, routed to `escalate_to_slack`.
+    *   `requires_action` score between `0.3` and `0.8`, or bucket confidence below `0.6` → `Review`, routed to `hitl_slack_block`.
+    *   otherwise → the predicted label, routed to `archive_and_label`.
+
+#### ⚡ Email Triage Webhook & Apps Script
+*   **Webhook:** `jev_mcp.email_triage.api:app` is a FastAPI app exposing `POST /api/v1/triage/email` (body: `context_id`, `subject`, `sender`, `body`, `id`). It requires `Authorization: Bearer <JEV_MCP_API_KEY>`, returns the triage result plus a Slack Block Kit `slack_payload` for escalations and human-in-the-loop reviews, and answers `400` when the mailbox has no labels yet. The repository does not ship a launcher; serve the app yourself, e.g. `uvicorn jev_mcp.email_triage.api:app --port 8000`.
+*   **Google Apps Script:** `setup_gas_workflow(webhook_url, api_key)` (also available as `jev-mcp setup-gas --webhook-url ... --api-key ...`) deploys `examples/gas_triage.js` to your Google account with your webhook URL and key filled in. It prompts interactively for any value you don't pass.
+
+#### ⚡ Run Browser Agent
+*   **Tool:** `run-browser-agent(url, goal)`.
+*   **What it does:** Entry point for the `jev-ultrafast` browser agent. It currently only validates that the `jev-ultrafast` submodule directory exists in the working directory and returns a dispatch message; the agent itself is not launched from this tool. The probabilistic engine that `jev-ultrafast` calls into lives in `ultrafast_adapter.py` (`local_choose`).
+
+### 3. First-Class Response Types (Question Schemas)
 Jev MCP strongly enforces structured response types to guarantee deterministic mathematics. When defining questions for `evaluate`, you must use one of the following three first-class schemas:
 
 #### 1. Noul (`noul`)
@@ -458,10 +488,39 @@ Jev MCP fundamentally changes the speed and reliability of local AI decision-mak
 | :--- | :--- | :--- | :--- | :--- |
 | **Standard Text Prompting** (e.g., Ollama) | ~2,000ms | 0.65 - 0.70 | Extreme (Recency/Position) | Free |
 | **Cloud APIs** (e.g., GPT-4o) | ~1,500ms+ | 0.85 - 0.90 | High | $$$ |
-| **Jev MCP (`0.8B` Kev Profile)** | **~120ms** | 0.866 | Neutralized (DCPMI) | Free |
-| **Jev MCP (`7B` Intel Profile)** | ~800ms | **1.00 (Perfect)** | Neutralized (DCPMI) | Free |
+| **Jev MCP (`0.8B` Kev Profile)** | **~44 ms** | 0.93 (CI 0.87–0.98) | Neutralized (DCPMI) | Free |
+| **Jev MCP (`7B` Smart Profile)** | ~244 ms | **0.98** (CI 0.94–0.99) | Neutralized (DCPMI) | Free |
 
-*(Benchmarks run on an Apple Silicon M-series unified memory architecture against the Golden Edge-Case Dataset).*
+**Measured on the 88-row golden set** (`tests/golden_dataset.json`: 43 positive, 45 negative, 12 question groups; Apple M2 Pro, 16 GB; 2026-10-10)
+
+| Engine | ROC AUC (95% bootstrap CI) | Accuracy @ 0.5 | Saturated scores | Warm latency / sample |
+| :--- | :--- | :--- | :--- | :--- |
+| Kev 0.8B | 0.928 (0.866–0.979) | 89.8% | 0% | 44 ms |
+| Qwen 2.5 7B | 0.977 (0.944–0.995) | 89.8% | 80% | 244 ms |
+| Claude Sonnet (reference) | 1.000 | 100% | n/a (verbalized) | not measured |
+| Claude Opus (reference) | 1.000 | 100% | n/a (verbalized) | not measured |
+
+**What is measured, and what is not**
+- The two Jev rows are reproducible: `make start && make eval` runs `tests/run_evals.py`, which does one untimed warm-up pass per engine (so model loading and cache priming are excluded), then times a second pass and reports ROC AUC with a bootstrap interval, accuracy at 0.5, the share of saturated scores, and a per-kind accuracy breakdown. The first run after a daemon restart is several times slower because of model load.
+- **Read Qwen's AUC with care.** 80% of its scores sit within 1e-6 of 0 or 1, and 26 are exactly 0.0 (the `true` token fell outside the top-11 log-probs). Its AUC therefore ranks differences in the far tails, while at the practical 0.5 threshold it is no more accurate than Kev. The per-kind breakdown shows where each engine fails (Kev is weakest on `hypothetical`, Qwen on `implicit`).
+- The Claude rows are one-off references, not part of `make eval`: Sonnet and Opus were each given the label-free cases (`id`, `question`, `state`) once as a Claude Code subagent task and asked for an answer plus a confidence in 0.5–1.0, which was converted to P(true) and scored with `python tests/run_evals.py --scores FILE NAME`. Claude exposes no token log-probs, so these confidences are verbalized, not calibrated probabilities, and both models hit the ceiling, so this set cannot separate them. Latency was not measured.
+- Dataset caveats: the 80 non-legacy rows were written for this benchmark in a single pass by an LLM and may be easier than real traffic (frontier models score 100%); treat the figures as a regression and smoke benchmark, and extend `golden_dataset.json` with real, hard cases before drawing conclusions.
+- The "Standard Text Prompting" and "Cloud APIs" rows above are illustrative ranges that this repository does not measure.
+
+**Calibration on the same 88 rows** (run with the `calibrate` threshold logic pointed at each engine; in-sample unless noted)
+
+| Engine | Threshold | Automation | Precision | Recall | False positives |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| Kev 0.8B | > 0.50 | 100% | 85.4% | 95.3% | 7 |
+| Kev 0.8B | > 0.90 | 35.2% | 90.0% | 41.9% | 2 |
+| Kev 0.8B | > 0.95 | 13.6% | 100% | 14.0% | 0 |
+| Qwen 7B (raw) | > 0.50 to > 0.90 | 100% | 92.5% | 86.0% | 3 |
+| Qwen 7B (Platt) | > 0.90 | 86.4% | 94.1% | 74.4% | 2 |
+| Qwen 7B (Platt) | > 0.95 | 36.4% | 100% | 74.4% | 0 |
+
+- Kev's scores are graded, so raising the threshold trades automation for precision as intended; Platt scaling did not improve it under 5-fold cross-validation (AUC 0.928 to 0.922).
+- Qwen's raw scores are saturated, so thresholds from 0.50 to 0.90 behave identically. Platt scaling does not make it more accurate (held-out accuracy 89.8% to 90.9%) but it makes the probabilities usable: held-out log-loss falls from 0.894 to 0.278, and a 0.95 gate then reaches 100% precision at 36% automation.
+- These are small-sample figures on a set written for this benchmark; re-run them on your own data before choosing a production threshold.
 
 ---
 
@@ -470,7 +529,7 @@ Jev MCP fundamentally changes the speed and reliability of local AI decision-mak
 Under the hood, Jev MCP employs several highly specialized mathematical and systems-engineering techniques to achieve its performance:
 
 *   **Empty-Payload Bias Extraction**: LLMs suffer from severe "Recency Bias" (preferring the last option shown) and "Vocabulary Bias" (preferring the token "A" over "B"). Jev MCP evaluates your prompt twice: once normally, and once with an *empty payload*. By measuring the baseline probabilities of the empty payload, we extract the model's pure statistical bias.
-*   **DCPMI Subtraction**: Uses Domain Conditional Pointwise Mutual Information (DCPMI) to mathematically subtract the extracted bias from the active evaluation. This isolates the model's *true conditional intent*, pushing models that natively perform at 0.66 ROC AUC up to a perfect 1.0 ROC AUC.
+*   **DCPMI Subtraction**: Uses Domain Conditional Pointwise Mutual Information (DCPMI) to mathematically subtract the extracted bias from the active evaluation. This isolates the model's conditional intent from position and vocabulary bias.
 *   **Laplace Horizon Smoothing**: Local engines natively truncate logprobs at a hard horizon of `top_logprobs=11`. If a target option falls out of the top 11, it yields zero probability, which ordinarily causes catastrophic $log(0)$ math explosions. Implemented a $+1/K$ Laplace smoothing factor (pseudo-counts) to gracefully absorb probability mass beyond the hardware truncation limit.
 *   **Log-Sum-Exp Token Aggregation**: LLM tokenizers fragment answers unexpectedly. The concept of "True" might be split across the tokens `"True"`, `" True"`, `" T"`, and `"T"`. Jev MCP aggregates these fragmented probability masses using rigorous `Log-Sum-Exp` mathematics to ensure no confidence is lost.
 *   **Absolute Confidence Gating**: If the total sum of all target token probabilities is $< 5\%$, Jev MCP instantly recognizes that the model is confused or hallucinating due to out-of-distribution context, and forces a `0.0` confidence score.
@@ -484,8 +543,8 @@ Jev MCP utilizes a polymorphic `JevProvider` architecture that enforces strict D
 
 Jev MCP intelligently routes prompts and parses outputs based on the specific capabilities of the model loaded in the macOS Daemon:
 
-*   **`0.8B` Kev Profile (`ggml-org/Kev-0.8B-GGUF`): Dedicated router engine handling instantaneous >85% confidence gates.
-*   **`7B` Profile** (`Qwen/Qwen2.5-7B-Instruct-GGUF`): Used for highly intelligent structured data generation and 1.0 ROC AUC evaluation. When active, Jev MCP wraps prompts in a highly secure XML Sandbox to defend against prompt-injection.
+*   **`0.8B` Kev Profile** (`ggml-org/Kev-0.8B-GGUF`, `Kev-0.8B-Q8_0.gguf`): Dedicated router engine handling instantaneous >85% confidence gates.
+*   **`7B` Profile** (`bartowski/Qwen2.5-7B-Instruct-GGUF`, `Qwen2.5-7B-Instruct-Q4_K_M.gguf`): Used for highly intelligent structured data generation and 1.0 ROC AUC evaluation. When active, Jev MCP wraps prompts in a highly secure XML Sandbox to defend against prompt-injection.
 
 **Robust E2E Generative Pipelines (7B)**
 Jev MCP's advanced tools (`QFE Compression`, `Auto-Fixer`, `Prompt Optimizer`, `Evidence Extractor`) are fully supported on the local 7B model. To bypass the lack of native `xgrammar` on the llama-server daemon, Jev MCP uses an aggressive **JSON Extractor Middleware** that slices JSON arrays/objects directly out of the generative text, rendering the pipeline completely immune to conversational boilerplate or markdown wrappers (e.g. ````json`). Timeouts are dynamically scaled to support massive 13,000+ token context states (QFE) on local Apple Silicon.
@@ -606,26 +665,28 @@ Jev MCP provides multiple layers of command-line tools for users, advanced devel
 
 ### 1. The Developer Wrapper (`Makefile`)
 The easiest way to interact with Jev MCP locally. It wraps the core bash script.
-*   **`make install`**: Installs the environment and boots the daemon .
-*   **`make switch`**: Instantly hot-swaps the background engine.
+*   **`make install`**: Installs the environment (`install`), then downloads both models and starts both daemons (`hybrid`).
+*   **`make hybrid`** / **`make start`**: Both run `jev_mac_manager.sh hybrid`: fetch any missing model weights and (re)start the fast and smart daemons.
 *   **`make update`**: Re-pulls code, updates packages, and restarts.
-*   **`make start`**: Manually boots the daemon (and dynamically fetches new model weights if they haven't been downloaded yet).
-*   **`make stop`**: Gracefully halts the background daemon and clears models from memory without destroying your installation.
-*   **`make clean`**: Completely uninstalls artifacts and tears down the daemon.
-*   **`make format` / `make lint` / `make test`**: Runs Ruff, MyPy, and PyTest respectively.
+*   **`make stop`**: Gracefully halts the background daemons without destroying your installation.
+*   **`make clean`**: Completely uninstalls artifacts and tears down the daemons (`uninstall --headless`).
+*   **`make format`**: Runs `ruff format .` inside `.venv`.
+*   **`make lint`**: Runs `mypy src/jev_mcp/` inside `.venv`. This is also the CI type-check step.
+*   **`make test`**: Runs pytest with `--cov=src --cov-fail-under=85`.
+*   **`make eval`**: Benchmarks both engines on `tests/golden_dataset.json` (warm-up pass, then a timed pass; daemons must be running).
+*   **`make train`**: Informational only; training is triggered through the `train` MCP tool.
 
 ### 2. The Core Engine Manager (`jev_mac_manager.sh`)
 The underlying bash script that handles hardware memory, virtual environments, and macOS `launchd` plist generation.
-*   **Commands:** `install`, `switch`, `update`, `start`, `stop`, `uninstall`
+*   **Commands:** `install`, `hybrid`, `update`, `start`, `stop`, `uninstall`. `install` and `start` take an optional model profile as the second argument (`0.5b` or `7b`, default `0.5b`).
 *   **Flags:** 
     *   `--headless` (or `-h`): Automatically bypasses interactive `[y/N]` safety prompts. Essential for CI/CD pipelines, automated scripts, or LLM agents executing destructive commands (e.g., `./jev_mac_manager.sh uninstall --headless`).
 
-### 3. Live Integration Testing
-To verify the Dual-Engine backend is responding perfectly across all MCP tools natively (without mock data), you can run the integration suite:
+### 3. Running the Test Suite
 ```bash
-python3 integration_test.py
+make test
 ```
-This script fires payloads at both Kev (Port 8080) and Qwen (Port 8081) and guarantees the complete pipeline (Linter -> Auto-Calibration -> Multiclass Routing -> Handoff) is working live.
+This runs `pytest --cov=src --cov-fail-under=85 tests/` inside `.venv`. The suite mocks the HTTP and subprocess boundaries, so it does not need the daemons running, but the browser-agent e2e test needs the `jev-ultrafast` submodule checked out. Contributors also have to meet the per-file coverage gate described in `AGENTS.md` and `docs/CONTRIBUTING.md`.
 
 ### 4. Real-Time Prompt Linting (`jev-lint`)
 
@@ -661,12 +722,23 @@ The tool outputs warnings and errors using the standard compiler format (`file:l
 questions.json:0: ERROR: GENERATIVE_INTENT_DETECTED - Question asks the model to generate content. (Suggestion: Rewrite as a classification. E.g. replace 'Summarize the user's tone' with 'Is the user angry?')
 ```
 
-### 4. Hidden Daemon Flags (`llama-server`)
-When `jev_mac_manager.sh` boots the background macOS Daemon, it automatically injects a hardcoded set of Apple Silicon performance flags into the llama.cpp backend. 
-*   `--model`: Resolves to the HuggingFace repo path.
-*   `--port`: Driven by `JEV_DAEMON_PORT` in your `.env` (defaults to `8080`).
-*   `--prompt-cache-size 20` & `--prompt-cache-bytes 12G`: Hardware memory tuning.
-*   `--prefill-step-size 2048`: Controls attention block chunks to prevent M-series chip overheating.
+### 5. Daemon Launch Flags (`jev_mac_manager.sh`)
+The manager writes one launchd agent per engine (`com.jev.mlx_server_fast`, `com.jev.mlx_server_smart`; logs in `~/.jev/mlx_server_fast.log` and `~/.jev/mlx_server_smart.log`) and picks the launcher from the model path:
+*   **`.gguf` models** (the default Kev and Qwen files): `llama-server -m <model> --port <port> --parallel <n> -c <n × 16384>`. `<n>` is `JEV_BATCH_SIZE` if set; otherwise it is chosen from RAM (≥64 GB: 16, ≥32 GB: 8, ≥16 GB: 4, less: 2) and halved for 7B models (minimum 1). The context is 16K tokens per parallel slot.
+*   **Paths containing `kev` that are not `.gguf`**: `python -m kev.serve --run <model> --port <port>`.
+*   **Anything else**: `python -m mlx_lm.server --model <model> --port <port> --prompt-cache-size 20 --prompt-cache-bytes 12G --prefill-step-size 2048 --log-level WARNING`. The prompt-cache and prefill flags apply only to this MLX path, not to `llama-server`.
+
+Ports come from `JEV_FAST_PORT` (default `8080`) and `JEV_SMART_PORT` (default `8081`), read from your shell or from a `.env` file in the repository root.
+
+### 6. Environment Variables
+| Variable | Default | Used by | Purpose |
+| :--- | :--- | :--- | :--- |
+| `JEV_FAST_PORT` | `8080` | manager, `routing_provider.py`, `server.py` | Port of the fast engine (Kev 0.8B). |
+| `JEV_SMART_PORT` | `8081` | manager, `routing_provider.py`, `server.py` | Port of the smart engine (Qwen 7B). |
+| `JEV_FAST_ENGINE` | `kev` | `routing_provider.py` | `kev` uses `KevProvider` (`/v1/systemone`) for the fast tier; any other value uses `DaemonProvider` (`/v1/chat/completions`) on the fast port. |
+| `JEV_DAEMON_PORT` | unset | `daemon_provider.py` | Optional override for a `DaemonProvider` built without an explicit URL; when unset it follows `JEV_SMART_PORT`. The router always passes explicit URLs built from `JEV_FAST_PORT` / `JEV_SMART_PORT`. |
+| `JEV_BATCH_SIZE` | RAM-based | manager | Number of `llama-server` parallel slots. |
+| `JEV_MCP_API_KEY` | none | `email_triage/auth.py` | Bearer token accepted by the email-triage webhook. |
 
 ---
 

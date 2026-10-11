@@ -70,6 +70,18 @@ class JevProvider(ABC):
         state_str = json.dumps(state) if not isinstance(state, str) else state
         return len(state_str) // 4
 
+    def evaluate_dataset(self, dataset: List[dict], question: Any) -> List[dict]:
+        """Evaluate one question against every row's state (used by calibration)."""
+        return [
+            {
+                "expected": row.get("expected"),
+                "probabilities": self.evaluate_batch(row.get("state", {}), [question])
+                .get(question.key, {})
+                .get("probabilities", {}),
+            }
+            for row in dataset
+        ]
+
 def post_json(url: str, payload: dict, timeout: int = 45) -> Any:
     """POST JSON to a local daemon and return the parsed response.
 

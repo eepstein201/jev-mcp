@@ -29,7 +29,8 @@ class RoutingProvider(JevProvider):
             self.fast_provider = DaemonProvider(base_url=f"http://127.0.0.1:{fast_port}/v1/chat/completions")
             
         self.smart_provider = DaemonProvider(base_url=f"http://127.0.0.1:{smart_port}/v1/chat/completions")
-        self.max_tokens = self.fast_provider.max_tokens
+        # Large states are routed to the smart engine, so its limit applies too.
+        self.max_tokens = min(self.fast_provider.max_tokens, self.smart_provider.max_tokens)
         self.current_model_id = "hybrid_router"
 
     def check_token_limit(self, state: Any) -> int:

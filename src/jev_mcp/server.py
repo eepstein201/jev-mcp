@@ -112,9 +112,10 @@ def _chat_completion_json(**kwargs: Any) -> Any:
 
 # Initialize MCP and Provider
 mcp = MCPServer("jev-mcp")
-from jev_mcp.daemon_provider import DaemonProvider
 
-provider = DaemonProvider()
+# The hybrid router, not a bare DaemonProvider: a bare one falls back to
+# JEV_DAEMON_PORT (8080), which is the Kev daemon in the dual-engine setup.
+provider = RoutingProvider()
 linter = DecisionPreflightLinter()
 
 def call_fast_autofixer(state, questions, errors):
@@ -605,7 +606,10 @@ def jev_calibrate_threshold(
             recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
 
             rec = "⚠️ Risky"
-            if precision > 0.98 and auto_rate > 0.4:
+            if tp == 0 and fn > 0 and auto_rate >= 0.1:
+                # Decisions are being automated but no positive is ever caught.
+                rec = "❌ Unusable"
+            elif precision > 0.98 and auto_rate > 0.4:
                 rec = "✅ Optimal"
             elif precision == 1.0:
                 rec = "✅ Safe (Low Volume)"
@@ -1127,9 +1131,9 @@ def jev_agent_handoff(task_description: str, available_agents: Dict[str, str]) -
 
 @mcp.tool(
     name="train",
-    description="Instantly trains a local MLX LoRA adapter on your Apple Silicon GPU. Options: fuse=True (default) merges the adapter into a single .gguf file, and if target_gguf_path is provided, replaces it (backing up the original). fuse=False keeps a standalone adapter for dynamic loading (--lora)."
+    description="Instantly trains a local MLX LoRA adapter on your Apple Silicon GPU. Options: fuse=True (default) merges the adapter into a single .gguf file, and if target_gguf_path is provided, replaces it (backing up the original). fuse=False keeps the standalone MLX adapter. iters sets the number of training iterations (default 500)."
 )
-def jev_train_lora(dataset_path: str, model_name: str = "mlx-community/Qwen2.5-7B-Instruct-4bit", engine: str = "mlx", fuse: bool = True, target_gguf_path: Optional[str] = None) -> str:
+def jev_train_lora(dataset_path: str, model_name: str = "mlx-community/Qwen2.5-7B-Instruct-4bit", engine: str = "mlx", fuse: bool = True, target_gguf_path: Optional[str] = None, iters: int = 500) -> str:
     """
     Launches mlx_lm.lora fine-tuning in a detached background process
     and returns the live pid plus adapter/log locations.
@@ -1149,6 +1153,9 @@ def jev_train_lora(dataset_path: str, model_name: str = "mlx-community/Qwen2.5-7
 
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]*", model_name):
             return json.dumps({"status": "ERROR", "message": f"Invalid model_name (expected a HuggingFace id like 'org/model-name'): {model_name}"})
+
+        if not isinstance(iters, int) or iters < 1:
+            return json.dumps({"status": "ERROR", "message": f"iters must be a positive integer, got: {iters}"})
 
         # Reuse a single training dir under ~/.jev (no mkdtemp litter) and link
         # the dataset in under the name mlx_lm.lora expects.
@@ -1233,14 +1240,7 @@ fi
 """
             else:
                 fuse_cmd = f"""
-echo "Training complete. Converting adapter to GGUF (No Fusion)..."
-if ! command -v convert-lora-to-ggml.py &> /dev/null; then
-    curl -sLO https://raw.githubusercontent.com/ggerganov/llama.cpp/master/convert-lora-to-ggml.py
-    chmod +x convert-lora-to-ggml.py
-    python3 ./convert-lora-to-ggml.py {adapter_path}
-else
-    python3 convert-lora-to-ggml.py {adapter_path}
-fi
+echo "Training complete. Adapter saved to {adapter_path} (fusion skipped)."
 """
 
             with open(run_script_path, "w") as f:
@@ -1252,7 +1252,7 @@ echo "Starting MLX LoRA training..."
     --data {run_root} \
     --adapter-path {adapter_path} \
     --train \
-    --iters 500
+    --iters {iters}
 {fuse_cmd}
 ''')
             os.chmod(run_script_path, 0o755)
@@ -1462,9 +1462,13 @@ def jev_compact_context(
         
     # Semantic chunking (simple paragraph/block chunking for now)
     # Using double newline or single newline if too long
-    raw_chunks = [c.strip() for c in state_str.split("\n\n") if c.strip()]
-    if not raw_chunks:
-        raw_chunks = [c.strip() for c in state_str.split("\n") if c.strip()]
+    if isinstance(state, dict) and state and "text" not in state:
+        # One chunk per top-level key, so unrelated fields are scored separately.
+        raw_chunks = [f"{k}: {v if isinstance(v, str) else json.dumps(v)}" for k, v in state.items()]
+    else:
+        raw_chunks = [c.strip() for c in state_str.split("\n\n") if c.strip()]
+        if not raw_chunks:
+            raw_chunks = [c.strip() for c in state_str.split("\n") if c.strip()]
         
     chunks = []
     for c in raw_chunks:
@@ -1692,9 +1696,7 @@ def jev_run_browser_agent(
     """
     import os
     import json
-    import subprocess
-    import tempfile
-    
+
     # Check if jev-ultrafast is available
     if not os.path.exists("jev-ultrafast"):
         return json.dumps({
