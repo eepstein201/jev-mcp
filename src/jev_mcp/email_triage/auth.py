@@ -11,6 +11,9 @@ logger = logging.getLogger(__name__)
 # Fixed per key type, so a token can never pick its own algorithm (e.g. "none").
 SHARED_SECRET_ALGORITHMS = ["HS256"]
 JWKS_ALGORITHMS = ["RS256", "ES256"]
+# RFC 7518 section 3.2: an HS256 key shorter than the 256-bit hash is too easy to guess.
+MIN_SHARED_SECRET_BYTES = 32
+BEARER_PREFIX = "Bearer "
 
 
 @lru_cache(maxsize=4)
@@ -39,6 +42,10 @@ def jwt_decode(token: str) -> dict:
         key = _jwks_client(jwks_url).get_signing_key_from_jwt(token).key
         algorithms = JWKS_ALGORITHMS
     elif secret:
+        if len(secret.encode()) < MIN_SHARED_SECRET_BYTES:
+            raise ValueError(
+                f"JEV_MCP_JWT_SECRET must be at least {MIN_SHARED_SECRET_BYTES} bytes"
+            )
         key = secret
         algorithms = SHARED_SECRET_ALGORITHMS
     else:
@@ -57,10 +64,10 @@ def jwt_decode(token: str) -> dict:
 
 
 def verify_auth_token(auth_header: str | None) -> dict:
-    if not auth_header or not auth_header.startswith("Bearer "):
+    if not auth_header or not auth_header.startswith(BEARER_PREFIX):
         raise HTTPException(status_code=401, detail="Missing Authorization header")
 
-    token = auth_header.replace("Bearer ", "")
+    token = auth_header[len(BEARER_PREFIX) :]
     static_key = os.environ.get("JEV_MCP_API_KEY")
 
     if static_key and hmac.compare_digest(token.encode(), static_key.encode()):

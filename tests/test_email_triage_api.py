@@ -163,3 +163,43 @@ def test_webhook_rejects_an_oversized_body_before_any_engine_work(monkeypatch):
     )
 
     assert response.status_code == 422
+
+
+def _post_raw(test_client, body: bytes):
+    return test_client.post(
+        "/api/v1/triage/email",
+        content=body,
+        headers={"content-type": "application/json"},
+    )
+
+
+def test_webhook_rejects_a_body_over_the_request_cap_before_auth():
+    from jev_mcp.email_triage import api
+
+    response = _post_raw(client, b"x" * (api.MAX_REQUEST_BYTES + 1))
+
+    assert response.status_code == 413
+
+
+def test_body_limit_also_stops_a_streamed_body_with_no_content_length():
+    from jev_mcp.email_triage.api import BodySizeLimitMiddleware, app
+
+    limited = TestClient(BodySizeLimitMiddleware(app, max_bytes=50))
+
+    def chunks():
+        for _ in range(10):
+            yield b"y" * 20
+
+    response = limited.post(
+        "/api/v1/triage/email",
+        content=chunks(),
+        headers={"content-type": "application/json"},
+    )
+
+    assert response.status_code == 413
+
+
+def test_a_body_under_the_cap_still_reaches_auth():
+    response = client.post("/api/v1/triage/email", json={"context_id": "c"})
+
+    assert response.status_code == 401

@@ -122,11 +122,12 @@ The high and medium findings landed in #19 (`c40a822`, `409cbd9`). These are wha
 
 ### Security lows
 
-- [ ] `email_triage/auth.py`: `auth_header.replace("Bearer ", "")` replaces the prefix anywhere in the header; slice after the `startswith` check.
-- [ ] `email_triage/auth.py`: the HS256 shared secret has no minimum length; require at least 32 bytes.
-- [ ] `read-file` has no size cap (`tools/files.py`).
-- [ ] `tools/training.py`: the generated run script is `chmod 0o755`; `0o700` is enough.
-- [ ] Webhook: no request-size cap (FastAPI reads the whole body before the field caps apply) and no rate limiting. `serve-webhook` binds localhost, so rate limiting can wait unless it is exposed.
+- [x] `email_triage/auth.py`: `auth_header.replace("Bearer ", "")` replaced the prefix anywhere in the header. *(fixed: sliced after the `startswith` check)*
+- [x] `email_triage/auth.py`: the HS256 shared secret had no minimum length. *(fixed: under 32 bytes is rejected and logged; BREAKING for a deployed shorter secret)*
+- [x] `read-file` had no size cap. *(fixed: reads at most 1,048,576 characters, then returns `ERROR`; the file is never fully loaded)*
+- [x] `tools/training.py`: the generated run script was `chmod 0o755`. *(fixed: `0o600`; it is launched as `bash <path>`)*
+- [x] Webhook: no request-size cap. *(fixed: `BodySizeLimitMiddleware` answers `413` past 8 MiB, declared or streamed)*
+- [ ] Webhook: no rate limiting. `serve-webhook` binds localhost, so this can wait unless it is exposed.
 - [ ] `lora_training.py` fetches the llama.cpp converter from a GitHub archive by commit SHA with no hash check. GitHub does not promise byte-stable archives, so a pinned hash would be brittle; candidate to accept as a known risk.
 
 ### Correctness and quality
