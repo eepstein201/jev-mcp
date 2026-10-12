@@ -29,7 +29,8 @@ Copy `.env.example` to `.env` if you need non-default ports or batch size.
 | `make format-check` | `ruff format --check src tests` in `.venv` (the CI formatting gate) |
 | `make lint` | `mypy src/jev_mcp/` in `.venv` |
 | `make test` | `pytest --cov=src --cov-report=term-missing --cov-fail-under=85 tests/` in `.venv` |
-| `make check` | `format-check`, then `lint`, then `test`: the same three gates CI runs, in CI order |
+| `make audit` | `scripts/pip_audit.sh`: pip-audit on the installed environment; advisories listed in `.pip-audit-ignore` are accepted, any other fails (needs network) |
+| `make check` | `format-check`, then `lint`, then `test`, then `audit`: the same four gates CI runs, in CI order |
 | `make eval` | `python tests/run_evals.py`: warm-up + timed benchmark of both engines on `tests/golden_dataset.json` (daemons must be running) |
 | `make train` | Prints a pointer; training runs through the `train` MCP tool |
 <!-- /AUTO-GENERATED -->
@@ -66,10 +67,12 @@ CI enforces only the 85% overall threshold; the 95% per-file rule is a local gat
 2. `ruff format --check src tests`
 3. `mypy src/jev_mcp/`
 4. `pytest --cov=src --cov-report=term --cov-fail-under=85 tests/`
+5. `./scripts/pip_audit.sh`
 
 ## PR checklist
 
-- [ ] `make check` passes locally (formatting, mypy and the test gate)
+- [ ] `make check` passes locally (formatting, mypy, the test gate and the dependency audit)
+- [ ] A new `# type: ignore` is needed only where mypy reports an error on that line (unused ones now fail `make lint`)
 - [ ] Per-file coverage ≥95% for every file you touched
 - [ ] No `print()` in server code; no secrets committed
 - [ ] Docs updated if a tool signature, env var, or command changed (README, `.env.example`, `docs/CODEMAPS/`)

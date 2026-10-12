@@ -206,7 +206,7 @@ def jev_evaluate_batch(
                             key=key,
                             options=fq.get("options", []),
                         )
-                    )  # type: ignore
+                    )
                 elif fq["type"] == "score":
                     fixed_qs.append(
                         ScoreQuestion(
@@ -214,7 +214,7 @@ def jev_evaluate_batch(
                             key=key,
                             labels=fq.get("labels", []),
                         )
-                    )  # type: ignore
+                    )
                 else:
                     raise ValueError(
                         f"Autofixer returned an unknown question type: {fq['type']!r}"

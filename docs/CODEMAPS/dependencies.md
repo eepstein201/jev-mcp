@@ -4,7 +4,7 @@
 ## Python (pyproject.toml, py>=3.12)
 mcp[cli]>=2.2,<3 · pydantic>=2 · fastapi>=0.143 · scikit-learn · tree-sitter(+python/js/ts)
 browser-harness · h2 · google-api-python-client · google-auth-oauthlib · pyjwt[crypto] · uvicorn · python-dotenv
-extras: engines = mlx==0.32.2 · mlx-lm==0.31.3 · kev (git, pinned to a commit, needs py>=3.12) | dev = ruff==0.17.0 · mypy · pytest · pytest-cov
+extras: engines = mlx==0.32.2 · mlx-lm==0.31.3 · kev (git, pinned to a commit, needs py>=3.12) | dev = ruff==0.17.0 · mypy==2.4.0 · pytest==9.1.1 · pytest-cov==7.1.0 · pip-audit==2.10.1 (all pinned; `[tool.mypy] warn_unused_ignores`)
 pyproject.toml is the only dependency list (no requirements.txt); CI and the manager install `-e ".[dev,engines]"` / `-e ".[engines]"`
 
 ## Runtime engines (not imports)
@@ -19,7 +19,7 @@ JEV_MCP_JWKS_URL JEV_MCP_JWT_SECRET JEV_MCP_JWT_AUDIENCE JEV_MCP_JWT_ISSUER (web
 JEV_MCP_API_KEY (webhook bearer token; the generated Apps Script holds JEV_MCP_WEBHOOK_URL as a constant and reads the key from a Script Property of the same name, never from source)
 
 ## Build / CI
-make install|update|start|hybrid|stop|clean|test|lint|format|format-check|check|eval|train · ci.yml (macos-latest, py3.12, checkout with submodules): ruff format --check src tests + mypy src/jev_mcp/ + pytest --cov-fail-under=85
+make install|update|start|hybrid|stop|clean|test|lint|format|format-check|audit|check|eval|train · ci.yml (macos-latest, py3.12, checkout with submodules): ruff format --check src tests + mypy src/jev_mcp/ + pytest --cov-fail-under=85 + scripts/pip_audit.sh (accepted advisories: .pip-audit-ignore)
 Commit gate: AGENTS.md (95% per file, 85% overall)
 
 ## External integrations

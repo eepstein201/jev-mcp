@@ -36,10 +36,15 @@ engines = [
 ]
 dev = [
     "ruff==0.17.0",
-    "mypy",
-    "pytest",
-    "pytest-cov",
+    "mypy==2.4.0",
+    "pytest==9.1.1",
+    "pytest-cov==7.1.0",
+    "pip-audit==2.10.1",
 ]
+
+[tool.mypy]
+# A `# type: ignore` that no longer suppresses anything hides the next real error on its line.
+warn_unused_ignores = true
 
 [tool.hatch.metadata]
 # `kev` is installed from its git repository.
