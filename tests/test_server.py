@@ -1049,14 +1049,13 @@ def test_main_setup_gas(monkeypatch):
     monkeypatch.setattr(
         sys,
         "argv",
-        ["jev-mcp", "setup-gas", "--webhook-url", "http://test", "--api-key", "secret"],
+        ["jev-mcp", "setup-gas", "--webhook-url", "http://test"],
     )
 
     called_args = {}
 
-    def mock_setup(webhook_url, api_key):
+    def mock_setup(webhook_url):
         called_args["webhook_url"] = webhook_url
-        called_args["api_key"] = api_key
 
     import jev_mcp.email_triage.gas_setup
 
@@ -1066,8 +1065,21 @@ def test_main_setup_gas(monkeypatch):
 
     main()
 
-    assert called_args["webhook_url"] == "http://test"
-    assert called_args["api_key"] == "secret"
+    assert called_args == {"webhook_url": "http://test"}
+
+
+def test_main_setup_gas_no_longer_takes_an_api_key(monkeypatch):
+    import sys
+    from jev_mcp.server import main
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["jev-mcp", "setup-gas", "--webhook-url", "http://test", "--api-key", "k"],
+    )
+
+    with pytest.raises(SystemExit):
+        main()
 
 
 def test_tool_triage_email_content():
@@ -1095,12 +1107,14 @@ def test_tool_setup_gas_workflow(monkeypatch):
     monkeypatch.setattr(
         jev_mcp.tools.triage,
         "setup_gas_workflow",
-        lambda webhook_url, api_key: "setup done",
+        lambda webhook_url: "setup done",
     )
-    res = jev_mcp.server.tool_setup_gas_workflow("https://hook.example/api", "key")
+    res = jev_mcp.server.tool_setup_gas_workflow("https://hook.example/api")
     import json
 
-    assert json.loads(res) == {"status": "SUCCESS", "url": "setup done"}
+    parsed = json.loads(res)
+    assert parsed["status"] == "SUCCESS"
+    assert parsed["url"] == "setup done"
 
 
 def test_tool_triage_email_content(monkeypatch):

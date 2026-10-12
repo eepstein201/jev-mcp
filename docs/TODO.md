@@ -116,7 +116,7 @@ The high and medium findings landed in #19 (`c40a822`, `409cbd9`). These are wha
 ### Needs a decision
 
 - [ ] **`is_safe_path` is a denylist.** `security.py` blocks known system and credential paths but allows any other path. Moving to an allowlist of roots (cwd, `~/.jev`, the temp dir, plus an env var such as `JEV_ALLOWED_ROOTS`) is breaking: `tests/test_path_security.py` currently requires arbitrary non-system paths to pass. Needs the list of roots.
-- [ ] **Webhook key sits in the Apps Script source.** `examples/gas_triage.js` has `const JEV_MCP_API_KEY = 'TEMPLATE'` and `setup_gas_workflow` writes the real key into the script text. Move it to script properties; the setup flow then has to tell the user to set the property.
+- [x] **Webhook key sat in the Apps Script source.** *(fixed: the template reads it from the Script Property `JEV_MCP_API_KEY`; `setup_gas_workflow` and `jev-mcp setup-gas` no longer take, prompt for or upload the key, and the tool's result carries a `next_step` telling the user to set the property. BREAKING: `api_key` and `--api-key` are gone. Script properties cannot be set through `projects.updateContent`, so setting it is a one-time manual step.)*
 - [ ] **`is_important_score` is computed and never used.** `email_triage/core.py::decide_routing` takes it as a parameter and ignores it. Either let it affect routing or remove the parameter.
 - [ ] **JWKS mode now needs an audience.** A deployed webhook that sets `JEV_MCP_JWKS_URL` without `JEV_MCP_JWT_AUDIENCE` rejects every JWT. Check what is deployed.
 
