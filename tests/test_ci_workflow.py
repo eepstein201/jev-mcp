@@ -79,3 +79,12 @@ def test_dependabot_only_refreshes_the_lockfile_and_leaves_declared_ranges_alone
     uv_update = next(u for u in config["updates"] if u["package-ecosystem"] == "uv")
 
     assert uv_update["versioning-strategy"] == "lockfile-only"
+
+
+def test_dependabot_skips_the_packages_it_cannot_resolve_or_must_not_bump():
+    config = yaml.safe_load((ROOT / ".github" / "dependabot.yml").read_text())
+    uv_update = next(u for u in config["updates"] if u["package-ecosystem"] == "uv")
+
+    ignored = {entry["dependency-name"] for entry in uv_update["ignore"]}
+
+    assert ignored == {"mlx", "mlx-lm", "ruff", "kev", "torch"}
