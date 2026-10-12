@@ -1,4 +1,5 @@
 """The email triage tools as MCP tools: JSON results, nothing on stdout, no prompts."""
+
 import json
 
 import pytest
@@ -22,7 +23,9 @@ def setup_calls(monkeypatch):
 
 
 def test_setup_tool_returns_json_and_keeps_stdout_clean(setup_calls, capsys):
-    res = json.loads(server.tool_setup_gas_workflow("https://hook.example/api", "secret"))
+    res = json.loads(
+        server.tool_setup_gas_workflow("https://hook.example/api", "secret")
+    )
 
     assert res == {"status": "SUCCESS", "url": "https://script.google.com/d/abc/edit"}
     assert capsys.readouterr().out == ""  # stdout is the JSON-RPC stream
@@ -52,7 +55,9 @@ def test_setup_tool_takes_the_api_key_from_the_environment(setup_calls, monkeypa
     assert setup_calls[0]["api_key"] == "env-secret"
 
 
-def test_setup_tool_refuses_to_prompt_when_no_api_key_is_available(setup_calls, monkeypatch):
+def test_setup_tool_refuses_to_prompt_when_no_api_key_is_available(
+    setup_calls, monkeypatch
+):
     monkeypatch.delenv("JEV_MCP_API_KEY", raising=False)
 
     res = json.loads(server.tool_setup_gas_workflow("https://hook.example/api", None))
@@ -68,7 +73,9 @@ def test_setup_tool_reports_a_failure_as_json(monkeypatch):
 
     monkeypatch.setattr(triage, "setup_gas_workflow", failing_setup)
 
-    res = json.loads(server.tool_setup_gas_workflow("https://hook.example/api", "secret"))
+    res = json.loads(
+        server.tool_setup_gas_workflow("https://hook.example/api", "secret")
+    )
 
     assert res == {"status": "ERROR", "message": "Missing OAuth credentials"}
 
@@ -79,7 +86,9 @@ def test_triage_tool_reports_an_unavailable_engine_as_json(monkeypatch):
 
     monkeypatch.setattr(triage, "triage_email_content", down)
 
-    res = json.loads(server.tool_triage_email_content("ctx", "subject", "sender", "body"))
+    res = json.loads(
+        server.tool_triage_email_content("ctx", "subject", "sender", "body")
+    )
 
     assert res["status"] == "ERROR"
     assert "no engine answered" in res["message"]

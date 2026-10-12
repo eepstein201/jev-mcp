@@ -46,7 +46,9 @@ _RUN_CONVERTER = (
 
 def llama_cpp_src() -> Path:
     """Directory holding llama.cpp's converter at the commit of the installed build."""
-    return Path(os.path.expanduser(os.getenv("JEV_LLAMA_CPP_SRC", "") or DEFAULT_LLAMA_CPP_SRC))
+    return Path(
+        os.path.expanduser(os.getenv("JEV_LLAMA_CPP_SRC", "") or DEFAULT_LLAMA_CPP_SRC)
+    )
 
 
 def converter_problem() -> Optional[str]:
@@ -59,16 +61,20 @@ def converter_problem() -> Optional[str]:
             "from the matching llama.cpp commit into that directory, or set JEV_LLAMA_CPP_SRC. "
             "See the README, 'Train LoRA'."
         )
-    missing = [name for name in CONVERTER_MODULES if importlib.util.find_spec(name) is None]
+    missing = [
+        name for name in CONVERTER_MODULES if importlib.util.find_spec(name) is None
+    ]
     if missing:
-        return f"The converter needs {', '.join(missing)}. Run: pip install -e \".[engines]\""
+        return f'The converter needs {", ".join(missing)}. Run: pip install -e ".[engines]"'
     return None
 
 
 def installed_llama_commit() -> Optional[str]:
     """Commit the installed llama-server was built from, or None when it cannot be read."""
     try:
-        out = subprocess.run(["llama-server", "--version"], capture_output=True, text=True, timeout=15)
+        out = subprocess.run(
+            ["llama-server", "--version"], capture_output=True, text=True, timeout=15
+        )
     except (OSError, subprocess.SubprocessError) as e:
         logger.warning(f"Could not run llama-server --version: {e}")
         return None
@@ -89,7 +95,9 @@ def fetch_converter(commit: str, dest: Path) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=".llama.cpp-src-", dir=dest.parent))
     try:
-        with urllib.request.urlopen(ARCHIVE_URL.format(commit=commit), timeout=DOWNLOAD_TIMEOUT_SECONDS) as response:
+        with urllib.request.urlopen(
+            ARCHIVE_URL.format(commit=commit), timeout=DOWNLOAD_TIMEOUT_SECONDS
+        ) as response:
             with tarfile.open(fileobj=response, mode="r|gz") as archive:
                 for member in archive:
                     # Paths look like "llama.cpp-<sha>/conversion/qwen.py"; keep only the converter's parts.
@@ -99,7 +107,9 @@ def fetch_converter(commit: str, dest: Path) -> None:
                     member.name = "/".join(parts)
                     archive.extract(member, staging, filter="data")
         if not (staging / CONVERTER_SCRIPT).is_file():
-            raise ValueError(f"{CONVERTER_SCRIPT} is not in the llama.cpp archive for {commit}")
+            raise ValueError(
+                f"{CONVERTER_SCRIPT} is not in the llama.cpp archive for {commit}"
+            )
         (staging / COMMIT_MARKER).write_text(commit + "\n")
         if dest.exists():
             shutil.rmtree(dest)
@@ -121,12 +131,16 @@ def ensure_converter() -> Optional[str]:
     has_converter = (src / CONVERTER_SCRIPT).is_file()
     if commit and (not has_converter or converter_commit() != commit):
         try:
-            logger.info(f"Fetching the llama.cpp converter for commit {commit} into {src}")
+            logger.info(
+                f"Fetching the llama.cpp converter for commit {commit} into {src}"
+            )
             fetch_converter(commit, src)
         except Exception as e:
             if not has_converter:
                 return f"Could not download the llama.cpp converter for commit {commit}: {e}"
-            logger.warning(f"Could not update the converter to llama.cpp {commit} ({e}); using the one in {src}")
+            logger.warning(
+                f"Could not update the converter to llama.cpp {commit} ({e}); using the one in {src}"
+            )
     return converter_problem()
 
 
@@ -171,7 +185,12 @@ def build_fuse_script(
     ]
 
     if not target_gguf_path:
-        steps.append("echo " + q(f"Fused model saved to {out_path}. No target_gguf_path given, so nothing was replaced."))
+        steps.append(
+            "echo "
+            + q(
+                f"Fused model saved to {out_path}. No target_gguf_path given, so nothing was replaced."
+            )
+        )
         return "\n".join(steps) + "\n"
 
     backup = f"{target_gguf_path}.bak"
@@ -189,7 +208,9 @@ def build_fuse_script(
             "echo " + q(f"Replaced the model and restarted {label}."),
         ]
     else:
-        steps.append('echo "Replaced the model. No launchd agent serves it, so nothing was restarted."')
+        steps.append(
+            'echo "Replaced the model. No launchd agent serves it, so nothing was restarted."'
+        )
     return "\n".join(steps) + "\n"
 
 
@@ -202,7 +223,9 @@ def restart_agent(label: str) -> Optional[str]:
         timeout=60,
     )
     if result.returncode != 0:
-        return str(result.stderr).strip() or f"launchctl exited with {result.returncode}"
+        return (
+            str(result.stderr).strip() or f"launchctl exited with {result.returncode}"
+        )
     return None
 
 
@@ -211,7 +234,10 @@ def restore_model(target_gguf_path: str) -> dict[str, Any]:
     target = os.path.expanduser(target_gguf_path)
     backup = f"{target}.bak"
     if not os.path.isfile(backup):
-        return {"status": "ERROR", "message": f"No backup to restore: {backup} does not exist."}
+        return {
+            "status": "ERROR",
+            "message": f"No backup to restore: {backup} does not exist.",
+        }
 
     os.replace(backup, target)
     label = find_launchd_label(target)

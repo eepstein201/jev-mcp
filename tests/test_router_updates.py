@@ -21,7 +21,12 @@ CATALOG = {
     ]
 }
 
-STALE = {"b1": "claude-3-5-haiku", "b2": "claude-sonnet-5", "b3": "claude-opus-5-5", "b4": "my-local-llama"}
+STALE = {
+    "b1": "claude-3-5-haiku",
+    "b2": "claude-sonnet-5",
+    "b3": "claude-opus-5-5",
+    "b4": "my-local-llama",
+}
 
 
 @pytest.fixture
@@ -35,7 +40,9 @@ def fresh_notice_state(monkeypatch):
 
 
 def _write_config(**extra):
-    router_config.save_router_config({"buckets": dict(STALE), "rules": [{"condition": "c", "target": "b3"}], **extra})
+    router_config.save_router_config(
+        {"buckets": dict(STALE), "rules": [{"condition": "c", "target": "b3"}], **extra}
+    )
 
 
 def _read_config():
@@ -53,7 +60,9 @@ def test_a_new_install_gets_current_models_even_with_no_catalog():
     assert not any("claude-3" in model for model in buckets.values())
 
 
-def test_a_new_install_takes_its_buckets_from_the_catalog_when_one_is_cached(cached_catalog):
+def test_a_new_install_takes_its_buckets_from_the_catalog_when_one_is_cached(
+    cached_catalog,
+):
     assert router_config.load_router_config()["buckets"] == {
         "b1": "claude-haiku-5-5",
         "b2": "claude-sonnet-5-5",
@@ -65,18 +74,35 @@ def test_a_new_install_takes_its_buckets_from_the_catalog_when_one_is_cached(cac
 # --- applying updates to a config ---
 
 
-def test_pending_updates_cover_only_buckets_with_a_newer_model_in_their_family(cached_catalog):
+def test_pending_updates_cover_only_buckets_with_a_newer_model_in_their_family(
+    cached_catalog,
+):
     updates = router_config.pending_model_updates({"buckets": dict(STALE)})
 
-    assert {bucket: u["newer"] for bucket, u in updates.items()} == {"b1": "claude-haiku-5-5", "b2": "claude-sonnet-5-5"}
+    assert {bucket: u["newer"] for bucket, u in updates.items()} == {
+        "b1": "claude-haiku-5-5",
+        "b2": "claude-sonnet-5-5",
+    }
 
 
-def test_applying_updates_returns_a_new_config_and_leaves_the_rest_alone(cached_catalog):
-    config = {"buckets": dict(STALE), "rules": [{"condition": "c", "target": "b3"}], "fitted_temperature": 1.4}
+def test_applying_updates_returns_a_new_config_and_leaves_the_rest_alone(
+    cached_catalog,
+):
+    config = {
+        "buckets": dict(STALE),
+        "rules": [{"condition": "c", "target": "b3"}],
+        "fitted_temperature": 1.4,
+    }
 
-    updated = router_config.apply_model_updates(config, router_config.pending_model_updates(config))
+    updated = router_config.apply_model_updates(
+        config, router_config.pending_model_updates(config)
+    )
 
-    assert updated["buckets"] == {**STALE, "b1": "claude-haiku-5-5", "b2": "claude-sonnet-5-5"}
+    assert updated["buckets"] == {
+        **STALE,
+        "b1": "claude-haiku-5-5",
+        "b2": "claude-sonnet-5-5",
+    }
     assert updated["rules"] == config["rules"]
     assert updated["fitted_temperature"] == 1.4
     assert updated["models_updated_at"]
@@ -91,7 +117,9 @@ def test_view_all_lists_newer_models_and_asks_about_automatic_updates(cached_cat
 
     out = json.loads(server.jev_manage_router_config(action="view_all"))
 
-    assert out["buckets"] == STALE  # the user's models are kept until they say otherwise
+    assert (
+        out["buckets"] == STALE
+    )  # the user's models are kept until they say otherwise
     assert out["available_model_updates"]["b1"]["newer"] == "claude-haiku-5-5"
     assert "apply_updates" in out["_model_update_notice"]
     assert "set_auto_update" in out["_model_update_notice"]
@@ -107,7 +135,9 @@ def test_the_automatic_update_question_is_not_repeated_once_answered(cached_cata
 
 
 def test_view_all_is_unchanged_when_every_bucket_is_current(cached_catalog):
-    router_config.save_router_config({"buckets": {"b1": "claude-haiku-5-5"}, "rules": []})
+    router_config.save_router_config(
+        {"buckets": {"b1": "claude-haiku-5-5"}, "rules": []}
+    )
 
     out = json.loads(server.jev_manage_router_config(action="view_all"))
 
@@ -120,8 +150,16 @@ def test_model_router_mentions_newer_models_once_per_session(cached_catalog):
 
     with patch.object(app, "RoutingProvider") as provider_cls:
         provider_cls.return_value.evaluate_batch.return_value = answer
-        first = json.loads(server.jev_determine_best_model(task_description="rename a variable", estimated_tokens=0))
-        second = json.loads(server.jev_determine_best_model(task_description="rename a variable", estimated_tokens=0))
+        first = json.loads(
+            server.jev_determine_best_model(
+                task_description="rename a variable", estimated_tokens=0
+            )
+        )
+        second = json.loads(
+            server.jev_determine_best_model(
+                task_description="rename a variable", estimated_tokens=0
+            )
+        )
 
     assert "claude-sonnet-5-5" in first["_model_update_notice"]
     assert "_model_update_notice" not in second
@@ -137,11 +175,17 @@ def test_apply_updates_moves_buckets_to_the_newer_models(cached_catalog):
 
     assert out["status"] == "UPDATED"
     assert out["updated"] == {"b1": "claude-haiku-5-5", "b2": "claude-sonnet-5-5"}
-    assert _read_config()["buckets"] == {**STALE, "b1": "claude-haiku-5-5", "b2": "claude-sonnet-5-5"}
+    assert _read_config()["buckets"] == {
+        **STALE,
+        "b1": "claude-haiku-5-5",
+        "b2": "claude-sonnet-5-5",
+    }
 
 
 def test_apply_updates_says_so_when_there_is_nothing_to_do(cached_catalog):
-    router_config.save_router_config({"buckets": {"b1": "claude-haiku-5-5"}, "rules": []})
+    router_config.save_router_config(
+        {"buckets": {"b1": "claude-haiku-5-5"}, "rules": []}
+    )
 
     out = json.loads(server.jev_manage_router_config(action="apply_updates"))
 
@@ -151,7 +195,9 @@ def test_apply_updates_says_so_when_there_is_nothing_to_do(cached_catalog):
 def test_turning_automatic_updates_on_saves_the_choice_and_updates_now(cached_catalog):
     _write_config()
 
-    out = json.loads(server.jev_manage_router_config(action="set_auto_update", enabled=True))
+    out = json.loads(
+        server.jev_manage_router_config(action="set_auto_update", enabled=True)
+    )
 
     saved = _read_config()
     assert out["auto_update"] is True
@@ -159,7 +205,9 @@ def test_turning_automatic_updates_on_saves_the_choice_and_updates_now(cached_ca
     assert saved["buckets"]["b1"] == "claude-haiku-5-5"
 
 
-def test_turning_automatic_updates_off_saves_the_choice_and_keeps_the_models(cached_catalog):
+def test_turning_automatic_updates_off_saves_the_choice_and_keeps_the_models(
+    cached_catalog,
+):
     _write_config()
 
     server.jev_manage_router_config(action="set_auto_update", enabled=False)
@@ -184,7 +232,9 @@ def test_set_auto_update_needs_a_yes_or_no():
 def test_startup_sync_updates_buckets_when_the_user_opted_in():
     _write_config(auto_update=True)
 
-    with patch.object(model_catalog, "refresh", side_effect=lambda: model_catalog.save_cache(CATALOG)):
+    with patch.object(
+        model_catalog, "refresh", side_effect=lambda: model_catalog.save_cache(CATALOG)
+    ):
         server._sync_models()
 
     assert _read_config()["buckets"]["b1"] == "claude-haiku-5-5"
@@ -194,14 +244,18 @@ def test_startup_sync_updates_buckets_when_the_user_opted_in():
 def test_startup_sync_never_changes_models_without_consent(extra):
     _write_config(**extra)
 
-    with patch.object(model_catalog, "refresh", side_effect=lambda: model_catalog.save_cache(CATALOG)):
+    with patch.object(
+        model_catalog, "refresh", side_effect=lambda: model_catalog.save_cache(CATALOG)
+    ):
         server._sync_models()
 
     assert _read_config()["buckets"] == STALE
 
 
 def test_startup_sync_does_not_create_a_config_file():
-    with patch.object(model_catalog, "refresh", side_effect=lambda: model_catalog.save_cache(CATALOG)):
+    with patch.object(
+        model_catalog, "refresh", side_effect=lambda: model_catalog.save_cache(CATALOG)
+    ):
         server._sync_models()
 
     assert not os.path.exists(router_config.ROUTER_CONFIG_PATH)
@@ -235,7 +289,10 @@ def test_model_sync_can_be_switched_off(monkeypatch):
 def test_main_starts_the_model_sync_before_serving(monkeypatch):
     monkeypatch.setattr("sys.argv", ["jev-mcp"])
 
-    with patch.object(server, "start_model_sync") as sync, patch.object(server.mcp, "run", MagicMock()):
+    with (
+        patch.object(server, "start_model_sync") as sync,
+        patch.object(server.mcp, "run", MagicMock()),
+    ):
         server.main()
 
     sync.assert_called_once()

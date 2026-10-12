@@ -6,6 +6,7 @@ from elsewhere would build a second `mcp` instance. Everything the tool
 families need at call time lives here instead, and they reference it as
 `app.X` so tests can patch `jev_mcp.app.X`.
 """
+
 import os
 
 try:
@@ -24,7 +25,12 @@ from typing import Any, Callable, Dict, List, Optional
 
 from mcp.server.mcpserver import MCPServer
 from jev_mcp import model_catalog, router_config
-from jev_mcp.router_config import apply_model_updates, load_router_config, pending_model_updates, save_router_config
+from jev_mcp.router_config import (
+    apply_model_updates,
+    load_router_config,
+    pending_model_updates,
+    save_router_config,
+)
 from jev_mcp.provider import post_json
 from jev_mcp.linter import DecisionPreflightLinter
 from jev_mcp.routing_provider import RoutingProvider
@@ -40,8 +46,10 @@ logging.basicConfig(
 
 logger = logging.getLogger("jev-mcp")
 
+
 def json_errors(tool: Callable[..., str]) -> Callable[..., str]:
     """Make a tool answer `{"status": "ERROR", ...}` instead of raising across the MCP boundary."""
+
     @functools.wraps(tool)
     def wrapper(*args: Any, **kwargs: Any) -> str:
         try:
@@ -49,6 +57,7 @@ def json_errors(tool: Callable[..., str]) -> Callable[..., str]:
         except Exception as e:
             logger.error(f"{tool.__name__} failed: {e}")
             return json.dumps({"status": "ERROR", "message": str(e)})
+
     return wrapper
 
 
@@ -81,13 +90,15 @@ def _clean_json(text: str) -> str:
 
     return text.strip()
 
+
 def _safe_truncate(content: str, max_length: int = 24000) -> tuple[str, bool]:
     """Truncates content safely to prevent MCP Client JSON-breakage."""
     if len(content) <= max_length:
         return content, False
 
     truncated_msg = f"\n\n... [TRUNCATED: Content exceeded {max_length} characters. Please refine your search or read specific files for more detail.] ..."
-    return content[:max_length - len(truncated_msg)] + truncated_msg, True
+    return content[: max_length - len(truncated_msg)] + truncated_msg, True
+
 
 def _chat_completion(
     user: str,
@@ -121,12 +132,16 @@ def _chat_completion(
     port = os.getenv(port_env, default_port)
     if not port.isdigit():
         raise ValueError(f"Invalid {port_env} value: {port!r} (expected a port number)")
-    res = post_json(f"http://127.0.0.1:{port}/v1/chat/completions", payload, timeout=timeout)
+    res = post_json(
+        f"http://127.0.0.1:{port}/v1/chat/completions", payload, timeout=timeout
+    )
     return res["choices"][0]["message"]["content"]
+
 
 def _chat_completion_json(**kwargs: Any) -> Any:
     """_chat_completion + fence stripping + JSON parsing."""
     return json.loads(_clean_json(_chat_completion(**kwargs)))
+
 
 # Initialize MCP and Provider
 from jev_mcp.client_defaults import SeedingMiddleware  # noqa: E402 - after logging setup
@@ -140,6 +155,7 @@ linter = DecisionPreflightLinter()
 
 # Platt scaling is cross-validated when every class has at least this many rows.
 PLATT_CV_FOLDS = 5
+
 
 def call_fast_autofixer(state, questions, errors):
     """Hits the persistent local llama-server to fix prompts in <300ms using Constrained Decoding."""
@@ -169,17 +185,23 @@ def call_fast_autofixer(state, questions, errors):
     )
     return data.get("fixed_questions", [])
 
+
 _has_notified_temp = False
 _has_notified_models = False
 
 SKIP_MODEL_SYNC_ENV = "JEV_SKIP_MODEL_SYNC"
 
 
-def model_update_notice(config: Dict[str, Any], updates: Dict[str, Dict[str, str]]) -> str | None:
+def model_update_notice(
+    config: Dict[str, Any], updates: Dict[str, Dict[str, str]]
+) -> str | None:
     """What to tell the user about newer models, and the questions to put to them."""
     if not updates:
         return None
-    listed = "; ".join(f"{bucket}: {u['current']} -> {u['newer']} (released {u['released']})" for bucket, u in sorted(updates.items()))
+    listed = "; ".join(
+        f"{bucket}: {u['current']} -> {u['newer']} (released {u['released']})"
+        for bucket, u in sorted(updates.items())
+    )
     notice = (
         f"NOTICE: Newer models are available for these router buckets: {listed}. "
         "The current models are kept until the user decides. Ask the user whether to switch; "
@@ -231,6 +253,7 @@ def start_model_sync() -> None:
     if os.getenv(SKIP_MODEL_SYNC_ENV, ""):
         return
     import threading
+
     threading.Thread(target=_sync_models, name="jev-model-sync", daemon=True).start()
 
 

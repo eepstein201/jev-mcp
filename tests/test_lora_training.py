@@ -35,7 +35,9 @@ def converter(home, monkeypatch):
 def _agent(home, label, model_path):
     agents = home / "Library" / "LaunchAgents"
     agents.mkdir(parents=True, exist_ok=True)
-    (agents / f"{label}.plist").write_text(f"<plist><string>-m</string><string>{model_path}</string></plist>")
+    (agents / f"{label}.plist").write_text(
+        f"<plist><string>-m</string><string>{model_path}</string></plist>"
+    )
 
 
 def _dataset(home):
@@ -86,7 +88,10 @@ def test_no_problem_when_the_converter_and_its_modules_are_present(converter):
 
 
 def test_missing_converter_dependency_is_named(converter):
-    with patch("importlib.util.find_spec", side_effect=lambda name: None if name == "torch" else object()):
+    with patch(
+        "importlib.util.find_spec",
+        side_effect=lambda name: None if name == "torch" else object(),
+    ):
         problem = lora_training.converter_problem()
 
     assert problem is not None and "torch" in problem
@@ -121,7 +126,11 @@ def test_fuse_script_converts_with_the_local_converter_then_quantizes():
     assert "/src/llama.cpp" in script
     assert "convert_hf_to_gguf.py" in script
     assert "llama-quantize --allow-requantize" in script
-    assert script.index("--dequantize") < script.index("convert_hf_to_gguf.py") < script.index("llama-quantize")
+    assert (
+        script.index("--dequantize")
+        < script.index("convert_hf_to_gguf.py")
+        < script.index("llama-quantize")
+    )
     assert "curl" not in script
 
 
@@ -184,7 +193,12 @@ def test_restore_puts_the_backup_back_and_restarts_its_agent(home):
     assert target.read_text() == "original"
     assert not (home / "qwen.gguf.bak").exists()
     assert result["restarted_agent"] == SMART_LABEL
-    assert run.call_args[0][0] == ["launchctl", "kickstart", "-k", f"gui/{os.getuid()}/{SMART_LABEL}"]
+    assert run.call_args[0][0] == [
+        "launchctl",
+        "kickstart",
+        "-k",
+        f"gui/{os.getuid()}/{SMART_LABEL}",
+    ]
 
 
 def test_restore_without_a_backup_changes_nothing(home):
@@ -217,7 +231,10 @@ def test_restore_reports_a_failed_restart(home):
     (home / "qwen.gguf.bak").write_text("original")
     _agent(home, SMART_LABEL, str(target))
 
-    with patch("subprocess.run", return_value=MagicMock(returncode=3, stderr="Could not find service")):
+    with patch(
+        "subprocess.run",
+        return_value=MagicMock(returncode=3, stderr="Could not find service"),
+    ):
         result = lora_training.restore_model(str(target))
 
     assert result["status"] == "RESTORED"
@@ -239,13 +256,17 @@ def test_train_with_fuse_refuses_to_start_without_the_converter(mock_popen, home
 
 
 @patch("subprocess.Popen")
-def test_train_with_fuse_writes_the_dequantize_convert_quantize_script(mock_popen, home, converter):
+def test_train_with_fuse_writes_the_dequantize_convert_quantize_script(
+    mock_popen, home, converter
+):
     mock_popen.return_value = MagicMock(pid=7)
     target = home / "qwen.gguf"
     target.write_text("original")
     _agent(home, SMART_LABEL, str(target))
 
-    res = json.loads(server.jev_train_lora(_dataset(home), target_gguf_path=str(target), iters=50))
+    res = json.loads(
+        server.jev_train_lora(_dataset(home), target_gguf_path=str(target), iters=50)
+    )
 
     script = _started_script(mock_popen)
     assert res["status"] == "TRAINING_STARTED", res.get("message")
@@ -257,7 +278,9 @@ def test_train_with_fuse_writes_the_dequantize_convert_quantize_script(mock_pope
 
 @patch("subprocess.Popen")
 def test_train_rejects_a_target_that_is_not_a_gguf_file(mock_popen, home, converter):
-    res = json.loads(server.jev_train_lora(_dataset(home), target_gguf_path=str(home / "notes.txt")))
+    res = json.loads(
+        server.jev_train_lora(_dataset(home), target_gguf_path=str(home / "notes.txt"))
+    )
 
     assert res["status"] == "ERROR"
     assert ".gguf" in res["message"]
@@ -266,7 +289,9 @@ def test_train_rejects_a_target_that_is_not_a_gguf_file(mock_popen, home, conver
 
 @patch("subprocess.Popen")
 def test_train_rejects_a_target_in_a_sensitive_location(mock_popen, home, converter):
-    res = json.loads(server.jev_train_lora(_dataset(home), target_gguf_path="~/.ssh/model.gguf"))
+    res = json.loads(
+        server.jev_train_lora(_dataset(home), target_gguf_path="~/.ssh/model.gguf")
+    )
 
     assert res["status"] == "BLOCKED"
     mock_popen.assert_not_called()
@@ -277,7 +302,9 @@ def test_restore_action_restores_the_backup_through_the_tool(home):
     target.write_text("fine-tuned")
     (home / "qwen.gguf.bak").write_text("original")
 
-    res = json.loads(server.jev_train_lora(action="restore", target_gguf_path=str(target)))
+    res = json.loads(
+        server.jev_train_lora(action="restore", target_gguf_path=str(target))
+    )
 
     assert res["status"] == "RESTORED"
     assert target.read_text() == "original"
@@ -307,13 +334,15 @@ def _archive(files):
 
 
 def _good_archive(marker_text="# converter"):
-    return _archive({
-        "convert_hf_to_gguf.py": marker_text,
-        "conversion/__init__.py": "",
-        "gguf-py/gguf/__init__.py": "",
-        "README.md": "not needed",
-        "tools/server/server.cpp": "not needed",
-    })
+    return _archive(
+        {
+            "convert_hf_to_gguf.py": marker_text,
+            "conversion/__init__.py": "",
+            "gguf-py/gguf/__init__.py": "",
+            "README.md": "not needed",
+            "tools/server/server.cpp": "not needed",
+        }
+    )
 
 
 @pytest.fixture
@@ -361,7 +390,9 @@ def test_converter_is_replaced_after_llama_cpp_is_upgraded(llama, monkeypatch):
     (llama / "conversion" / "removed_upstream.py").write_text("stale")
     monkeypatch.setattr(lora_training, "installed_llama_commit", lambda: "fff9999aa")
 
-    with patch("urllib.request.urlopen", return_value=_good_archive("# new converter")) as urlopen:
+    with patch(
+        "urllib.request.urlopen", return_value=_good_archive("# new converter")
+    ) as urlopen:
         problem = lora_training.ensure_converter()
 
     assert problem is None
@@ -406,7 +437,9 @@ def test_a_failed_download_keeps_the_converter_already_installed(llama, monkeypa
 
 
 def test_an_archive_without_the_converter_is_rejected_and_nothing_is_installed(llama):
-    with patch("urllib.request.urlopen", return_value=_archive({"README.md": "nothing useful"})):
+    with patch(
+        "urllib.request.urlopen", return_value=_archive({"README.md": "nothing useful"})
+    ):
         problem = lora_training.ensure_converter()
 
     assert problem is not None
@@ -414,10 +447,12 @@ def test_an_archive_without_the_converter_is_rejected_and_nothing_is_installed(l
 
 
 def test_archive_entries_cannot_be_written_outside_the_converter_directory(llama, home):
-    archive = _archive({
-        "convert_hf_to_gguf.py": "# converter",
-        "conversion/../../escaped.py": "bad",
-    })
+    archive = _archive(
+        {
+            "convert_hf_to_gguf.py": "# converter",
+            "conversion/../../escaped.py": "bad",
+        }
+    )
 
     with patch("urllib.request.urlopen", return_value=archive):
         lora_training.ensure_converter()
@@ -435,7 +470,10 @@ def test_without_llama_server_the_existing_converter_is_used_as_is(home):
 
 
 def test_installed_commit_is_read_from_llama_server_version():
-    out = MagicMock(stdout="", stderr="version: 0.6.0 (build 11429, commit d81235049)\nbuilt with AppleClang")
+    out = MagicMock(
+        stdout="",
+        stderr="version: 0.6.0 (build 11429, commit d81235049)\nbuilt with AppleClang",
+    )
 
     with patch("subprocess.run", return_value=out) as run:
         commit = _real_installed_llama_commit()
@@ -447,12 +485,16 @@ def test_installed_commit_is_read_from_llama_server_version():
 def test_installed_commit_is_unknown_when_llama_server_is_missing_or_unparseable():
     with patch("subprocess.run", side_effect=FileNotFoundError("llama-server")):
         assert _real_installed_llama_commit() is None
-    with patch("subprocess.run", return_value=MagicMock(stdout="version: unknown", stderr="")):
+    with patch(
+        "subprocess.run", return_value=MagicMock(stdout="version: unknown", stderr="")
+    ):
         assert _real_installed_llama_commit() is None
 
 
 @patch("subprocess.Popen")
-def test_train_fetches_the_converter_itself_and_reports_its_commit(mock_popen, llama, home):
+def test_train_fetches_the_converter_itself_and_reports_its_commit(
+    mock_popen, llama, home
+):
     mock_popen.return_value = MagicMock(pid=7)
 
     with patch("urllib.request.urlopen", return_value=_good_archive()):
@@ -469,7 +511,9 @@ def test_fuse_script_does_not_let_the_shell_expand_a_target_path():
     target = "/models/$(touch pwned).gguf"
     script = _fuse_script(target=target, label=SMART_LABEL)
 
-    assert "echo " + shlex.quote(f"Backed up the original model to {target}.bak") in script
+    assert (
+        "echo " + shlex.quote(f"Backed up the original model to {target}.bak") in script
+    )
     for line in script.splitlines():
         if "touch pwned" in line:
             assert '"' not in line, line

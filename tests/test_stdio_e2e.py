@@ -5,6 +5,7 @@ real transport in a fresh interpreter: the initialize handshake, the
 tools/list registry, and prompts/list. The subprocess is unaffected by the
 parent process's conftest stubs.
 """
+
 import json
 import os
 import queue
@@ -17,11 +18,23 @@ import time
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 EXPECTED_TOOLS = {
-    "evaluate", "optimize-prompt", "calibrate", "explain-decision",
-    "generate-data", "manage-router", "model-router", "handoff", "train",
-    "temperature", "read-file", "compact", "scan-repo",
+    "evaluate",
+    "optimize-prompt",
+    "calibrate",
+    "explain-decision",
+    "generate-data",
+    "manage-router",
+    "model-router",
+    "handoff",
+    "train",
+    "temperature",
+    "read-file",
+    "compact",
+    "scan-repo",
     # Registered since the tool modules moved ahead of the __main__ guard.
-    "run-browser-agent", "triage_email_content", "configure_triage_labels",
+    "run-browser-agent",
+    "triage_email_content",
+    "configure_triage_labels",
     "setup_gas_workflow",
 }
 
@@ -89,16 +102,18 @@ def test_stdio_handshake_and_tool_registry():
         raise AssertionError("timed out waiting for a JSON-RPC response")
 
     try:
-        send({
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "initialize",
-            "params": {
-                "protocolVersion": "2025-06-18",
-                "capabilities": {},
-                "clientInfo": {"name": "stdio-e2e", "version": "0.0.1"},
-            },
-        })
+        send(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-06-18",
+                    "capabilities": {},
+                    "clientInfo": {"name": "stdio-e2e", "version": "0.0.1"},
+                },
+            }
+        )
         init = read_rpc(timeout=30)
         assert init.get("id") == 1, init
         result = init.get("result") or {}
@@ -143,10 +158,14 @@ def test_stdio_handshake_seeds_anthropic_defaults_for_claude_client(tmp_path):
                 line = q.get(timeout=1.0)
             except queue.Empty:
                 if proc.poll() is not None:
-                    raise AssertionError(f"server exited early (rc={proc.returncode}):\n{proc.stderr.read().decode(errors='replace')}")
+                    raise AssertionError(
+                        f"server exited early (rc={proc.returncode}):\n{proc.stderr.read().decode(errors='replace')}"
+                    )
                 continue
             if line is None:
-                raise AssertionError(f"server stdout closed:\n{proc.stderr.read().decode(errors='replace')}")
+                raise AssertionError(
+                    f"server stdout closed:\n{proc.stderr.read().decode(errors='replace')}"
+                )
             try:
                 msg = json.loads(line)
             except json.JSONDecodeError:
@@ -157,12 +176,18 @@ def test_stdio_handshake_seeds_anthropic_defaults_for_claude_client(tmp_path):
 
     config_path = tmp_path / ".jev" / "router_config.json"
     try:
-        send({
-            "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
-                "protocolVersion": "2025-06-18", "capabilities": {},
-                "clientInfo": {"name": "claude-code-e2e", "version": "0.0.1"},
-            },
-        })
+        send(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-06-18",
+                    "capabilities": {},
+                    "clientInfo": {"name": "claude-code-e2e", "version": "0.0.1"},
+                },
+            }
+        )
         init = read_rpc(timeout=30)
         assert init.get("id") == 1, init
         send({"jsonrpc": "2.0", "method": "notifications/initialized"})
@@ -204,10 +229,14 @@ def test_stdio_handshake_does_not_seed_unknown_client(tmp_path):
                 line = q.get(timeout=1.0)
             except queue.Empty:
                 if proc.poll() is not None:
-                    raise AssertionError(f"server exited early (rc={proc.returncode}):\n{proc.stderr.read().decode(errors='replace')}")
+                    raise AssertionError(
+                        f"server exited early (rc={proc.returncode}):\n{proc.stderr.read().decode(errors='replace')}"
+                    )
                 continue
             if line is None:
-                raise AssertionError(f"server stdout closed:\n{proc.stderr.read().decode(errors='replace')}")
+                raise AssertionError(
+                    f"server stdout closed:\n{proc.stderr.read().decode(errors='replace')}"
+                )
             try:
                 msg = json.loads(line)
             except json.JSONDecodeError:
@@ -217,12 +246,18 @@ def test_stdio_handshake_does_not_seed_unknown_client(tmp_path):
         raise AssertionError("timed out waiting for a JSON-RPC response")
 
     try:
-        send({
-            "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
-                "protocolVersion": "2025-06-18", "capabilities": {},
-                "clientInfo": {"name": "unknown-cli-e2e", "version": "0.0.1"},
-            },
-        })
+        send(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-06-18",
+                    "capabilities": {},
+                    "clientInfo": {"name": "unknown-cli-e2e", "version": "0.0.1"},
+                },
+            }
+        )
         assert read_rpc(timeout=30).get("id") == 1
         send({"jsonrpc": "2.0", "method": "notifications/initialized"})
         send({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})

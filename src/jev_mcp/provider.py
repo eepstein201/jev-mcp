@@ -14,6 +14,7 @@ class EngineUnavailableError(RuntimeError):
 # Polymorphic question definitions (drive MCP JSON-schema generation and
 # provider serialization).
 
+
 class NoulQuestion(BaseModel):
     type: Literal["noul"] = "noul"
     prompt: str
@@ -24,7 +25,11 @@ class NoulQuestion(BaseModel):
         return {"type": "noul", "instructions": self.prompt}
 
     def to_llm_options(self) -> List[Dict[str, str]]:
-        return [{"id": "true", "description": "True"}, {"id": "false", "description": "False"}]
+        return [
+            {"id": "true", "description": "True"},
+            {"id": "false", "description": "False"},
+        ]
+
 
 class ChoiceQuestion(BaseModel):
     type: Literal["choice"] = "choice"
@@ -34,10 +39,18 @@ class ChoiceQuestion(BaseModel):
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize to the SystemOne question payload shape."""
-        return {"type": "choice", "instructions": self.prompt, "criteria": {opt: "" for opt in self.options}}
+        return {
+            "type": "choice",
+            "instructions": self.prompt,
+            "criteria": {opt: "" for opt in self.options},
+        }
 
     def to_llm_options(self) -> List[Dict[str, str]]:
-        return [{"id": str(idx), "description": str(opt)} for idx, opt in enumerate(self.options)]
+        return [
+            {"id": str(idx), "description": str(opt)}
+            for idx, opt in enumerate(self.options)
+        ]
+
 
 class ScoreQuestion(BaseModel):
     type: Literal["score"] = "score"
@@ -50,13 +63,18 @@ class ScoreQuestion(BaseModel):
         return {"type": "score", "instructions": self.prompt, "criteria": self.labels}
 
     def to_llm_options(self) -> List[Dict[str, str]]:
-        return [{"id": str(idx), "description": str(opt)} for idx, opt in enumerate(self.labels)]
+        return [
+            {"id": str(idx), "description": str(opt)}
+            for idx, opt in enumerate(self.labels)
+        ]
+
 
 QuestionType = Union[NoulQuestion, ChoiceQuestion, ScoreQuestion]
 
 # Dependency inversion: every engine backend (Kev SystemOne, MLX logprob
 # daemon, hybrid router) subclasses this contract so the MCP server never
 # depends on a concrete engine.
+
 
 class JevProvider(ABC):
     @abstractmethod
@@ -83,7 +101,9 @@ class JevProvider(ABC):
         return [
             {
                 "expected": row.get("expected"),
-                "probabilities": self.evaluate_batch(row.get("state", {}), [_question_for_row(row, question)])
+                "probabilities": self.evaluate_batch(
+                    row.get("state", {}), [_question_for_row(row, question)]
+                )
                 .get(question.key, {})
                 .get("probabilities", {}),
             }
@@ -96,6 +116,7 @@ def _question_for_row(row: dict, question: Any) -> Any:
     if isinstance(row_prompt, str) and row_prompt:
         return question.model_copy(update={"prompt": row_prompt})
     return question
+
 
 def post_json(url: str, payload: dict, timeout: int = 45) -> Any:
     """POST JSON to a local daemon and return the parsed response.

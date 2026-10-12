@@ -7,6 +7,7 @@ RS256 — so passing here means the IdP integration works, not a simulation of
 it. (This is a verification test for existing behavior; it is expected to
 pass on first run.)
 """
+
 import base64
 import json
 import threading
@@ -21,7 +22,11 @@ from jev_mcp.email_triage.auth import verify_auth_token
 
 
 def _b64url_uint(value: int) -> str:
-    return base64.urlsafe_b64encode(value.to_bytes((value.bit_length() + 7) // 8, "big")).rstrip(b"=").decode()
+    return (
+        base64.urlsafe_b64encode(value.to_bytes((value.bit_length() + 7) // 8, "big"))
+        .rstrip(b"=")
+        .decode()
+    )
 
 
 @pytest.fixture
@@ -30,10 +35,16 @@ def jwks_server():
     private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     pub = private_key.public_key().public_numbers()
     jwks = {
-        "keys": [{
-            "kty": "RSA", "alg": "RS256", "use": "sig", "kid": "test-key-1",
-            "n": _b64url_uint(pub.n), "e": _b64url_uint(pub.e),
-        }]
+        "keys": [
+            {
+                "kty": "RSA",
+                "alg": "RS256",
+                "use": "sig",
+                "kid": "test-key-1",
+                "n": _b64url_uint(pub.n),
+                "e": _b64url_uint(pub.e),
+            }
+        ]
     }
 
     class Handler(BaseHTTPRequestHandler):

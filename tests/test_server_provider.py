@@ -17,7 +17,9 @@ def test_router_token_limit_is_the_most_restrictive_engine_it_can_route_to():
     # Large states are routed to the smart engine, so its limit must gate QFE compression.
     provider = RoutingProvider()
 
-    assert provider.max_tokens == min(provider.fast_provider.max_tokens, provider.smart_provider.max_tokens)
+    assert provider.max_tokens == min(
+        provider.fast_provider.max_tokens, provider.smart_provider.max_tokens
+    )
     assert provider.max_tokens == 8192
 
 
@@ -28,8 +30,12 @@ def test_routing_provider_evaluate_dataset_returns_expected_and_probabilities():
     batch_result = {"k": {"probabilities": {"true": 0.7, "false": 0.3}}}
 
     # Act
-    with patch.object(provider, "evaluate_batch", return_value=batch_result) as mock_batch:
-        results = provider.evaluate_dataset([{"state": "s1", "expected": True}], question)
+    with patch.object(
+        provider, "evaluate_batch", return_value=batch_result
+    ) as mock_batch:
+        results = provider.evaluate_dataset(
+            [{"state": "s1", "expected": True}], question
+        )
 
     # Assert
     assert results == [{"expected": True, "probabilities": {"true": 0.7, "false": 0.3}}]
@@ -38,13 +44,20 @@ def test_routing_provider_evaluate_dataset_returns_expected_and_probabilities():
 
 def test_compact_scores_each_top_level_key_of_a_dict_state_separately():
     # Arrange
-    state = {"training": "Run mlx_lm.lora on the base model.", "kitchen": "Buy oat milk on Friday."}
+    state = {
+        "training": "Run mlx_lm.lora on the base model.",
+        "kitchen": "Buy oat milk on Friday.",
+    }
     scores = [{"chunk_0": {"noul": 0.9}}, {"chunk_1": {"noul": 0.1}}]
 
     # Act
-    with patch.object(server.provider.fast_provider, "evaluate_batch", side_effect=scores):
+    with patch.object(
+        server.provider.fast_provider, "evaluate_batch", side_effect=scores
+    ):
         result = json.loads(
-            server.jev_compact_context(state=state, goal="train a model", confidence_threshold=0.5)
+            server.jev_compact_context(
+                state=state, goal="train a model", confidence_threshold=0.5
+            )
         )
 
     # Assert
@@ -60,7 +73,11 @@ def test_compact_default_threshold_matches_the_fast_engines_measured_score_range
     # irrelevant ones 0.04-0.35; 0.3 kept 12/12 relevant and 1/12 irrelevant, 0.85 kept 1/12 relevant.
     import inspect
 
-    default = inspect.signature(server.jev_compact_context).parameters["confidence_threshold"].default
+    default = (
+        inspect.signature(server.jev_compact_context)
+        .parameters["confidence_threshold"]
+        .default
+    )
 
     assert default.default == 0.3
 
@@ -68,8 +85,16 @@ def test_compact_default_threshold_matches_the_fast_engines_measured_score_range
 def test_compact_asks_whether_a_chunk_is_directly_relevant_to_the_goal():
     # Measured on 24 labelled pairs: "directly relevant" separated relevant from irrelevant
     # chunks cleanly (margin +0.06), while the earlier "strictly relevant" overlapped (-0.03).
-    with patch.object(server.provider.fast_provider, "evaluate_batch", return_value={"chunk_0": {"noul": 0.9}}) as mock_batch:
-        server.jev_compact_context(state={"text": "some context"}, goal="ship the release", confidence_threshold=0.3)
+    with patch.object(
+        server.provider.fast_provider,
+        "evaluate_batch",
+        return_value={"chunk_0": {"noul": 0.9}},
+    ) as mock_batch:
+        server.jev_compact_context(
+            state={"text": "some context"},
+            goal="ship the release",
+            confidence_threshold=0.3,
+        )
 
     prompt = mock_batch.call_args[0][1][0].prompt
     assert "directly relevant" in prompt
@@ -78,9 +103,15 @@ def test_compact_asks_whether_a_chunk_is_directly_relevant_to_the_goal():
 
 def test_compact_keeps_a_chunk_and_records_no_score_when_scoring_fails():
     # Losing context because the engine errored would be worse than keeping it.
-    with patch.object(server.provider.fast_provider, "evaluate_batch", side_effect=RuntimeError("engine down")):
+    with patch.object(
+        server.provider.fast_provider,
+        "evaluate_batch",
+        side_effect=RuntimeError("engine down"),
+    ):
         result = json.loads(
-            server.jev_compact_context(state={"text": "important context"}, goal="g", confidence_threshold=0.5)
+            server.jev_compact_context(
+                state={"text": "important context"}, goal="g", confidence_threshold=0.5
+            )
         )
 
     assert result["kept_chunks"] == 1
@@ -98,7 +129,9 @@ def test_evaluate_dataset_uses_a_rows_own_question_when_it_has_one():
     ]
 
     # Act
-    with patch.object(provider, "evaluate_batch", return_value={"k": {"probabilities": {"true": 1.0}}}) as mock_batch:
+    with patch.object(
+        provider, "evaluate_batch", return_value={"k": {"probabilities": {"true": 1.0}}}
+    ) as mock_batch:
         provider.evaluate_dataset(dataset, question)
 
     # Assert
@@ -114,7 +147,9 @@ def _overconfident_results(n_pos, n_neg):
     sure_false = {"probabilities": {"true": 0.001, "false": 0.999}}
     wrong_true = {"probabilities": {"true": 0.97, "false": 0.03}}
     wrong_false = {"probabilities": {"true": 0.02, "false": 0.98}}
-    dataset = [{"state": "x", "expected": True}] * n_pos + [{"state": "x", "expected": False}] * n_neg
+    dataset = [{"state": "x", "expected": True}] * n_pos + [
+        {"state": "x", "expected": False}
+    ] * n_neg
     results = [dict(sure_true) for _ in range(n_pos - 1)] + [dict(wrong_false)]
     results += [dict(sure_false) for _ in range(n_neg - 1)] + [dict(wrong_true)]
     return dataset, results
@@ -124,7 +159,9 @@ def _calibrate_always(dataset, results):
     question = NoulQuestion(key="k", prompt="p?")
     with patch.object(server.provider, "evaluate_dataset", return_value=results):
         return json.loads(
-            server.jev_calibrate_threshold(dataset=dataset, question=question, apply_platt_scaling="always")
+            server.jev_calibrate_threshold(
+                dataset=dataset, question=question, apply_platt_scaling="always"
+            )
         )["markdown_report"]
 
 
@@ -158,12 +195,16 @@ def _calibrate_json(tmp_path, monkeypatch, existing_config=None, **kwargs):
     kwargs.setdefault("apply_platt_scaling", "always")
     with patch.object(server.provider, "evaluate_dataset", return_value=results):
         out = json.loads(
-            server.jev_calibrate_threshold(dataset=dataset, question=NoulQuestion(key="k", prompt="p?"), **kwargs)
+            server.jev_calibrate_threshold(
+                dataset=dataset, question=NoulQuestion(key="k", prompt="p?"), **kwargs
+            )
         )
     return out, config_path
 
 
-def test_calibrate_returns_a_fitted_temperature_above_one_for_overconfident_scores(tmp_path, monkeypatch):
+def test_calibrate_returns_a_fitted_temperature_above_one_for_overconfident_scores(
+    tmp_path, monkeypatch
+):
     out, _ = _calibrate_json(tmp_path, monkeypatch)
 
     assert out["fitted_temperature"] > 1.0
@@ -177,10 +218,17 @@ def test_calibrate_does_not_write_the_router_config_unless_asked(tmp_path, monke
     assert not config_path.exists()
 
 
-def test_calibrate_saves_the_fitted_temperature_when_asked_and_keeps_other_settings(tmp_path, monkeypatch):
-    existing = {"buckets": {"b1": "some-model"}, "rules": [{"condition": "c", "bucket": "b1"}]}
+def test_calibrate_saves_the_fitted_temperature_when_asked_and_keeps_other_settings(
+    tmp_path, monkeypatch
+):
+    existing = {
+        "buckets": {"b1": "some-model"},
+        "rules": [{"condition": "c", "bucket": "b1"}],
+    }
 
-    out, config_path = _calibrate_json(tmp_path, monkeypatch, existing_config=existing, save_to_config=True)
+    out, config_path = _calibrate_json(
+        tmp_path, monkeypatch, existing_config=existing, save_to_config=True
+    )
 
     saved = json.loads(config_path.read_text())
     assert out["temperature_saved"] is True
@@ -190,16 +238,26 @@ def test_calibrate_saves_the_fitted_temperature_when_asked_and_keeps_other_setti
     assert saved["rules"] == existing["rules"]
 
 
-def test_calibrate_fitted_temperature_composes_with_the_one_already_applied(tmp_path, monkeypatch):
+def test_calibrate_fitted_temperature_composes_with_the_one_already_applied(
+    tmp_path, monkeypatch
+):
     # Scores were produced under the current temperature, so the new one multiplies it.
     base, _ = _calibrate_json(tmp_path, monkeypatch)
-    scaled, _ = _calibrate_json(tmp_path, monkeypatch, existing_config={"fitted_temperature": 2.0})
+    scaled, _ = _calibrate_json(
+        tmp_path, monkeypatch, existing_config={"fitted_temperature": 2.0}
+    )
 
-    assert scaled["fitted_temperature"] == pytest.approx(2.0 * base["fitted_temperature"], rel=1e-3)
+    assert scaled["fitted_temperature"] == pytest.approx(
+        2.0 * base["fitted_temperature"], rel=1e-3
+    )
 
 
-def test_calibrate_reports_no_temperature_and_saves_nothing_without_platt_scaling(tmp_path, monkeypatch):
-    out, config_path = _calibrate_json(tmp_path, monkeypatch, apply_platt_scaling="never", save_to_config=True)
+def test_calibrate_reports_no_temperature_and_saves_nothing_without_platt_scaling(
+    tmp_path, monkeypatch
+):
+    out, config_path = _calibrate_json(
+        tmp_path, monkeypatch, apply_platt_scaling="never", save_to_config=True
+    )
 
     assert out["fitted_temperature"] is None
     assert out["temperature_saved"] is False
@@ -215,10 +273,14 @@ def test_calibrate_marks_threshold_unusable_when_no_positive_is_ever_predicted()
     # Act
     with patch.object(server.provider, "evaluate_dataset", return_value=results):
         report = json.loads(
-            server.jev_calibrate_threshold(dataset=dataset, question=question, apply_platt_scaling="never")
+            server.jev_calibrate_threshold(
+                dataset=dataset, question=question, apply_platt_scaling="never"
+            )
         )["markdown_report"]
 
     # Assert
-    first_row = next(line for line in report.splitlines() if line.startswith("| > 0.50"))
+    first_row = next(
+        line for line in report.splitlines() if line.startswith("| > 0.50")
+    )
     assert "Unusable" in first_row
     assert "Optimal" not in report

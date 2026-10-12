@@ -35,7 +35,12 @@ def slim_catalog(raw: dict[str, Any]) -> Catalog:
     for provider in PROVIDERS:
         models = (raw.get(provider) or {}).get("models") or {}
         kept = [
-            {"id": model_id, "family": m["family"], "release_date": m["release_date"], "cost": m["cost"]["input"]}
+            {
+                "id": model_id,
+                "family": m["family"],
+                "release_date": m["release_date"],
+                "cost": m["cost"]["input"],
+            }
             for model_id, m in models.items()
             if m.get("family")
             and m.get("release_date")
@@ -76,7 +81,9 @@ def refresh(force: bool = False) -> bool:
     if not force and time.time() - fetched_at < CACHE_TTL_SECONDS:
         return True
     try:
-        request = urllib.request.Request(CATALOG_URL, headers={"User-Agent": USER_AGENT})
+        request = urllib.request.Request(
+            CATALOG_URL, headers={"User-Agent": USER_AGENT}
+        )
         with urllib.request.urlopen(request, timeout=FETCH_TIMEOUT_SECONDS) as response:
             catalog = slim_catalog(json.loads(response.read()))
         if not catalog:
@@ -88,7 +95,9 @@ def refresh(force: bool = False) -> bool:
         return False
 
 
-def family_of(catalog: Catalog, model_id: str) -> Optional[tuple[str, str, Optional[str]]]:
+def family_of(
+    catalog: Catalog, model_id: str
+) -> Optional[tuple[str, str, Optional[str]]]:
     """(provider, family, release date) for a model. A model no longer listed is placed by its name."""
     for provider, models in catalog.items():
         for m in models:
@@ -100,18 +109,28 @@ def family_of(catalog: Catalog, model_id: str) -> Optional[tuple[str, str, Optio
     for provider, models in catalog.items():
         for family in {m["family"] for m in models}:
             parts = family.split("-")
-            if set(parts) <= tokens and (best is None or len(parts) > len(best[1].split("-"))):
+            if set(parts) <= tokens and (
+                best is None or len(parts) > len(best[1].split("-"))
+            ):
                 best = (provider, family)
     return (best[0], best[1], None) if best else None
 
 
-def newest_in_family(catalog: Catalog, provider: str, family: str) -> Optional[dict[str, Any]]:
+def newest_in_family(
+    catalog: Catalog, provider: str, family: str
+) -> Optional[dict[str, Any]]:
     members = [m for m in catalog.get(provider, []) if m["family"] == family]
     # Same day: prefer the plain name over a longer variant.
-    return max(members, key=lambda m: (m["release_date"], -len(m["id"]))) if members else None
+    return (
+        max(members, key=lambda m: (m["release_date"], -len(m["id"])))
+        if members
+        else None
+    )
 
 
-def suggest_updates(buckets: dict[str, str], catalog: Catalog) -> dict[str, dict[str, str]]:
+def suggest_updates(
+    buckets: dict[str, str], catalog: Catalog
+) -> dict[str, dict[str, str]]:
     """Buckets whose model has a newer release in the same family. Never suggests a different tier."""
     updates: dict[str, dict[str, str]] = {}
     for bucket, model_id in buckets.items():
@@ -120,16 +139,33 @@ def suggest_updates(buckets: dict[str, str], catalog: Catalog) -> dict[str, dict
             continue
         provider, family, released = placed
         newest = newest_in_family(catalog, provider, family)
-        if newest and newest["id"] != model_id and (released is None or newest["release_date"] > released):
-            updates[bucket] = {"current": model_id, "newer": newest["id"], "released": newest["release_date"]}
+        if (
+            newest
+            and newest["id"] != model_id
+            and (released is None or newest["release_date"] > released)
+        ):
+            updates[bucket] = {
+                "current": model_id,
+                "newer": newest["id"],
+                "released": newest["release_date"],
+            }
     return updates
 
 
 def default_buckets(catalog: Catalog) -> Optional[dict[str, str]]:
     """b1..b4 for a new install: the newest model of each tier, cheapest first. None if there are not four tiers."""
     families = {m["family"] for m in catalog.get(DEFAULT_PROVIDER, [])}
-    newest = [m for m in (newest_in_family(catalog, DEFAULT_PROVIDER, f) for f in families) if m]
+    newest = [
+        m
+        for m in (newest_in_family(catalog, DEFAULT_PROVIDER, f) for f in families)
+        if m
+    ]
     if len(newest) < len(BUCKETS):
         return None
-    current = sorted(newest, key=lambda m: m["release_date"], reverse=True)[: len(BUCKETS)]
-    return {bucket: m["id"] for bucket, m in zip(BUCKETS, sorted(current, key=lambda m: m["cost"]))}
+    current = sorted(newest, key=lambda m: m["release_date"], reverse=True)[
+        : len(BUCKETS)
+    ]
+    return {
+        bucket: m["id"]
+        for bucket, m in zip(BUCKETS, sorted(current, key=lambda m: m["cost"]))
+    }

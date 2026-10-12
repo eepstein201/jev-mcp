@@ -1,4 +1,5 @@
 """The evaluate, explain-decision, and generate-data tools."""
+
 import json
 import subprocess
 from typing import Any, Dict, List
@@ -79,7 +80,9 @@ def jev_evaluate_batch(
 
         except Exception as e:
             logger.error(f"QFE Failed: {str(e)}")
-            return _error(f"CRITICAL SYSTEM ERROR: 'state' payload was {token_count} tokens and QFE compression failed: {str(e)}")
+            return _error(
+                f"CRITICAL SYSTEM ERROR: 'state' payload was {token_count} tokens and QFE compression failed: {str(e)}"
+            )
 
     def run_linter(qs):
         findings = []
@@ -88,7 +91,7 @@ def jev_evaluate_batch(
         # Uses SemIf itself to detect if the user's questions are generative!
         lint_qs: List[QuestionType] = []
         for i, q in enumerate(qs):
-            q_prompt = q.get('prompt', '') if isinstance(q, dict) else q.prompt
+            q_prompt = q.get("prompt", "") if isinstance(q, dict) else q.prompt
             lint_qs.append(
                 NoulQuestion(
                     key=f"q_{i}",
@@ -183,7 +186,9 @@ def jev_evaluate_batch(
             fixed_qs_raw = app.call_fast_autofixer(state, q_dicts, all_findings)
 
             if len(fixed_qs_raw) != len(questions):
-                raise ValueError(f"Autofixer returned {len(fixed_qs_raw)} questions for {len(questions)}.")
+                raise ValueError(
+                    f"Autofixer returned {len(fixed_qs_raw)} questions for {len(questions)}."
+                )
 
             fixed_qs: List[QuestionType] = []
             for original_q, fq in zip(questions, fixed_qs_raw):
@@ -211,7 +216,9 @@ def jev_evaluate_batch(
                         )
                     )  # type: ignore
                 else:
-                    raise ValueError(f"Autofixer returned an unknown question type: {fq['type']!r}")
+                    raise ValueError(
+                        f"Autofixer returned an unknown question type: {fq['type']!r}"
+                    )
 
             new_findings = run_linter(fixed_qs)
             if any(f["severity"] == "ERROR" for f in new_findings):
@@ -270,6 +277,7 @@ def jev_evaluate_batch(
     except Exception as e:
         logger.error(f"Engine failure: {str(e)}")
         return _error(f"INTERNAL ENGINE ERROR: {str(e)}")
+
 
 @mcp.tool(
     name="explain-decision",
@@ -336,6 +344,7 @@ def jev_explain_decision(
         )
     except Exception as e:
         return _error(f"Evidence Extraction Failed: {str(e)}")
+
 
 @mcp.tool(
     name="generate-data",

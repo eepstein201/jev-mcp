@@ -20,9 +20,14 @@ def _saved_temperature() -> float:
     """The calibration temperature in the router config, or the default when it cannot be read."""
     try:
         from jev_mcp.router_config import load_router_config
-        return float(load_router_config().get("fitted_temperature", DEFAULT_TEMPERATURE))
+
+        return float(
+            load_router_config().get("fitted_temperature", DEFAULT_TEMPERATURE)
+        )
     except Exception as e:
-        logger.warning(f"Could not read the fitted temperature; using {DEFAULT_TEMPERATURE}: {e}")
+        logger.warning(
+            f"Could not read the fitted temperature; using {DEFAULT_TEMPERATURE}: {e}"
+        )
         return DEFAULT_TEMPERATURE
 
 
@@ -48,6 +53,7 @@ class DaemonProvider(JevProvider):
 
         try:
             from dotenv import load_dotenv
+
             load_dotenv()
         except ImportError:
             pass
@@ -56,21 +62,29 @@ class DaemonProvider(JevProvider):
         self.base_url = base_url or f"http://127.0.0.1:{port}/v1/chat/completions"
         self.max_tokens = 8192
         self.current_model_id = "unknown_model"
-        
+
         self.fitted_temperature = _saved_temperature()
 
     def _get_daemon_pid(self) -> str:
         try:
             # Match the specific port being targeted by this provider
             import re
-            port_match = re.search(r':(\d+)/', self.base_url)
+
+            port_match = re.search(r":(\d+)/", self.base_url)
             port = port_match.group(1) if port_match else "8080"
-            out = subprocess.check_output(["pgrep", "-f", f"llama-server.*--port {port}"])
+            out = subprocess.check_output(
+                ["pgrep", "-f", f"llama-server.*--port {port}"]
+            )
             return out.decode().strip().split("\n")[0]
         except Exception:
             # Fallback for single model runs
             try:
-                return subprocess.check_output(["pgrep", "-f", "llama-server"]).decode().strip().split("\n")[0]
+                return (
+                    subprocess.check_output(["pgrep", "-f", "llama-server"])
+                    .decode()
+                    .strip()
+                    .split("\n")[0]
+                )
             except:
                 return "unknown_pid"
 
@@ -133,7 +147,9 @@ class DaemonProvider(JevProvider):
 
             return result, model_id
         except Exception as e:
-            logger.error(f"Daemon API call failed: {e}\nPLEASE ENSURE THE DAEMON IS RUNNING! Run: ./jev_mac_manager.sh hybrid")
+            logger.error(
+                f"Daemon API call failed: {e}\nPLEASE ENSURE THE DAEMON IS RUNNING! Run: ./jev_mac_manager.sh hybrid"
+            )
             return {}, "unknown_model"
 
     def _normalize_logprobs(
@@ -173,36 +189,41 @@ class DaemonProvider(JevProvider):
         # 4. Apply Fitted Temperature and Conditional Softmax
         # (This scales the debiased logits before applying the final softmax boundary)
         T = self.fitted_temperature
-        if T <= 0.0: T = 1.0
-        
+        if T <= 0.0:
+            T = 1.0
+
         scaled_lps = {k: (lp / T) for k, lp in dcpmi_lps.items()}
-        
+
         max_lp = max(scaled_lps.values())
-        if max_lp == -9999.0 or max_lp == float('-inf'):
+        if max_lp == -9999.0 or max_lp == float("-inf"):
             return {k: 0.0 for k in expected_keys}
 
         sum_exp = sum(math.exp(lp - max_lp) for lp in scaled_lps.values())
         return {k: math.exp(lp - max_lp) / sum_exp for k, lp in scaled_lps.items()}
 
-    
     @singledispatchmethod
     def _get_format(self, q: Any) -> tuple[str, list[str]]:
         logger.warning(f"Unsupported question type in DaemonProvider: {type(q)}")
         return "", []
-        
+
     @_get_format.register
     def _(self, q: NoulQuestion) -> tuple[str, list[str]]:
         return "Answer True or False.", ["true", "false"]
-        
+
     @_get_format.register
     def _(self, q: ChoiceQuestion) -> tuple[str, list[str]]:
         opts = ", ".join([f"{chr(65 + i)}: {opt}" for i, opt in enumerate(q.options)])
-        return f"Options: {opts}\nAnswer strictly with the corresponding letter.", [chr(65 + i).lower() for i in range(len(q.options))]
-        
+        return f"Options: {opts}\nAnswer strictly with the corresponding letter.", [
+            chr(65 + i).lower() for i in range(len(q.options))
+        ]
+
     @_get_format.register
     def _(self, q: ScoreQuestion) -> tuple[str, list[str]]:
         opts = ", ".join([f"{i}: {label}" for i, label in enumerate(q.labels)])
-        return f"Options: {opts}\nAnswer strictly with the corresponding index number.", [str(i) for i in range(len(q.labels))]
+        return (
+            f"Options: {opts}\nAnswer strictly with the corresponding index number.",
+            [str(i) for i in range(len(q.labels))],
+        )
 
     def evaluate_batch(
         self, state: Any, questions: List[Any]
@@ -232,7 +253,7 @@ class DaemonProvider(JevProvider):
             tag = f"payload_{salt}"
 
             format_hint, expected_keys = self._get_format(q)
-            
+
             if not expected_keys:
                 continue
 
@@ -310,14 +331,28 @@ class DaemonProvider(JevProvider):
                 for idx, opt_label in enumerate(q.options):
                     letter = chr(97 + idx)
                     mapped_probs[opt_label] = probs.get(letter, 0.0)
-                best_opt = max(mapped_probs.items(), key=lambda x: x[1])[0] if mapped_probs else None
+                best_opt = (
+                    max(mapped_probs.items(), key=lambda x: x[1])[0]
+                    if mapped_probs
+                    else None
+                )
                 confidence = mapped_probs.get(best_opt, 0.0) if best_opt else 0.0
-                results[q.key] = {"probabilities": mapped_probs, "choice": best_opt, "confidence": confidence}
+                results[q.key] = {
+                    "probabilities": mapped_probs,
+                    "choice": best_opt,
+                    "confidence": confidence,
+                }
             elif isinstance(q, ScoreQuestion):
                 # The model answers with an index; report the label, as the fast tier does.
-                label_probs = {label: probs.get(str(idx), 0.0) for idx, label in enumerate(q.labels)}
-                best_label = max(label_probs.items(), key=lambda x: x[1])[0] if label_probs else None
+                label_probs = {
+                    label: probs.get(str(idx), 0.0)
+                    for idx, label in enumerate(q.labels)
+                }
+                best_label = (
+                    max(label_probs.items(), key=lambda x: x[1])[0]
+                    if label_probs
+                    else None
+                )
                 results[q.key] = {"probabilities": label_probs, "score": best_label}
 
         return results
-

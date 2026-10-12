@@ -83,7 +83,10 @@ def test_kev_evaluate_batch_builds_systemone_payload(mock_post):
     assert captured["state"] == '{"ctx": "data"}'
 
     # Questions serialized via to_dict with sanitized instructions
-    assert captured["questions"]["n1"] == {"type": "noul", "instructions": "Is it true?"}
+    assert captured["questions"]["n1"] == {
+        "type": "noul",
+        "instructions": "Is it true?",
+    }
     assert captured["questions"]["c1"] == {
         "type": "choice",
         "instructions": "Pick",

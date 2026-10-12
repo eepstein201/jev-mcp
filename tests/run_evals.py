@@ -10,6 +10,7 @@ Ports come from JEV_FAST_PORT (default 8080) and JEV_SMART_PORT (default 8081).
 Each local engine first runs untimed warm-up passes so model loading and prior
 computation are excluded from the reported latency.
 """
+
 import json
 import os
 import random
@@ -33,7 +34,11 @@ LEGACY_QUESTIONS = {
 
 
 def question_for(row):
-    return row.get("question_override") or row.get("question") or LEGACY_QUESTIONS[row["group_id"]]
+    return (
+        row.get("question_override")
+        or row.get("question")
+        or LEGACY_QUESTIONS[row["group_id"]]
+    )
 
 
 def calculate_roc_auc_mann_whitney(y_true, scores):
@@ -86,7 +91,11 @@ def compute_metrics(dataset, scores):
         "auc": calculate_roc_auc_mann_whitney(y_true, scores),
         "auc_ci": (ci_lo, ci_hi),
         "accuracy": sum(correct) / n * 100,
-        "saturated": sum(1 for s in scores if s < SATURATION_EPS or s > 1 - SATURATION_EPS) / n * 100,
+        "saturated": sum(
+            1 for s in scores if s < SATURATION_EPS or s > 1 - SATURATION_EPS
+        )
+        / n
+        * 100,
         "exact_zero": sum(1 for s in scores if s == 0.0),
         "by_kind": {k: sum(v) / len(v) * 100 for k, v in sorted(by_kind.items())},
     }
@@ -95,12 +104,19 @@ def compute_metrics(dataset, scores):
 def print_report(name, m, latency_per_sample=None):
     print(f"\n--- {name} ---")
     print(f"Samples: {m['n']} ({m['n_pos']} positive, {m['n'] - m['n_pos']} negative)")
-    print(f"ROC AUC: {m['auc']:.4f}  (95% bootstrap CI {m['auc_ci'][0]:.3f}-{m['auc_ci'][1]:.3f})")
+    print(
+        f"ROC AUC: {m['auc']:.4f}  (95% bootstrap CI {m['auc_ci'][0]:.3f}-{m['auc_ci'][1]:.3f})"
+    )
     print(f"Accuracy @ {DEFAULT_THRESHOLD}: {m['accuracy']:.1f}%")
-    print(f"Saturated scores (<{SATURATION_EPS:g} or >1-{SATURATION_EPS:g}): {m['saturated']:.0f}%, exact 0.0: {m['exact_zero']}")
+    print(
+        f"Saturated scores (<{SATURATION_EPS:g} or >1-{SATURATION_EPS:g}): {m['saturated']:.0f}%, exact 0.0: {m['exact_zero']}"
+    )
     if latency_per_sample is not None:
         print(f"Latency (warm): {latency_per_sample:.1f} ms per sample")
-    print("Accuracy by kind: " + ", ".join(f"{k} {v:.0f}%" for k, v in m["by_kind"].items()))
+    print(
+        "Accuracy by kind: "
+        + ", ".join(f"{k} {v:.0f}%" for k, v in m["by_kind"].items())
+    )
 
 
 def score_dataset(provider, dataset):
@@ -125,7 +141,9 @@ def run_benchmark(name, provider, dataset):
     latency = (time.perf_counter() - t0) * 1000 / len(dataset)
 
     if all(s == 0.0 for s in scores):
-        print("WARNING: every score is 0.0; the daemon is probably not running (make start).")
+        print(
+            "WARNING: every score is 0.0; the daemon is probably not running (make start)."
+        )
 
     m = compute_metrics(dataset, scores)
     print_report(name, m, latency)
@@ -152,9 +170,13 @@ def main(argv):
     fast_port = os.getenv("JEV_FAST_PORT", "8080")
     smart_port = os.getenv("JEV_SMART_PORT", "8081")
 
-    run_benchmark("Kev-0.8B", KevProvider(f"http://127.0.0.1:{fast_port}/v1/systemone"), dataset)
     run_benchmark(
-        "Qwen-2.5-7B", DaemonProvider(f"http://127.0.0.1:{smart_port}/v1/chat/completions"), dataset
+        "Kev-0.8B", KevProvider(f"http://127.0.0.1:{fast_port}/v1/systemone"), dataset
+    )
+    run_benchmark(
+        "Qwen-2.5-7B",
+        DaemonProvider(f"http://127.0.0.1:{smart_port}/v1/chat/completions"),
+        dataset,
     )
 
 
