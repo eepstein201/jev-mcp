@@ -193,3 +193,24 @@ def test_scan_repo_logs_a_file_it_could_not_read(mock_eval, tmp_path):
         server.jev_scan_repo(str(tmp_path), "find ok")
     warnings = " ".join(str(c) for c in mock_logger.warning.call_args_list)
     assert "bad.py" in warnings
+
+
+def test_read_file_refuses_a_file_over_the_size_cap(tmp_path, monkeypatch):
+    monkeypatch.setattr("jev_mcp.tools.files.MAX_READ_CHARS", 100)
+    f = tmp_path / "big.py"
+    f.write_text("x = 1\n" * 50)
+
+    res = json.loads(server.jev_read_file(str(f), "any task", filter_by_chunk=False))
+
+    assert res["status"] == "ERROR"
+    assert "limit" in res["message"]
+
+
+def test_read_file_reads_a_file_exactly_at_the_size_cap(tmp_path, monkeypatch):
+    f = tmp_path / "edge.py"
+    f.write_text("x = 1\n")
+    monkeypatch.setattr("jev_mcp.tools.files.MAX_READ_CHARS", len(f.read_text()))
+
+    res = json.loads(server.jev_read_file(str(f), "any task", filter_by_chunk=False))
+
+    assert "limit" not in res.get("message", "")

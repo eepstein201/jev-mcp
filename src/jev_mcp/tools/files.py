@@ -11,6 +11,9 @@ from jev_mcp.app import json_errors, logger, mcp
 from jev_mcp.provider import EngineUnavailableError, NoulQuestion
 from jev_mcp.routing_provider import RoutingProvider
 
+# Each chunk of a file costs an engine call, so the size of the file bounds the work one read can cause.
+MAX_READ_CHARS = 1_048_576
+
 
 @mcp.tool(
     name="read-file",
@@ -51,9 +54,18 @@ def jev_read_file(
 
     try:
         with open(file_path, "r", encoding="utf-8") as f:
-            file_content = f.read()
+            # One character past the cap is enough to know the file is over it.
+            file_content = f.read(MAX_READ_CHARS + 1)
     except Exception as e:
         return json.dumps({"status": "ERROR", "message": f"Failed to read file: {e}"})
+
+    if len(file_content) > MAX_READ_CHARS:
+        return json.dumps(
+            {
+                "status": "ERROR",
+                "message": f"File is over the {MAX_READ_CHARS}-character read limit.",
+            }
+        )
 
     if not file_content.strip():
         return json.dumps({"status": "ERROR", "message": "File is empty."})

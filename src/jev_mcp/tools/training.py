@@ -191,7 +191,9 @@ echo "Starting MLX LoRA training..."
     --iters {iters}
 {fuse_cmd}
 """)
-            os.chmod(run_script_path, 0o755)
+            os.chmod(
+                run_script_path, 0o600
+            )  # launched as `bash <path>`, so no exec bit
             cmd = ["bash", run_script_path]
 
         with open(log_path, "a") as log_f:

@@ -170,3 +170,17 @@ def test_static_api_key_is_compared_in_constant_time(jwt_env):
         }
 
     compare.assert_called_once()
+
+
+def test_only_the_leading_bearer_prefix_is_stripped(monkeypatch):
+    # Stripping every "Bearer " would corrupt a key that happens to contain the text.
+    monkeypatch.setenv("JEV_MCP_API_KEY", "tokBearer rest")
+
+    assert verify_auth_token("Bearer tokBearer rest") == {"type": "static_api_key"}
+
+
+def test_a_shared_secret_under_32_bytes_is_refused(jwt_env):
+    short = "short-secret"
+    jwt_env.setenv("JEV_MCP_JWT_SECRET", short)
+
+    assert _rejected(_token(secret=short)) == 401
