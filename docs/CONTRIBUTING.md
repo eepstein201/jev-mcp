@@ -26,8 +26,10 @@ Copy `.env.example` to `.env` if you need non-default ports or batch size.
 | `make stop` | `jev_mac_manager.sh stop` |
 | `make clean` | `jev_mac_manager.sh uninstall --headless` |
 | `make format` | `ruff format src tests` in `.venv` |
+| `make format-check` | `ruff format --check src tests` in `.venv` (the CI formatting gate) |
 | `make lint` | `mypy src/jev_mcp/` in `.venv` |
 | `make test` | `pytest --cov=src --cov-report=term-missing --cov-fail-under=85 tests/` in `.venv` |
+| `make check` | `format-check`, then `lint`, then `test`: the same three gates CI runs, in CI order |
 | `make eval` | `python tests/run_evals.py`: warm-up + timed benchmark of both engines on `tests/golden_dataset.json` (daemons must be running) |
 | `make train` | Prints a pointer; training runs through the `train` MCP tool |
 <!-- /AUTO-GENERATED -->
@@ -67,7 +69,7 @@ CI enforces only the 85% overall threshold; the 95% per-file rule is a local gat
 
 ## PR checklist
 
-- [ ] `make lint` and `make test` pass locally
+- [ ] `make check` passes locally (formatting, mypy and the test gate)
 - [ ] Per-file coverage ≥95% for every file you touched
 - [ ] No `print()` in server code; no secrets committed
 - [ ] Docs updated if a tool signature, env var, or command changed (README, `.env.example`, `docs/CODEMAPS/`)
