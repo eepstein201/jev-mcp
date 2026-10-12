@@ -41,6 +41,11 @@ import pytest
 # No test may start the real start-up model sync (a background network call and config write).
 os.environ["JEV_SKIP_MODEL_SYNC"] = "1"
 
+# Build the shared server state (app.provider) now, with the real classes. Left to the first
+# test that happens to import it, a test that has already replaced RoutingProvider with a mock
+# would make the shared provider that mock, and the result would depend on test order.
+import jev_mcp.app  # noqa: E402,F401
+
 
 @pytest.fixture(autouse=True)
 def isolated_jev_files(tmp_path, monkeypatch):

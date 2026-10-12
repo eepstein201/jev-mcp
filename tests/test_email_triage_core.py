@@ -148,3 +148,63 @@ def test_an_unimportant_confident_email_is_still_filed_by_bucket():
         "decision": "Newsletter",
         "suggested_routing": "archive_and_label",
     }
+
+
+# --- thresholds from the environment ---------------------------------------------
+
+
+def test_thresholds_keep_their_defaults_when_the_environment_is_silent(monkeypatch):
+    from jev_mcp.email_triage.core import load_mail_config
+
+    monkeypatch.delenv("JEV_TRIAGE_ACTION_THRESHOLD", raising=False)
+    monkeypatch.delenv("JEV_TRIAGE_IMPORTANT_THRESHOLD", raising=False)
+
+    assert load_mail_config() == JevMailConfig()
+
+
+def test_thresholds_come_from_the_environment(monkeypatch):
+    from jev_mcp.email_triage.core import load_mail_config
+
+    monkeypatch.setenv("JEV_TRIAGE_ACTION_THRESHOLD", "0.6")
+    monkeypatch.setenv("JEV_TRIAGE_IMPORTANT_THRESHOLD", "0.95")
+
+    config = load_mail_config()
+
+    assert config.action_threshold == 0.6
+    assert config.important_threshold == 0.95
+
+
+@pytest.mark.parametrize("value", ["0", "1", "0.0", "1.0"])
+def test_a_threshold_at_either_end_of_the_range_is_accepted(monkeypatch, value):
+    from jev_mcp.email_triage.core import load_mail_config
+
+    monkeypatch.setenv("JEV_TRIAGE_IMPORTANT_THRESHOLD", value)
+
+    assert load_mail_config().important_threshold == float(value)
+
+
+@pytest.mark.parametrize("value", ["abc", "1.5", "-0.1", "nan", "inf", "80%"])
+def test_an_unusable_threshold_falls_back_to_the_default_and_says_so(
+    monkeypatch, caplog, value
+):
+    from jev_mcp.email_triage.core import load_mail_config
+
+    monkeypatch.setenv("JEV_TRIAGE_IMPORTANT_THRESHOLD", value)
+
+    with caplog.at_level("WARNING"):
+        config = load_mail_config()
+
+    assert config.important_threshold == JevMailConfig().important_threshold
+    assert "JEV_TRIAGE_IMPORTANT_THRESHOLD" in caplog.text
+
+
+def test_a_blank_threshold_is_treated_as_unset_without_a_warning(monkeypatch, caplog):
+    from jev_mcp.email_triage.core import load_mail_config
+
+    monkeypatch.setenv("JEV_TRIAGE_ACTION_THRESHOLD", "  ")
+
+    with caplog.at_level("WARNING"):
+        config = load_mail_config()
+
+    assert config.action_threshold == JevMailConfig().action_threshold
+    assert caplog.text == ""

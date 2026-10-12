@@ -35,7 +35,11 @@ def configure_triage_labels(context_id: str, labels: list[str]) -> dict:
     }
 
 
-from jev_mcp.email_triage.core import build_triage_questions, decide_routing
+from jev_mcp.email_triage.core import (
+    build_triage_questions,
+    decide_routing,
+    load_mail_config,
+)
 
 
 def evaluate_email_with_mlx(
@@ -91,6 +95,7 @@ def evaluate_email_with_mlx(
         is_important_score=is_important_score,
         bucket=bucket,
         bucket_confidence=bucket_confidence,
+        config=load_mail_config(),
     )
 
     return {
