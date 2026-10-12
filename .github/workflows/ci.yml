@@ -25,6 +25,9 @@ jobs:
         python -m pip install --upgrade pip
         pip install -e ".[dev,engines]"
         
+    - name: Formatting Check
+      run: ruff format --check src tests
+
     - name: Strict Static Type Checking
       run: mypy src/jev_mcp/
       

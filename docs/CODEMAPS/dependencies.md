@@ -19,7 +19,7 @@ JEV_MCP_JWKS_URL JEV_MCP_JWT_SECRET JEV_MCP_JWT_AUDIENCE JEV_MCP_JWT_ISSUER (web
 JEV_MCP_API_KEY (webhook bearer token; JEV_MCP_WEBHOOK_URL / JEV_MCP_API_KEY are also constants inside the generated Apps Script, not process env)
 
 ## Build / CI
-make install|update|start|hybrid|stop|clean|test|lint|format|eval|train · ci.yml (macos-latest, py3.12, checkout with submodules): mypy src/jev_mcp/ + pytest --cov-fail-under=85
+make install|update|start|hybrid|stop|clean|test|lint|format|eval|train · ci.yml (macos-latest, py3.12, checkout with submodules): ruff format --check src tests + mypy src/jev_mcp/ + pytest --cov-fail-under=85
 Commit gate: AGENTS.md (95% per file, 85% overall)
 
 ## External integrations
