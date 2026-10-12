@@ -1,4 +1,4 @@
-"""The train tool."""
+"""The jev_train_lora tool."""
 
 import json
 import os
@@ -14,7 +14,7 @@ from jev_mcp.app import logger, mcp
 
 
 @mcp.tool(
-    name="train",
+    name="jev_train_lora",
     description="Trains a local MLX LoRA adapter on your Apple Silicon GPU. Options: fuse=True (default) merges the adapter into a Q4_K_M .gguf file (llama.cpp's converter is fetched automatically for the installed llama-server commit), and if target_gguf_path is provided, replaces that model (keeping the original as <target>.bak) and restarts the launchd agent serving it. fuse=False keeps the standalone MLX adapter. iters sets the number of training iterations (default 500). action='restore' with target_gguf_path puts the .bak back and restarts that agent.",
 )
 def jev_train_lora(
@@ -217,5 +217,5 @@ echo "Starting MLX LoRA training..."
             indent=2,
         )
     except Exception as e:
-        logger.error(f"train tool failed: {e}")
+        logger.error(f"jev_train_lora failed: {e}")
         return json.dumps({"status": "ERROR", "message": str(e)})

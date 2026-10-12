@@ -1,4 +1,4 @@
-"""Rank prompt phrasings by measured accuracy on labelled rows (used by `optimize-prompt`)."""
+"""Rank prompt phrasings by measured accuracy on labelled rows (used by `jev_optimize_prompt`)."""
 
 from typing import Any, Optional
 

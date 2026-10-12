@@ -111,7 +111,7 @@ def evaluate_email_with_mlx(
 def triage_email_content(context_id: str, subject: str, sender: str, body: str) -> str:
     """
     Evaluates an email using MLX and returns the recommended triage action.
-    If 'status' == 'needs_config', you must ask the user what labels they want to track and call configure_triage_labels.
+    If 'status' == 'needs_config', you must ask the user what labels they want to track and call jev_configure_triage_labels.
     """
     config_path = get_config_path()
     if not config_path.exists():

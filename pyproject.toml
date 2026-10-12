@@ -32,7 +32,7 @@ dependencies = [
 engines = [
     "mlx==0.32.2",
     "mlx-lm==0.31.3",
-    # llama.cpp's convert_hf_to_gguf.py imports both; `train` runs it as a subprocess in this
+    # llama.cpp's convert_hf_to_gguf.py imports both; `jev_train_lora` runs it as a subprocess in this
     # environment. 2.14.1 is the first torch release checked clean by pip-audit.
     "torch>=2.14.1",
     "sentencepiece",

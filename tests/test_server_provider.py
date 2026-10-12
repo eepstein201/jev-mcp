@@ -9,7 +9,7 @@ from jev_mcp.routing_provider import RoutingProvider
 
 
 def test_module_level_provider_is_the_hybrid_router():
-    # evaluate, optimize-prompt, calibrate and compact all score through this object.
+    # jev_evaluate_batch, jev_optimize_prompt, jev_calibrate_threshold and jev_compact_context all score through this object.
     assert isinstance(server.provider, RoutingProvider)
 
 

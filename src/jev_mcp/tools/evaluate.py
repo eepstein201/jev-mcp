@@ -1,4 +1,4 @@
-"""The evaluate, explain-decision, and generate-data tools."""
+"""The jev_evaluate_batch, jev_explain_decision, and jev_generate_synthetic_dataset tools."""
 
 import json
 import subprocess
@@ -16,7 +16,7 @@ def _error(message: str) -> str:
 
 
 @mcp.tool(
-    name="evaluate",
+    name="jev_evaluate_batch",
     description=(
         "Evaluate a complex state against a batch of polymorphic System-1 questions.\n"
         "WARNING: The 'state' payload MUST be under 2048 tokens. If exceeded, QFE middleware will attempt to compress it."
@@ -280,7 +280,7 @@ def jev_evaluate_batch(
 
 
 @mcp.tool(
-    name="explain-decision",
+    name="jev_explain_decision",
     description="Evidence Highlighting: Generates a Post-Hoc Rationale for a decision by extracting the exact, verbatim sentence from the state that proves the decision.",
 )
 def jev_explain_decision(
@@ -347,7 +347,7 @@ def jev_explain_decision(
 
 
 @mcp.tool(
-    name="generate-data",
+    name="jev_generate_synthetic_dataset",
     description="Dataset Generator: Automatically generates a Golden Dataset using the local 7B model if available, otherwise returns instructions for the primary LLM to generate it.",
 )
 def jev_generate_synthetic_dataset(
@@ -398,7 +398,7 @@ REQUIRED JSON SCHEMA:
   }}
 ]
 
-Once you have generated this JSON array, you must immediately pass it into the `calibrate` tool to mathematically evaluate the model's performance on your synthetic data.
+Once you have generated this JSON array, you must immediately pass it into the `jev_calibrate_threshold` tool to mathematically evaluate the model's performance on your synthetic data.
 """
 
     is_local_model = False

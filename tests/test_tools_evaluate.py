@@ -1,4 +1,4 @@
-"""evaluate, explain-decision and generate-data: results are JSON and say what happened."""
+"""jev_evaluate_batch, jev_explain_decision and jev_generate_synthetic_dataset: results are JSON and say what happened."""
 
 import json
 from unittest.mock import MagicMock, patch
@@ -56,7 +56,9 @@ def test_generate_data_stops_when_the_model_returns_no_cases(mock_pgrep):
     def empty_batch(**kwargs):
         calls.append(kwargs)
         if len(calls) > 5:
-            raise AssertionError("generate-data kept asking after empty batches")
+            raise AssertionError(
+                "jev_generate_synthetic_dataset kept asking after empty batches"
+            )
         return {"dataset": []}
 
     with patch("jev_mcp.app._chat_completion_json", side_effect=empty_batch):
