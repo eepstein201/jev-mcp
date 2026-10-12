@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Booking — select eval</title>
+<style>
+  body { font: 14px/1.45 system-ui, sans-serif; margin: 40px auto; max-width: 480px; }
+  h1 { font-size: 18px; }
+  label { display: block; margin: 14px 0 4px; font-weight: 600; }
+  select { width: 100%; padding: 8px 10px; font: inherit; }
+  #banner { margin-top: 18px; padding: 12px 16px; border-radius: 6px; display: none; }
+  #banner.win { display: block; background: #dcfce7; color: #14532d; font-weight: 700; font-size: 20px; }
+  #banner.miss { display: block; background: #fee2e2; color: #7f1d1d; }
+</style>
+</head>
+<body>
+<h1>Booking</h1>
+<p>Choose the destination for this booking.</p>
+<div id="banner" role="status"></div>
+<label for="city">Destination city</label>
+<select id="city" name="city">
+  <option value="">— select a city —</option>
+  <option value="porto">Porto (OPO-11)</option>
+  <option value="lisboa">Lisboa (LIS-04)</option>
+  <option value="lisboa-airport">Lisboa Airport (LIS-07)</option>
+  <option value="madrid">Madrid (MAD-21)</option>
+  <option value="barcelona">Barcelona (BCN-08)</option>
+  <option value="sevilla">Sevilla (SVQ-13)</option>
+  <option value="valencia">Valencia (VLC-06)</option>
+  <option value="malaga">Malaga (AGP-19)</option>
+  <option value="bilbao">Bilbao (BIO-02)</option>
+  <option value="lisboa-portela">Lisboa Portela (LIS-04B)</option>
+  <option value="faro">Faro (FAO-15)</option>
+  <option value="vigo">Vigo (VGO-09)</option>
+  <option value="santiago">Santiago (SCQ-12)</option>
+  <option value="zaragoza">Zaragoza (ZAZ-18)</option>
+</select>
+<script>
+// Judged on selection: three near-identical Lisboa options make the exact
+// pick matter; only the plain "Lisboa (LIS-04)" option completes the mission.
+const WANT = "lisboa";
+const banner = document.getElementById("banner");
+function show(kind, text) { banner.className = kind; banner.textContent = text; }
+document.getElementById("city").addEventListener("change", (e) => {
+  const label = e.target.selectedOptions[0].textContent;
+  if (e.target.value === WANT) { show("win", "MISSION_COMPLETE"); document.title = "MISSION_COMPLETE"; }
+  else show("miss", "Selected '" + label + "' — not the target. Keep going.");
+});
+</script>
+</body>
+</html>
