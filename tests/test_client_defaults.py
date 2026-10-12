@@ -1,4 +1,5 @@
 """Tests for per-client router default seeding (client_defaults + router_config)."""
+
 import asyncio
 import os
 from pathlib import Path
@@ -23,7 +24,12 @@ CATALOG = {
     ]
 }
 
-STALE = {"b1": "claude-3-5-haiku", "b2": "claude-sonnet-5", "b3": "claude-opus-5-5", "b4": "my-local-llama"}
+STALE = {
+    "b1": "claude-3-5-haiku",
+    "b2": "claude-sonnet-5",
+    "b3": "claude-opus-5-5",
+    "b4": "my-local-llama",
+}
 
 
 @pytest.fixture
@@ -32,13 +38,15 @@ def cached_catalog():
 
 
 def _write_config(**extra):
-    router_config.save_router_config({
-        "buckets": dict(STALE),
-        "rules": [{"condition": "c", "target": "b3"}],
-        "buckets_source": "detected",
-        "detected_client": "Claude Code",
-        **extra,
-    })
+    router_config.save_router_config(
+        {
+            "buckets": dict(STALE),
+            "rules": [{"condition": "c", "target": "b3"}],
+            "buckets_source": "detected",
+            "detected_client": "Claude Code",
+            **extra,
+        }
+    )
 
 
 # ---------------------------------------------------------
@@ -57,7 +65,9 @@ def _fake_ctx(method, client_name="Claude Code", client_params="set"):
         params = SimpleNamespace(clientInfo=SimpleNamespace(name=client_name))
     else:
         params = client_params
-    session = SimpleNamespace(client_params=params, send_request=_forbidden, send_ping=_forbidden)
+    session = SimpleNamespace(
+        client_params=params, send_request=_forbidden, send_ping=_forbidden
+    )
     return SimpleNamespace(method=method, session=session)
 
 
@@ -94,7 +104,9 @@ def test_middleware_never_uses_session_requests():
 
 def test_middleware_seeds_at_most_once(monkeypatch):
     calls = []
-    monkeypatch.setattr(router_config, "seed_defaults_for_client", lambda name: calls.append(name) or {})
+    monkeypatch.setattr(
+        router_config, "seed_defaults_for_client", lambda name: calls.append(name) or {}
+    )
     middleware = client_defaults.SeedingMiddleware()
     _run(middleware, _fake_ctx("notifications/initialized"))
     _run(middleware, _fake_ctx("notifications/initialized"))
@@ -104,6 +116,7 @@ def test_middleware_seeds_at_most_once(monkeypatch):
 def test_middleware_survives_seeding_failure(monkeypatch):
     def boom(name):
         raise RuntimeError("disk on fire")
+
     monkeypatch.setattr(router_config, "seed_defaults_for_client", boom)
     middleware = client_defaults.SeedingMiddleware()
     assert _run(middleware, _fake_ctx("notifications/initialized")) is SENTINEL
@@ -111,7 +124,9 @@ def test_middleware_survives_seeding_failure(monkeypatch):
 
 def test_middleware_tolerates_missing_client_params():
     middleware = client_defaults.SeedingMiddleware()
-    result = _run(middleware, _fake_ctx("notifications/initialized", client_params=None))
+    result = _run(
+        middleware, _fake_ctx("notifications/initialized", client_params=None)
+    )
     assert result is SENTINEL
     assert not os.path.exists(router_config.ROUTER_CONFIG_PATH)
 
@@ -122,7 +137,9 @@ def test_middleware_reads_snake_case_client_info():
     params = SimpleNamespace(client_info=SimpleNamespace(name="Claude Code"))
     ctx = SimpleNamespace(
         method="notifications/initialized",
-        session=SimpleNamespace(client_params=params, send_request=_forbidden, send_ping=_forbidden),
+        session=SimpleNamespace(
+            client_params=params, send_request=_forbidden, send_ping=_forbidden
+        ),
     )
     middleware = client_defaults.SeedingMiddleware()
     assert _run(middleware, ctx) is SENTINEL
@@ -132,6 +149,7 @@ def test_middleware_reads_snake_case_client_info():
 # ---------------------------------------------------------
 # Task 2: user consent stamps buckets_source "user"
 # ---------------------------------------------------------
+
 
 def test_set_bucket_stamps_user_provenance():
     _write_config()
@@ -205,13 +223,15 @@ def test_fieldless_existing_config_is_never_reseeded():
 
 
 def test_detected_config_reseeds_to_current_table():
-    router_config.save_router_config({
-        "buckets": {"b1": "old"},
-        "rules": [{"condition": "c", "target": "b3"}],
-        "auto_update": True,
-        "buckets_source": "detected",
-        "detected_client": "Claude Code",
-    })
+    router_config.save_router_config(
+        {
+            "buckets": {"b1": "old"},
+            "rules": [{"condition": "c", "target": "b3"}],
+            "auto_update": True,
+            "buckets_source": "detected",
+            "detected_client": "Claude Code",
+        }
+    )
     written = router_config.seed_defaults_for_client("Claude Code")
     assert written["buckets"] == dict(router_config.FALLBACK_BUCKETS)
     # Non-bucket fields survive the immutable update.

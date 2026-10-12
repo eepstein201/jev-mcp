@@ -2,6 +2,7 @@
 
 Nothing here touches real launchd agents or processes: the stand-ins only record their arguments.
 """
+
 import os
 import subprocess
 from pathlib import Path
@@ -37,7 +38,13 @@ def sandbox(tmp_path):
         workdir = tmp_path / "work"
         workdir.mkdir(exist_ok=True)
         subprocess.run(
-            ["bash", str(MANAGER), *args], env=env, cwd=workdir, capture_output=True, text=True, timeout=60, check=True
+            ["bash", str(MANAGER), *args],
+            env=env,
+            cwd=workdir,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=True,
         )
         return log.read_text().splitlines()
 

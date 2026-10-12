@@ -17,14 +17,17 @@ FALLBACK_BUCKETS = {
     "b4": "claude-fable-5-1",
 }
 
+
 def load_router_config():
     if not os.path.exists(ROUTER_CONFIG_PATH):
         return {
-            "buckets": model_catalog.default_buckets(model_catalog.load_cached()) or dict(FALLBACK_BUCKETS),
-            "rules": []
+            "buckets": model_catalog.default_buckets(model_catalog.load_cached())
+            or dict(FALLBACK_BUCKETS),
+            "rules": [],
         }
     with open(ROUTER_CONFIG_PATH, "r") as f:
         return json.load(f)
+
 
 def write_json_atomic(path: str, data: Any) -> None:
     # Write to a sibling temp file and rename over the target, so a write that
@@ -32,7 +35,9 @@ def write_json_atomic(path: str, data: Any) -> None:
     # its own temp file, so two writers cannot interleave into one.
     folder = os.path.dirname(path)
     os.makedirs(folder, exist_ok=True)
-    fd, tmp_path = tempfile.mkstemp(dir=folder, prefix=os.path.basename(path) + ".", suffix=".tmp")
+    fd, tmp_path = tempfile.mkstemp(
+        dir=folder, prefix=os.path.basename(path) + ".", suffix=".tmp"
+    )
     try:
         with os.fdopen(fd, "w") as f:
             json.dump(data, f, indent=2)
@@ -45,6 +50,7 @@ def write_json_atomic(path: str, data: Any) -> None:
 
 def save_router_config(config):
     write_json_atomic(ROUTER_CONFIG_PATH, config)
+
 
 def seed_defaults_for_client(client_name: str) -> dict[str, Any] | None:
     """Seed router buckets from the connecting client when the user hasn't chosen them.
@@ -79,14 +85,23 @@ def seed_defaults_for_client(client_name: str) -> dict[str, Any] | None:
     save_router_config(seeded)
     return seeded
 
+
 def pending_model_updates(config: dict[str, Any]) -> dict[str, dict[str, str]]:
     """Buckets whose model has a newer release in the same family, per the cached catalog."""
-    return model_catalog.suggest_updates(config.get("buckets", {}), model_catalog.load_cached())
+    return model_catalog.suggest_updates(
+        config.get("buckets", {}), model_catalog.load_cached()
+    )
 
-def apply_model_updates(config: dict[str, Any], updates: dict[str, dict[str, str]]) -> dict[str, Any]:
+
+def apply_model_updates(
+    config: dict[str, Any], updates: dict[str, dict[str, str]]
+) -> dict[str, Any]:
     """A copy of config with each updated bucket moved to its newer model."""
     return {
         **config,
-        "buckets": {**config.get("buckets", {}), **{bucket: u["newer"] for bucket, u in updates.items()}},
+        "buckets": {
+            **config.get("buckets", {}),
+            **{bucket: u["newer"] for bucket, u in updates.items()},
+        },
         "models_updated_at": datetime.now().isoformat(timespec="seconds"),
     }

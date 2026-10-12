@@ -12,20 +12,20 @@ from jev_mcp.linter import LintFinding, PreflightReport
 
 def test_clean_json():
     # Test valid JSON extraction
-    text = "```json\n{\"test\": 1}\n```"
+    text = '```json\n{"test": 1}\n```'
     assert server._clean_json(text) == '{"test": 1}'
 
     text2 = "```\n[1, 2]\n```"
     assert server._clean_json(text2) == "[1, 2]"
-    
-    text3 = "Some conversational text... {\"key\": \"value\"} ...more chat"
+
+    text3 = 'Some conversational text... {"key": "value"} ...more chat'
     assert server._clean_json(text3) == '{"key": "value"}'
 
     text4 = "No json here"
     assert server._clean_json(text4) == "No json here"
 
     # Test arrays and objects overlapping correctly
-    text5 = "Here is an array: [{\"a\": 1}]"
+    text5 = 'Here is an array: [{"a": 1}]'
     assert server._clean_json(text5) == '[{"a": 1}]'
 
 
@@ -36,13 +36,17 @@ def test_call_fast_autofixer(mock_urlopen):
     errors = [{"code": "ERR"}]
 
     mock_response = MagicMock()
-    mock_response.read.return_value = json.dumps({
-        "choices": [{
-            "message": {
-                "content": '{"fixed_questions": [{"key": "q1", "prompt": "good prompt", "type": "noul"}]}'
-            }
-        }]
-    }).encode("utf-8")
+    mock_response.read.return_value = json.dumps(
+        {
+            "choices": [
+                {
+                    "message": {
+                        "content": '{"fixed_questions": [{"key": "q1", "prompt": "good prompt", "type": "noul"}]}'
+                    }
+                }
+            ]
+        }
+    ).encode("utf-8")
     mock_context = MagicMock()
     mock_context.__enter__.return_value = mock_response
     mock_urlopen.return_value = mock_context
@@ -56,88 +60,87 @@ def test_call_fast_autofixer(mock_urlopen):
 @patch.object(server.provider, "evaluate_batch")
 @patch.object(server.provider, "check_token_limit")
 @patch.object(server.linter, "lint")
-def test_jev_evaluate_batch_success(mock_lint, mock_check_limit, mock_evaluate_batch, mock_urlopen):
+def test_jev_evaluate_batch_success(
+    mock_lint, mock_check_limit, mock_evaluate_batch, mock_urlopen
+):
     # Setup linting to return no errors
     mock_report = MagicMock()
     mock_report.findings = []
     mock_lint.return_value = mock_report
     mock_check_limit.return_value = 100
-    
+
     # Model based linting returns small noul probabilities (no generative intent)
     # The actual evaluation returns actual evaluation results
     mock_evaluate_batch.side_effect = [
-        {"q1": {"noul": 0.1}}, # for linter
-        {"q1": {"noul": 0.9}}  # actual eval
+        {"q1": {"noul": 0.1}},  # for linter
+        {"q1": {"noul": 0.9}},  # actual eval
     ]
 
     q1 = NoulQuestion(key="q1", prompt="Test?")
     result_str = server.jev_evaluate_batch(state={"test": 1}, questions=[q1])
-    
+
     result = json.loads(result_str)
     assert result["status"] == "SUCCESS"
     assert result["data"]["q1"]["noul"] == 0.9
+
 
 @patch("urllib.request.urlopen")
 @patch.object(server.provider, "evaluate_batch")
 @patch.object(server.provider, "check_token_limit")
 @patch.object(server.linter, "lint")
-def test_jev_evaluate_batch_qfe_compression(mock_lint, mock_check_limit, mock_evaluate_batch, mock_urlopen):
+def test_jev_evaluate_batch_qfe_compression(
+    mock_lint, mock_check_limit, mock_evaluate_batch, mock_urlopen
+):
     # Setup linting to return no errors
     mock_report = MagicMock()
     mock_report.findings = []
     mock_lint.return_value = mock_report
-    
+
     # Initial state too big, then after compression it's small enough
     mock_check_limit.side_effect = [10000, 100]
 
     mock_response = MagicMock()
-    mock_response.read.return_value = json.dumps({
-        "choices": [{
-            "message": {
-                "content": "Compressed state text"
-            }
-        }]
-    }).encode("utf-8")
+    mock_response.read.return_value = json.dumps(
+        {"choices": [{"message": {"content": "Compressed state text"}}]}
+    ).encode("utf-8")
     mock_context_manager = MagicMock()
     mock_context_manager.__enter__.return_value = mock_response
     mock_urlopen.return_value = mock_context_manager
 
     # Linter evaluates, then actual evaluates
     mock_evaluate_batch.side_effect = [
-        {"q1": {"noul": 0.1}}, # linter
-        {"q1": {"noul": 0.9}}  # actual
+        {"q1": {"noul": 0.1}},  # linter
+        {"q1": {"noul": 0.9}},  # actual
     ]
 
     q1 = NoulQuestion(key="q1", prompt="Test?")
-    result_str = server.jev_evaluate_batch(state={"test": "a"*40000}, questions=[q1])
+    result_str = server.jev_evaluate_batch(state={"test": "a" * 40000}, questions=[q1])
 
     result = json.loads(result_str)
     assert result["status"] == "SUCCESS"
     assert result.get("was_compressed") is True
     assert result["qfe_state"]["qfe_extracted_context"] == "Compressed state text"
 
+
 @patch("urllib.request.urlopen")
 @patch.object(server.provider, "check_token_limit")
 def test_jev_evaluate_batch_qfe_compression_fails(mock_check_limit, mock_urlopen):
-    mock_check_limit.side_effect = [10000, 10000] # Still too big after compression
-    
+    mock_check_limit.side_effect = [10000, 10000]  # Still too big after compression
+
     mock_response = MagicMock()
-    mock_response.read.return_value = json.dumps({
-        "choices": [{
-            "message": {
-                "content": "Compressed state text"
-            }
-        }]
-    }).encode("utf-8")
+    mock_response.read.return_value = json.dumps(
+        {"choices": [{"message": {"content": "Compressed state text"}}]}
+    ).encode("utf-8")
     mock_context_manager = MagicMock()
     mock_context_manager.__enter__.return_value = mock_response
     mock_urlopen.return_value = mock_context_manager
 
     q1 = NoulQuestion(key="q1", prompt="Test?")
-    result_str = server.jev_evaluate_batch(state={"test": "a"*40000}, questions=[q1])
+    result_str = server.jev_evaluate_batch(state={"test": "a" * 40000}, questions=[q1])
 
     assert "CRITICAL SYSTEM ERROR" in result_str
     assert "QFE output still exceeded max tokens." in result_str
+
 
 @patch("urllib.request.urlopen")
 @patch.object(server.provider, "check_token_limit")
@@ -146,133 +149,168 @@ def test_jev_evaluate_batch_qfe_compression_exception(mock_check_limit, mock_url
     mock_urlopen.side_effect = Exception("Network Error")
 
     q1 = NoulQuestion(key="q1", prompt="Test?")
-    result_str = server.jev_evaluate_batch(state={"test": "a"*40000}, questions=[q1])
+    result_str = server.jev_evaluate_batch(state={"test": "a" * 40000}, questions=[q1])
 
     assert "CRITICAL SYSTEM ERROR" in result_str
     assert "Network Error" in result_str
+
 
 @patch("jev_mcp.app.call_fast_autofixer")
 @patch.object(server.provider, "evaluate_batch")
 @patch.object(server.provider, "check_token_limit")
 @patch.object(server.linter, "lint")
-def test_jev_evaluate_batch_model_linter_generative(mock_lint, mock_check_limit, mock_evaluate_batch, mock_autofix):
+def test_jev_evaluate_batch_model_linter_generative(
+    mock_lint, mock_check_limit, mock_evaluate_batch, mock_autofix
+):
     mock_report = MagicMock()
     mock_report.findings = []
     mock_lint.return_value = mock_report
     mock_check_limit.return_value = 100
-    
+
     # Model based linter thinks it's generative (>0.85)
     # The first call to evaluate_batch is for lint_qs (key q_0)
     mock_evaluate_batch.return_value = {"q_0": {"noul": 0.99}}
-    
+
     mock_autofix.side_effect = Exception("Autofixer failed")
 
     q1 = NoulQuestion(key="q1", prompt="Summarize this text?")
-    result_str = server.jev_evaluate_batch(state={"test": 1}, questions=[q1], auto_apply_fixes=False)
-    
+    result_str = server.jev_evaluate_batch(
+        state={"test": 1}, questions=[q1], auto_apply_fixes=False
+    )
+
     result = json.loads(result_str)
     assert result["status"] == "REJECTED_BY_LINTER"
-    assert any(f["code"] == "SEMANTIC_GENERATIVE_INTENT" for f in result["original_findings"])
+    assert any(
+        f["code"] == "SEMANTIC_GENERATIVE_INTENT" for f in result["original_findings"]
+    )
+
 
 @patch.object(server.provider, "evaluate_batch")
 @patch.object(server.provider, "check_token_limit")
 @patch.object(server.linter, "lint")
-def test_jev_evaluate_batch_static_linter_error(mock_lint, mock_check_limit, mock_evaluate_batch):
+def test_jev_evaluate_batch_static_linter_error(
+    mock_lint, mock_check_limit, mock_evaluate_batch
+):
     mock_report = MagicMock()
     mock_report.findings = [
         LintFinding(
             severity="ERROR",
             code="SOME_ERROR",
             message="Error msg",
-            suggestion="Fix it"
+            suggestion="Fix it",
         )
     ]
     mock_lint.return_value = mock_report
     mock_check_limit.return_value = 100
-    
+
     mock_evaluate_batch.return_value = {"q1": {"noul": 0.1}}
 
     q1 = ChoiceQuestion(key="q1", prompt="Pick one?", options=["a"])
     q2 = ScoreQuestion(key="q2", prompt="Score?", labels=["1", "2"])
 
     result_str = server.jev_evaluate_batch(state={"test": 1}, questions=[q1, q2])
-    
+
     result = json.loads(result_str)
     assert result["status"] == "REJECTED_BY_LINTER"
     assert any(f["code"] == "SOME_ERROR" for f in result["original_findings"])
+
 
 @patch("urllib.request.urlopen")
 @patch.object(server.provider, "evaluate_batch")
 @patch.object(server.provider, "check_token_limit")
 @patch.object(server.linter, "lint")
-def test_jev_evaluate_batch_autofix_requires_approval(mock_lint, mock_check_limit, mock_evaluate_batch, mock_urlopen):
+def test_jev_evaluate_batch_autofix_requires_approval(
+    mock_lint, mock_check_limit, mock_evaluate_batch, mock_urlopen
+):
     # Static linter fails initially, then passes
     mock_report_fail = MagicMock()
     mock_report_fail.findings = [
-        LintFinding(severity="ERROR", code="SOME_ERROR", message="msg", suggestion="sug")
+        LintFinding(
+            severity="ERROR", code="SOME_ERROR", message="msg", suggestion="sug"
+        )
     ]
     mock_report_pass = MagicMock()
     mock_report_pass.findings = []
-    
+
     mock_lint.side_effect = [mock_report_fail, mock_report_pass]
     mock_check_limit.return_value = 100
-    
+
     # Eval batch for linter
     mock_evaluate_batch.return_value = {"q1": {"noul": 0.1}}
 
     # Autofixer response
     mock_response = MagicMock()
-    mock_response.read.return_value = json.dumps({
-        "choices": [{
-            "message": {
-                "content": '{"fixed_questions": [{"key": "q1", "prompt": "fixed prompt", "type": "noul"}]}'
-            }
-        }]
-    }).encode("utf-8")
+    mock_response.read.return_value = json.dumps(
+        {
+            "choices": [
+                {
+                    "message": {
+                        "content": '{"fixed_questions": [{"key": "q1", "prompt": "fixed prompt", "type": "noul"}]}'
+                    }
+                }
+            ]
+        }
+    ).encode("utf-8")
     mock_context_manager = MagicMock()
     mock_context_manager.__enter__.return_value = mock_response
     mock_urlopen.return_value = mock_context_manager
 
     q1 = NoulQuestion(key="q1", prompt="bad prompt?")
-    result_str = server.jev_evaluate_batch(state={"test": 1}, questions=[q1], auto_apply_fixes=False)
+    result_str = server.jev_evaluate_batch(
+        state={"test": 1}, questions=[q1], auto_apply_fixes=False
+    )
 
     result = json.loads(result_str)
     assert result["status"] == "REQUIRES_APPROVAL"
     assert len(result["suggested_fixes"]) == 1
     assert result["suggested_fixes"][0]["prompt"] == "fixed prompt"
 
+
 @patch("urllib.request.urlopen")
 @patch.object(server.provider, "evaluate_batch")
 @patch.object(server.provider, "check_token_limit")
 @patch.object(server.linter, "lint")
-def test_jev_evaluate_batch_autofix_auto_apply(mock_lint, mock_check_limit, mock_evaluate_batch, mock_urlopen):
+def test_jev_evaluate_batch_autofix_auto_apply(
+    mock_lint, mock_check_limit, mock_evaluate_batch, mock_urlopen
+):
     # Static linter fails initially, then passes
     mock_report_fail = MagicMock()
     mock_report_fail.findings = [
-        LintFinding(severity="ERROR", code="SOME_ERROR", message="msg", suggestion="sug")
+        LintFinding(
+            severity="ERROR", code="SOME_ERROR", message="msg", suggestion="sug"
+        )
     ]
     mock_report_pass = MagicMock()
     mock_report_pass.findings = []
-    
-    mock_lint.side_effect = [mock_report_fail, mock_report_fail, mock_report_pass, mock_report_pass]
+
+    mock_lint.side_effect = [
+        mock_report_fail,
+        mock_report_fail,
+        mock_report_pass,
+        mock_report_pass,
+    ]
     mock_check_limit.return_value = 100
-    
+
     # Eval batch for linter, then eval batch for autofixed
     mock_evaluate_batch.side_effect = [
-        {"q1": {"noul": 0.1}}, # linter fail loop
-        {"q1": {"noul": 0.1}}, # linter pass loop
-        {"q1": {"noul": 0.8}}  # actual eval
+        {"q1": {"noul": 0.1}},  # linter fail loop
+        {"q1": {"noul": 0.1}},  # linter pass loop
+        {"q1": {"noul": 0.8}},  # actual eval
     ]
 
     # Autofixer response
     mock_response = MagicMock()
-    mock_response.read.return_value = json.dumps({
-        "choices": [{
-            "message": {
-                "content": '{"fixed_questions": [{"key": "c1", "prompt": "fixed choice", "type": "choice", "options": ["X"]}, {"key": "s1", "prompt": "fixed score", "type": "score", "labels": ["Y"]}]}'
-            }
-        }]
-    }).encode("utf-8")
+    mock_response.read.return_value = json.dumps(
+        {
+            "choices": [
+                {
+                    "message": {
+                        "content": '{"fixed_questions": [{"key": "c1", "prompt": "fixed choice", "type": "choice", "options": ["X"]}, {"key": "s1", "prompt": "fixed score", "type": "score", "labels": ["Y"]}]}'
+                    }
+                }
+            ]
+        }
+    ).encode("utf-8")
     mock_context_manager = MagicMock()
     mock_context_manager.__enter__.return_value = mock_response
     mock_urlopen.return_value = mock_context_manager
@@ -280,26 +318,31 @@ def test_jev_evaluate_batch_autofix_auto_apply(mock_lint, mock_check_limit, mock
     q_c = ChoiceQuestion(key="c1", prompt="bad choice?", options=["A"])
     q_s = ScoreQuestion(key="s1", prompt="bad score?", labels=["1"])
 
-    result_str = server.jev_evaluate_batch(state={"test": 1}, questions=[q_c, q_s], auto_apply_fixes=True)
+    result_str = server.jev_evaluate_batch(
+        state={"test": 1}, questions=[q_c, q_s], auto_apply_fixes=True
+    )
 
     result = json.loads(result_str)
     assert result["status"] == "SUCCESS"
     assert result["was_autofixed"] is True
     assert len(result["autofix_transformations"]) == 2
 
+
 @patch("urllib.request.urlopen")
 @patch.object(server.provider, "evaluate_batch")
 @patch.object(server.provider, "check_token_limit")
 @patch.object(server.linter, "lint")
-def test_jev_evaluate_batch_engine_failure(mock_lint, mock_check_limit, mock_evaluate_batch, mock_urlopen):
+def test_jev_evaluate_batch_engine_failure(
+    mock_lint, mock_check_limit, mock_evaluate_batch, mock_urlopen
+):
     mock_report = MagicMock()
     mock_report.findings = []
     mock_lint.return_value = mock_report
     mock_check_limit.return_value = 100
-    
+
     mock_evaluate_batch.side_effect = [
-        {"q1": {"noul": 0.1}}, # linter loop
-        Exception("Eval exploded")
+        {"q1": {"noul": 0.1}},  # linter loop
+        Exception("Eval exploded"),
     ]
 
     q1 = NoulQuestion(key="q1", prompt="Test?")
@@ -307,87 +350,87 @@ def test_jev_evaluate_batch_engine_failure(mock_lint, mock_check_limit, mock_eva
 
     assert "INTERNAL ENGINE ERROR: Eval exploded" in result_str
 
+
 @patch("urllib.request.urlopen")
 @patch.object(server.provider, "evaluate_batch")
 def test_jev_optimize_prompt_success(mock_evaluate_batch, mock_urlopen):
     mock_response = MagicMock()
-    mock_response.read.return_value = json.dumps({
-        "choices": [{
-            "message": {
-                "content": '{"variations": ["var1", "var2"]}'
-            }
-        }]
-    }).encode("utf-8")
+    mock_response.read.return_value = json.dumps(
+        {"choices": [{"message": {"content": '{"variations": ["var1", "var2"]}'}}]}
+    ).encode("utf-8")
     mock_context = MagicMock()
     mock_context.__enter__.return_value = mock_response
     mock_urlopen.return_value = mock_context
-    
+
     # Original (idx 0), var1, var2
     mock_evaluate_batch.return_value = {
         "var_0": {"noul": 0.5},
-        "var_1": {"noul": 0.95}, # Best
-        "var_2": {"noul": 0.3}
+        "var_1": {"noul": 0.95},  # Best
+        "var_2": {"noul": 0.3},
     }
 
     q1 = NoulQuestion(key="q1", prompt="Original prompt?")
     res = server.jev_optimize_prompt(state={"a": 1}, question=q1)
-    
+
     res_data = json.loads(res)
     assert res_data["optimized_prompt"] == "var1"
     assert "95.00%" in res_data["optimized_confidence"]
     assert "50.00%" in res_data["original_confidence"]
 
+
 @patch("urllib.request.urlopen")
 @patch.object(server.provider, "evaluate_batch")
 def test_jev_optimize_prompt_choice(mock_evaluate_batch, mock_urlopen):
     mock_response = MagicMock()
-    mock_response.read.return_value = json.dumps({
-        "choices": [{
-            "message": {
-                "content": '{"variations": ["var1"]}'
-            }
-        }]
-    }).encode("utf-8")
+    mock_response.read.return_value = json.dumps(
+        {"choices": [{"message": {"content": '{"variations": ["var1"]}'}}]}
+    ).encode("utf-8")
     mock_context = MagicMock()
     mock_context.__enter__.return_value = mock_response
     mock_urlopen.return_value = mock_context
-    
+
     mock_evaluate_batch.return_value = {
         "var_0": {"probabilities": {"A": 0.6, "B": 0.4}},
-        "var_1": {"probabilities": {"A": 0.9, "B": 0.1}}, # Best
+        "var_1": {"probabilities": {"A": 0.9, "B": 0.1}},  # Best
     }
 
     q1 = ChoiceQuestion(key="c1", prompt="Original prompt?", options=["A", "B"])
     res = server.jev_optimize_prompt(state={"a": 1}, question=q1)
-    
+
     res_data = json.loads(res)
     assert res_data["optimized_prompt"] == "var1"
+
 
 @patch("urllib.request.urlopen")
 @patch.object(server.provider, "evaluate_batch")
 def test_jev_optimize_prompt_score(mock_evaluate_batch, mock_urlopen):
     mock_response = MagicMock()
-    mock_response.read.return_value = json.dumps({
-        "choices": [{
-            "message": {
-                "content": '{"variations": "var1"}' # tests string fallback
-            }
-        }]
-    }).encode("utf-8")
+    mock_response.read.return_value = json.dumps(
+        {
+            "choices": [
+                {
+                    "message": {
+                        "content": '{"variations": "var1"}'  # tests string fallback
+                    }
+                }
+            ]
+        }
+    ).encode("utf-8")
     mock_context = MagicMock()
     mock_context.__enter__.return_value = mock_response
     mock_urlopen.return_value = mock_context
-    
+
     mock_evaluate_batch.return_value = {
         "var_0": {"confidence": 0.2},
-        "var_1": {"confidence": 0.8}, # Best
+        "var_1": {"confidence": 0.8},  # Best
     }
 
     q1 = ScoreQuestion(key="s1", prompt="Original prompt?", labels=["1", "2"])
     res = server.jev_optimize_prompt(state={"a": 1}, question=q1)
-    
+
     res_data = json.loads(res)
     assert res_data["optimized_prompt"] == "var1"
+
 
 @patch("urllib.request.urlopen")
 def test_jev_optimize_prompt_gen_fail(mock_urlopen):
@@ -396,61 +439,65 @@ def test_jev_optimize_prompt_gen_fail(mock_urlopen):
     res = server.jev_optimize_prompt(state={"a": 1}, question=q1)
     assert "Optimizer Generator Failed" in res
 
+
 @patch("urllib.request.urlopen")
 @patch.object(server.provider, "evaluate_batch")
 def test_jev_optimize_prompt_eval_fail(mock_evaluate_batch, mock_urlopen):
     mock_response = MagicMock()
-    mock_response.read.return_value = json.dumps({
-        "choices": [{"message": {"content": '{"variations": []}'}}]
-    }).encode("utf-8")
+    mock_response.read.return_value = json.dumps(
+        {"choices": [{"message": {"content": '{"variations": []}'}}]}
+    ).encode("utf-8")
     mock_context = MagicMock()
     mock_context.__enter__.return_value = mock_response
     mock_urlopen.return_value = mock_context
-    
+
     mock_evaluate_batch.side_effect = Exception("Eval Error")
-    
+
     q1 = NoulQuestion(key="q1", prompt="Original prompt?")
     res = server.jev_optimize_prompt(state={"a": 1}, question=q1)
     assert "Optimizer Evaluation Failed" in res
 
+
 @patch.object(server.provider, "evaluate_dataset")
 def test_jev_calibrate_threshold_noul(mock_eval_dataset):
     mock_eval_dataset.return_value = [
-        {"noul": 0.9}, # tp at >0.5
-        {"noul": 0.8}, # fp
-        {"noul": 0.2}, # tn
-        {"noul": 0.1}  # fn
+        {"noul": 0.9},  # tp at >0.5
+        {"noul": 0.8},  # fp
+        {"noul": 0.2},  # tn
+        {"noul": 0.1},  # fn
     ]
     dataset = [
         {"expected": True},
         {"expected": False},
         {"expected": False},
-        {"expected": True}
+        {"expected": True},
     ]
     q = NoulQuestion(key="q1", prompt="?")
     res_str = server.jev_calibrate_threshold(dataset, q)
     res = json.loads(res_str)
     assert res["status"] == "CALIBRATION_COMPLETE"
     assert "Markdown" or "markdown" in res["markdown_report"].lower()
-    
+
+
 @patch.object(server.provider, "evaluate_dataset")
 def test_jev_calibrate_threshold_choice(mock_eval_dataset):
     mock_eval_dataset.return_value = [
-        {"probabilities": {"a": 0.9, "b": 0.1}}, # tp
-        {"probabilities": {"a": 0.8, "b": 0.2}}, # fp
-        {"probabilities": {"b": 0.9, "a": 0.1}}, # tn
-        {"probabilities": {"b": 0.8, "a": 0.2}}  # fn
+        {"probabilities": {"a": 0.9, "b": 0.1}},  # tp
+        {"probabilities": {"a": 0.8, "b": 0.2}},  # fp
+        {"probabilities": {"b": 0.9, "a": 0.1}},  # tn
+        {"probabilities": {"b": 0.8, "a": 0.2}},  # fn
     ]
     dataset = [
         {"expected": "A"},
         {"expected": "B"},
         {"expected": "B"},
-        {"expected": "A"}
+        {"expected": "A"},
     ]
     q = ChoiceQuestion(key="c1", prompt="?", options=["A", "B"])
     res_str = server.jev_calibrate_threshold(dataset, q)
     res = json.loads(res_str)
     assert res["status"] == "CALIBRATION_COMPLETE"
+
 
 @patch.object(server.provider, "evaluate_dataset")
 def test_jev_calibrate_threshold_fail(mock_eval_dataset):
@@ -460,76 +507,96 @@ def test_jev_calibrate_threshold_fail(mock_eval_dataset):
     res = server.jev_calibrate_threshold(dataset, q)
     assert "Calibration Failed" in res
 
+
 @patch("urllib.request.urlopen")
 def test_jev_explain_decision_success(mock_urlopen):
     mock_response = MagicMock()
-    mock_response.read.return_value = json.dumps({
-        "choices": [{
-            "message": {
-                "content": '{"evidence_sentence": "The user clicked yes.", "reasoning": "Clear evidence"}'
-            }
-        }]
-    }).encode("utf-8")
+    mock_response.read.return_value = json.dumps(
+        {
+            "choices": [
+                {
+                    "message": {
+                        "content": '{"evidence_sentence": "The user clicked yes.", "reasoning": "Clear evidence"}'
+                    }
+                }
+            ]
+        }
+    ).encode("utf-8")
     mock_context = MagicMock()
     mock_context.__enter__.return_value = mock_response
     mock_urlopen.return_value = mock_context
-    
+
     q = NoulQuestion(key="q1", prompt="Did they click?")
-    res_str = server.jev_explain_decision(state={"text": "The user clicked yes."}, question=q, decision="True")
+    res_str = server.jev_explain_decision(
+        state={"text": "The user clicked yes."}, question=q, decision="True"
+    )
     res = json.loads(res_str)
     assert res["evidence"] == "The user clicked yes."
+
 
 @patch("urllib.request.urlopen")
 def test_jev_explain_decision_fail(mock_urlopen):
     mock_urlopen.side_effect = Exception("HTTP 500")
     q = NoulQuestion(key="q1", prompt="Did they click?")
-    res = server.jev_explain_decision(state={"text": "xyz"}, question=q, decision="True")
+    res = server.jev_explain_decision(
+        state={"text": "xyz"}, question=q, decision="True"
+    )
     assert "Evidence Extraction Failed" in res
+
 
 @patch("subprocess.check_output")
 @patch("urllib.request.urlopen")
 def test_jev_generate_synthetic_dataset_local_success(mock_urlopen, mock_check_output):
     mock_check_output.return_value = b"1234 llama-server\n"
-    
+
     mock_response = MagicMock()
-    mock_response.read.return_value = json.dumps({
-        "choices": [{
-            "message": {
-                "content": '{"dataset": [{"state": {"text": "A"}, "expected": true}]}'
-            }
-        }]
-    }).encode("utf-8")
+    mock_response.read.return_value = json.dumps(
+        {
+            "choices": [
+                {
+                    "message": {
+                        "content": '{"dataset": [{"state": {"text": "A"}, "expected": true}]}'
+                    }
+                }
+            ]
+        }
+    ).encode("utf-8")
     mock_context = MagicMock()
     mock_context.__enter__.return_value = mock_response
     mock_urlopen.return_value = mock_context
-    
+
     q = NoulQuestion(key="q1", prompt="?")
     res_str = server.jev_generate_synthetic_dataset(question=q, num_cases=1)
     res = json.loads(res_str)
     assert res["status"] == "DATASET_GENERATED"
     assert len(res["dataset"]) == 1
 
+
 @patch("subprocess.check_output")
 @patch("urllib.request.urlopen")
-def test_jev_generate_synthetic_dataset_local_fail_fallback(mock_urlopen, mock_check_output):
+def test_jev_generate_synthetic_dataset_local_fail_fallback(
+    mock_urlopen, mock_check_output
+):
     mock_check_output.return_value = b"1234 llama-server\n"
     mock_urlopen.side_effect = Exception("Server error")
-    
+
     q = NoulQuestion(key="q1", prompt="Some prompt")
     res = server.jev_generate_synthetic_dataset(question=q, num_cases=1)
-    
+
     # Falls back to prompt
     assert "INSTRUCTION TO PRIMARY LLM:" in res
+
 
 @patch("subprocess.check_output")
 def test_jev_generate_synthetic_dataset_no_local(mock_check_output):
     mock_check_output.side_effect = Exception("pgrep failed")
-    
+
     q = ChoiceQuestion(key="q1", prompt="Some prompt", options=["A", "B"])
     res = server.jev_generate_synthetic_dataset(question=q, num_cases=2)
-    
+
     assert "INSTRUCTION TO PRIMARY LLM:" in res
     assert "one of the choice options" in res
+
 
 @patch.object(server.provider, "evaluate_dataset")
 def test_jev_calibrate_threshold_platt_auto_triggered(mock_eval_dataset):
@@ -538,17 +605,20 @@ def test_jev_calibrate_threshold_platt_auto_triggered(mock_eval_dataset):
     mock_eval_dataset.return_value = [
         {"probabilities": {"a": 0.999, "b": 0.001}} for _ in range(10)
     ]
-    dataset = [{"expected": "A"} for _ in range(7)] + [{"expected": "B"} for _ in range(3)]
-    
+    dataset = [{"expected": "A"} for _ in range(7)] + [
+        {"expected": "B"} for _ in range(3)
+    ]
+
     q = ChoiceQuestion(key="coin", prompt="?", options=["A", "B"])
     res_str = server.jev_calibrate_threshold(dataset, q, apply_platt_scaling="auto")
     res = json.loads(res_str)
-    
+
     assert res["status"] == "CALIBRATION_COMPLETE"
     # Should say Platt Scaling Applied
     assert "Platt Scaling Applied" in res["markdown_report"]
     # The >0.99 threshold should now have 0 automation rate because probabilities were squished
     assert "| > 0.99 | 0.0% |" in res["markdown_report"]
+
 
 @patch.object(server.provider, "evaluate_dataset")
 def test_jev_calibrate_threshold_platt_always(mock_eval_dataset):
@@ -558,13 +628,14 @@ def test_jev_calibrate_threshold_platt_always(mock_eval_dataset):
         {"probabilities": {"a": 0.4, "b": 0.6}},
     ]
     dataset = [{"expected": "A"}, {"expected": "B"}]
-    
+
     q = ChoiceQuestion(key="coin", prompt="?", options=["A", "B"])
     # Force apply_platt_scaling
     res_str = server.jev_calibrate_threshold(dataset, q, apply_platt_scaling="always")
     res = json.loads(res_str)
-    
+
     assert "Platt Scaling Applied" in res["markdown_report"]
+
 
 @patch.object(server.provider, "evaluate_dataset")
 def test_jev_calibrate_threshold_platt_never(mock_eval_dataset):
@@ -572,15 +643,21 @@ def test_jev_calibrate_threshold_platt_never(mock_eval_dataset):
     mock_eval_dataset.return_value = [
         {"probabilities": {"a": 0.999, "b": 0.001}} for _ in range(10)
     ]
-    dataset = [{"expected": "A"} for _ in range(7)] + [{"expected": "B"} for _ in range(3)]
-    
+    dataset = [{"expected": "A"} for _ in range(7)] + [
+        {"expected": "B"} for _ in range(3)
+    ]
+
     q = ChoiceQuestion(key="coin", prompt="?", options=["A", "B"])
     res_str = server.jev_calibrate_threshold(dataset, q, apply_platt_scaling="never")
     res = json.loads(res_str)
-    
+
     # Should detect it but suggest the user turn it on
-    assert "To fix this automatically, set `apply_platt_scaling='auto'`" in res["markdown_report"]
+    assert (
+        "To fix this automatically, set `apply_platt_scaling='auto'`"
+        in res["markdown_report"]
+    )
     assert "Platt Scaling Applied" not in res["markdown_report"]
+
 
 @patch.object(server.provider, "evaluate_dataset")
 def test_jev_calibrate_threshold_platt_missing_sklearn(mock_eval_dataset):
@@ -588,16 +665,19 @@ def test_jev_calibrate_threshold_platt_missing_sklearn(mock_eval_dataset):
     mock_eval_dataset.return_value = [
         {"probabilities": {"a": 0.999, "b": 0.001}} for _ in range(10)
     ]
-    dataset = [{"expected": "A"} for _ in range(7)] + [{"expected": "B"} for _ in range(3)]
-    
+    dataset = [{"expected": "A"} for _ in range(7)] + [
+        {"expected": "B"} for _ in range(3)
+    ]
+
     q = ChoiceQuestion(key="coin", prompt="?", options=["A", "B"])
-    
+
     # Mock ImportError
-    with patch.dict('sys.modules', {'sklearn.linear_model': None}):
+    with patch.dict("sys.modules", {"sklearn.linear_model": None}):
         res_str = server.jev_calibrate_threshold(dataset, q, apply_platt_scaling="auto")
         res = json.loads(res_str)
-        
+
         assert "scikit-learn" in res["markdown_report"]
+
 
 @patch("jev_mcp.app.RoutingProvider")
 def test_jev_determine_best_model(mock_provider_class):
@@ -606,16 +686,19 @@ def test_jev_determine_best_model(mock_provider_class):
     mock_provider.evaluate_batch.return_value = {
         "complexity": {
             "score": "3",
-            "probabilities": {"1": 0.1, "2": 0.2, "3": 0.6, "4": 0.1}
+            "probabilities": {"1": 0.1, "2": 0.2, "3": 0.6, "4": 0.1},
         }
     }
-    
-    res_str = server.jev_determine_best_model("Implement a distributed queue.", estimated_tokens=0)
+
+    res_str = server.jev_determine_best_model(
+        "Implement a distributed queue.", estimated_tokens=0
+    )
     res = json.loads(res_str)
     assert res["status"] in ["EVALUATED", "COMPLEXITY_EVALUATED"]
     assert res["complexity_score"] == 3
     # Complexity 3 routes to bucket b3 of the default config (no config file exists in tests).
     assert res["recommended_model"] == "claude-opus-5-5"
+
 
 @patch("jev_mcp.app.RoutingProvider")
 def test_jev_agent_handoff(mock_provider_class):
@@ -624,20 +707,22 @@ def test_jev_agent_handoff(mock_provider_class):
     mock_provider.evaluate_batch.return_value = {
         "best_agent": {
             "choice": "Python_Agent",
-            "probabilities": {"Python_Agent": 0.8, "DB_Agent": 0.2}
+            "probabilities": {"Python_Agent": 0.8, "DB_Agent": 0.2},
         }
     }
-    
+
     agents = {"Python_Agent": "Writes code", "DB_Agent": "Writes SQL"}
     res_str = server.jev_agent_handoff("Fix python bug", agents)
     res = json.loads(res_str)
     assert res["status"] == "HANDOFF_RECOMMENDATION"
     assert res["recommended_agent"] == "Python_Agent"
-    
+
+
 def test_jev_train_lora_rejects_missing_dataset():
     res = json.loads(server.jev_train_lora("/nonexistent/path/data.jsonl"))
     assert res["status"] == "ERROR"
     assert ".jsonl" in res["message"] or "not" in res["message"].lower()
+
 
 @patch("subprocess.Popen")
 def test_jev_train_lora_starts_training(mock_popen, tmp_path, monkeypatch):
@@ -655,15 +740,19 @@ def test_jev_train_lora_starts_training(mock_popen, tmp_path, monkeypatch):
     assert res["pid"] == 4242
     cmd = mock_popen.call_args[0][0]
     assert cmd[0] == "bash"
-    with open(cmd[1], "r") as f: script_content = f.read()
+    with open(cmd[1], "r") as f:
+        script_content = f.read()
     assert "mlx-community/Qwen2.5-7B-Instruct-4bit" in script_content
     assert "mlx_lm.lora" in script_content
     # A train.jsonl link must exist in the run data dir passed via --data
     data_dir = res["data_dir"]
     assert os.path.exists(os.path.join(data_dir, "train.jsonl"))
 
+
 @patch("subprocess.Popen")
-def test_jev_train_lora_restages_dataset_named_train_jsonl(mock_popen, tmp_path, monkeypatch):
+def test_jev_train_lora_restages_dataset_named_train_jsonl(
+    mock_popen, tmp_path, monkeypatch
+):
     monkeypatch.setenv("HOME", str(tmp_path))
     mock_popen.return_value = MagicMock(pid=1)
     # A stale (e.g. dangling) train.jsonl link left in the run dir by an earlier
@@ -680,12 +769,16 @@ def test_jev_train_lora_restages_dataset_named_train_jsonl(mock_popen, tmp_path,
     assert res["status"] == "TRAINING_STARTED", res.get("message", "unknown error")
     assert os.path.realpath(os.path.join(res["data_dir"], "train.jsonl")) == str(ds)
 
+
 def _read_train_script(mock_popen):
     with open(mock_popen.call_args[0][0][1], "r") as f:
         return f.read()
 
+
 @patch("subprocess.Popen")
-def test_jev_train_lora_passes_the_requested_iteration_count(mock_popen, tmp_path, monkeypatch):
+def test_jev_train_lora_passes_the_requested_iteration_count(
+    mock_popen, tmp_path, monkeypatch
+):
     monkeypatch.setenv("HOME", str(tmp_path))
     mock_popen.return_value = MagicMock(pid=1)
     ds = tmp_path / "mydata.jsonl"
@@ -695,6 +788,7 @@ def test_jev_train_lora_passes_the_requested_iteration_count(mock_popen, tmp_pat
 
     assert res["status"] == "TRAINING_STARTED", res.get("message", "unknown error")
     assert "--iters 120" in _read_train_script(mock_popen)
+
 
 @patch("subprocess.Popen")
 def test_jev_train_lora_rejects_non_positive_iters(mock_popen, tmp_path, monkeypatch):
@@ -707,8 +801,11 @@ def test_jev_train_lora_rejects_non_positive_iters(mock_popen, tmp_path, monkeyp
     assert res["status"] == "ERROR"
     mock_popen.assert_not_called()
 
+
 @patch("subprocess.Popen")
-def test_jev_train_lora_without_fuse_does_not_download_or_run_remote_scripts(mock_popen, tmp_path, monkeypatch):
+def test_jev_train_lora_without_fuse_does_not_download_or_run_remote_scripts(
+    mock_popen, tmp_path, monkeypatch
+):
     monkeypatch.setenv("HOME", str(tmp_path))
     mock_popen.return_value = MagicMock(pid=1)
     ds = tmp_path / "mydata.jsonl"
@@ -722,6 +819,7 @@ def test_jev_train_lora_without_fuse_does_not_download_or_run_remote_scripts(moc
     assert "convert-lora-to-ggml" not in script
     assert res["adapter_path"] in script
 
+
 @patch("subprocess.Popen")
 def test_jev_train_lora_rejects_bad_model_name(mock_popen, tmp_path):
     ds = tmp_path / "data.jsonl"
@@ -732,8 +830,11 @@ def test_jev_train_lora_rejects_bad_model_name(mock_popen, tmp_path):
     assert "model" in res["message"].lower()
     mock_popen.assert_not_called()
 
+
 @patch("subprocess.Popen")
-def test_jev_train_lora_returns_json_error_on_failure(mock_popen, tmp_path, monkeypatch):
+def test_jev_train_lora_returns_json_error_on_failure(
+    mock_popen, tmp_path, monkeypatch
+):
     monkeypatch.setenv("HOME", str(tmp_path))  # staging runs before Popen fails
     ds = tmp_path / "data.jsonl"
     ds.write_text("{}\n")
@@ -743,11 +844,13 @@ def test_jev_train_lora_returns_json_error_on_failure(mock_popen, tmp_path, monk
     assert res["status"] == "ERROR"
     assert "spawn failed" in res["message"]
 
+
 @patch("jev_mcp.app.post_json")
 def test_chat_completion_rejects_non_numeric_port(mock_post, monkeypatch):
     monkeypatch.setenv("JEV_SMART_PORT", "8081@evil.com")
     with pytest.raises(ValueError):
         server._chat_completion("user-msg")
+
 
 @patch("jev_mcp.app.post_json")
 def test_chat_completion_sends_system_and_json_format(mock_post):
@@ -768,6 +871,7 @@ def test_chat_completion_sends_system_and_json_format(mock_post):
     ]
     assert payload["response_format"] == {"type": "json_object"}
 
+
 @patch("jev_mcp.app.post_json")
 def test_chat_completion_without_system_or_format(mock_post, monkeypatch):
     monkeypatch.setenv("JEV_FAST_PORT", "9999")
@@ -786,72 +890,86 @@ def test_chat_completion_without_system_or_format(mock_post, monkeypatch):
     assert payload["messages"] == [{"role": "user", "content": "user-msg"}]
     assert "response_format" not in payload
 
+
 @patch("jev_mcp.app.load_router_config")
 @patch("jev_mcp.app.save_router_config")
 def test_jev_manage_router_config(mock_save, mock_load):
     mock_load.return_value = {"custom_rules": [], "buckets": {}}
-    
+
     # View
     res_str = server.jev_manage_router_config("view_all")
     res = json.loads(res_str)
     assert "custom_rules" in res
-    
+
     # Update
     server.jev_manage_router_config("set_bucket", bucket_id="b1", model_name="gpt-4")
     mock_save.assert_called_once()
 
+
 @patch("jev_mcp.app.load_router_config")
 @patch("jev_mcp.app.save_router_config")
 def test_jev_manage_temperature(mock_save, mock_load):
-    mock_load.return_value = {"fitted_temperature": 1.5, "temperature_updated_at": "Today"}
-    
+    mock_load.return_value = {
+        "fitted_temperature": 1.5,
+        "temperature_updated_at": "Today",
+    }
+
     # View
     res_str = server.jev_manage_temperature("view")
     res = json.loads(res_str)
     assert res["current_temperature"] == 1.5
-    
+
     # Set
     server.jev_manage_temperature("set", 1.8)
     saved_cfg = mock_save.call_args[0][0]
     assert saved_cfg["fitted_temperature"] == 1.8
     assert "temperature_updated_at" in saved_cfg
-    
+
     # Reset
     server.jev_manage_temperature("reset")
     saved_cfg_reset = mock_save.call_args[0][0]
     assert saved_cfg_reset["fitted_temperature"] == 1.0
+
 
 @patch("jev_mcp.app.load_router_config")
 @patch("jev_mcp.app.RoutingProvider")
 def test_system_notice_injection(mock_provider_class, mock_load):
     # Reset global state for test
     app._has_notified_temp = False
-    
+
     # Mock config to have custom temp
-    mock_load.return_value = {"fitted_temperature": 1.34, "temperature_updated_at": "Just now", "rules": [], "buckets": {}}
-    
+    mock_load.return_value = {
+        "fitted_temperature": 1.34,
+        "temperature_updated_at": "Just now",
+        "rules": [],
+        "buckets": {},
+    }
+
     mock_provider = MagicMock()
     mock_provider_class.return_value = mock_provider
     mock_provider.evaluate_batch.return_value = {
         "complexity": {"score": "1", "probabilities": {}}
     }
-    
+
     # First call should inject notice
     res_str = server.jev_determine_best_model("task", estimated_tokens=0)
     res = json.loads(res_str)
     assert "_system_notice" in res
     assert "1.34" in res["_system_notice"]
-    
+
     # Second call should NOT inject notice (flag is True)
     res_str2 = server.jev_determine_best_model("task2", estimated_tokens=0)
     res2 = json.loads(res_str2)
     assert "_system_notice" not in res2
 
 
-def test_jev_run_browser_agent_passes_url_goal_and_step_limit_to_the_runner(monkeypatch):
+def test_jev_run_browser_agent_passes_url_goal_and_step_limit_to_the_runner(
+    monkeypatch,
+):
     # The agent loop itself is covered in tests/test_browser_agent_runner.py.
     from jev_mcp import browser_agent
     from jev_mcp.server import jev_run_browser_agent
+
     seen = {}
 
     def fake_run(url, goal, max_steps):
@@ -860,7 +978,9 @@ def test_jev_run_browser_agent_passes_url_goal_and_step_limit_to_the_runner(monk
 
     monkeypatch.setattr(browser_agent, "run_browser_agent", fake_run)
 
-    res = json.loads(jev_run_browser_agent(url="https://example.com", goal="test", max_steps=7))
+    res = json.loads(
+        jev_run_browser_agent(url="https://example.com", goal="test", max_steps=7)
+    )
 
     assert res["status"] == "SUCCESS"
     assert seen == {"url": "https://example.com", "goal": "test", "max_steps": 7}
@@ -886,9 +1006,12 @@ def test_main_serve_webhook_starts_the_triage_app_on_localhost_by_default(monkey
     import uvicorn
     from jev_mcp.email_triage.api import app
     from jev_mcp.server import main
+
     started = {}
     monkeypatch.setattr(sys, "argv", ["jev-mcp", "serve-webhook", "--port", "9001"])
-    monkeypatch.setattr(uvicorn, "run", lambda target, **kwargs: started.update(target=target, **kwargs))
+    monkeypatch.setattr(
+        uvicorn, "run", lambda target, **kwargs: started.update(target=target, **kwargs)
+    )
     monkeypatch.setenv("JEV_MCP_API_KEY", "fake-static-key-for-tests")
 
     main()
@@ -898,11 +1021,14 @@ def test_main_serve_webhook_starts_the_triage_app_on_localhost_by_default(monkey
     assert started["port"] == 9001
 
 
-def test_main_serve_webhook_refuses_to_start_without_any_credential_configured(monkeypatch):
+def test_main_serve_webhook_refuses_to_start_without_any_credential_configured(
+    monkeypatch,
+):
     # With no API key and no JWT key every request would be rejected; fail loudly instead.
     import sys
     import uvicorn
     from jev_mcp.server import main
+
     started = []
     monkeypatch.setattr(sys, "argv", ["jev-mcp", "serve-webhook"])
     monkeypatch.setattr(uvicorn, "run", lambda target, **kwargs: started.append(target))
@@ -915,56 +1041,86 @@ def test_main_serve_webhook_refuses_to_start_without_any_credential_configured(m
     assert "JEV_MCP_API_KEY" in str(exc.value)
     assert started == []
 
+
 def test_main_setup_gas(monkeypatch):
     import sys
     from jev_mcp.server import main
-    monkeypatch.setattr(sys, "argv", ["jev-mcp", "setup-gas", "--webhook-url", "http://test", "--api-key", "secret"])
-    
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["jev-mcp", "setup-gas", "--webhook-url", "http://test", "--api-key", "secret"],
+    )
+
     called_args = {}
+
     def mock_setup(webhook_url, api_key):
         called_args["webhook_url"] = webhook_url
         called_args["api_key"] = api_key
-        
+
     import jev_mcp.email_triage.gas_setup
-    monkeypatch.setattr(jev_mcp.email_triage.gas_setup, "setup_gas_workflow", mock_setup)
-    
+
+    monkeypatch.setattr(
+        jev_mcp.email_triage.gas_setup, "setup_gas_workflow", mock_setup
+    )
+
     main()
-    
+
     assert called_args["webhook_url"] == "http://test"
     assert called_args["api_key"] == "secret"
 
+
 def test_tool_triage_email_content():
     from jev_mcp.server import tool_triage_email_content
+
     # mock triage_email_content
     pass
 
+
 def test_tool_configure_triage_labels(monkeypatch):
     import jev_mcp.server
-    monkeypatch.setattr(jev_mcp.tools.triage, "configure_triage_labels", lambda c, l: {"status": "ok"})
+
+    monkeypatch.setattr(
+        jev_mcp.tools.triage, "configure_triage_labels", lambda c, l: {"status": "ok"}
+    )
     res_str = jev_mcp.server.tool_configure_triage_labels("ctx", ["label1"])
     import json
+
     assert json.loads(res_str) == {"status": "ok"}
+
 
 def test_tool_setup_gas_workflow(monkeypatch):
     import jev_mcp.server
-    monkeypatch.setattr(jev_mcp.tools.triage, "setup_gas_workflow", lambda webhook_url, api_key: "setup done")
+
+    monkeypatch.setattr(
+        jev_mcp.tools.triage,
+        "setup_gas_workflow",
+        lambda webhook_url, api_key: "setup done",
+    )
     res = jev_mcp.server.tool_setup_gas_workflow("https://hook.example/api", "key")
     import json
+
     assert json.loads(res) == {"status": "SUCCESS", "url": "setup done"}
+
 
 def test_tool_triage_email_content(monkeypatch):
     import jev_mcp.server
-    monkeypatch.setattr(jev_mcp.tools.triage, "triage_email_content", lambda c, s, snd, b: "triaged")
+
+    monkeypatch.setattr(
+        jev_mcp.tools.triage, "triage_email_content", lambda c, s, snd, b: "triaged"
+    )
     res = jev_mcp.server.tool_triage_email_content("ctx", "sub", "snd", "body")
     assert res == "triaged"
 
+
 from unittest.mock import patch, MagicMock
+
 
 @patch("subprocess.Popen")
 def test_jev_train_lora_llama_cpp_engine(mock_popen, tmp_path, monkeypatch):
     from jev_mcp.server import jev_train_lora
     import json
-    
+
     monkeypatch.setenv("HOME", str(tmp_path))
     mock_proc = MagicMock()
     mock_proc.pid = 4242
@@ -973,26 +1129,32 @@ def test_jev_train_lora_llama_cpp_engine(mock_popen, tmp_path, monkeypatch):
     dataset = tmp_path / "train.jsonl"
     dataset.write_text('{"text": "test"}')
 
-    res_str = jev_train_lora(str(dataset), model_name="path/to/model.gguf", engine="llama.cpp")
+    res_str = jev_train_lora(
+        str(dataset), model_name="path/to/model.gguf", engine="llama.cpp"
+    )
     res = json.loads(res_str)
 
     assert res["status"] == "TRAINING_STARTED", res.get("message", "unknown error")
     assert "pid" in res
     assert "adapter_path" in res
-    
+
     assert mock_popen.called
     cmd_args = mock_popen.call_args[0][0]
     assert cmd_args[0] == "llama-finetune"
     assert "--model" in cmd_args
     assert "path/to/model.gguf" in cmd_args
 
+
 def test_jev_train_lora_llama_cpp_engine_rejects_non_gguf(tmp_path):
     from jev_mcp.server import jev_train_lora
     import json
+
     dataset = tmp_path / "train.jsonl"
     dataset.write_text('{"text": "test"}')
 
-    res_str = jev_train_lora(str(dataset), model_name="org/model-name", engine="llama.cpp")
+    res_str = jev_train_lora(
+        str(dataset), model_name="org/model-name", engine="llama.cpp"
+    )
     res = json.loads(res_str)
 
     assert res["status"] == "ERROR"
@@ -1000,7 +1162,9 @@ def test_jev_train_lora_llama_cpp_engine_rejects_non_gguf(tmp_path):
 
 
 @patch("subprocess.Popen")
-def test_jev_train_lora_quotes_paths_with_spaces_in_the_run_script(mock_popen, tmp_path, monkeypatch):
+def test_jev_train_lora_quotes_paths_with_spaces_in_the_run_script(
+    mock_popen, tmp_path, monkeypatch
+):
     import shlex
 
     home = tmp_path / "my home"

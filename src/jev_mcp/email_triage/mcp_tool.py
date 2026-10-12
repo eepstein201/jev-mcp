@@ -11,27 +11,36 @@ logger = logging.getLogger(__name__)
 COMPACTION_MIN_BODY_CHARS = 2000
 COMPACTION_CONFIDENCE = 0.3
 
+
 def get_config_path() -> Path:
     config_dir = Path.home() / ".jev-mcp"
     config_dir.mkdir(exist_ok=True, parents=True)
     return config_dir / "triage_configs.json"
 
+
 def configure_triage_labels(context_id: str, labels: list[str]) -> dict:
     """Configures dynamic labels for a specific mailbox or context ID."""
     config_path = get_config_path()
-    
+
     if config_path.exists():
         data = json.loads(config_path.read_text())
     else:
         data = {}
 
     write_json_atomic(str(config_path), {**data, context_id: labels})
-    
-    return {"status": "success", "message": f"Saved {len(labels)} labels for {context_id}"}
+
+    return {
+        "status": "success",
+        "message": f"Saved {len(labels)} labels for {context_id}",
+    }
+
 
 from jev_mcp.email_triage.core import build_triage_questions, decide_routing
 
-def evaluate_email_with_mlx(subject: str, sender: str, body: str, labels: list[str]) -> dict:
+
+def evaluate_email_with_mlx(
+    subject: str, sender: str, body: str, labels: list[str]
+) -> dict:
     from jev_mcp.routing_provider import RoutingProvider
 
     eval_questions = build_triage_questions(labels)
@@ -45,28 +54,26 @@ def evaluate_email_with_mlx(subject: str, sender: str, body: str, labels: list[s
             compaction_res = jev_compact_context(
                 state={"text": body},
                 goal=goal,
-                confidence_threshold=COMPACTION_CONFIDENCE
+                confidence_threshold=COMPACTION_CONFIDENCE,
             )
             parsed_res = json.loads(compaction_res)
             if parsed_res.get("compacted_state"):
                 body = parsed_res["compacted_state"]
         except Exception as e:
-            logger.warning("Email body compaction failed; triaging the original body: %s", e)
+            logger.warning(
+                "Email body compaction failed; triaging the original body: %s", e
+            )
 
-    state = {
-        "email_subject": subject,
-        "email_sender": sender,
-        "email_body": body
-    }
-    
+    state = {"email_subject": subject, "email_sender": sender, "email_body": body}
+
     provider = RoutingProvider()
     results = provider.evaluate_batch(state, eval_questions)
-    
+
     requires_action_score = 0.0
     is_important_score = 0.0
     bucket = "Review"
     bucket_confidence = 0.0
-    
+
     for key, res in results.items():
         probs = res.get("probabilities", {})
         if key == "requires_action":
@@ -78,22 +85,23 @@ def evaluate_email_with_mlx(subject: str, sender: str, body: str, labels: list[s
                 best_choice = max(probs.items(), key=lambda x: x[1])
                 bucket = best_choice[0]
                 bucket_confidence = best_choice[1]
-            
+
     decision = decide_routing(
         requires_action_score=requires_action_score,
         is_important_score=is_important_score,
         bucket=bucket,
-        bucket_confidence=bucket_confidence
+        bucket_confidence=bucket_confidence,
     )
-    
+
     return {
         "decision": decision["decision"],
         "suggested_routing": decision["suggested_routing"],
         "requires_action_score": requires_action_score,
         "is_important_score": is_important_score,
         "bucket": bucket,
-        "bucket_confidence": bucket_confidence
+        "bucket_confidence": bucket_confidence,
     }
+
 
 def triage_email_content(context_id: str, subject: str, sender: str, body: str) -> str:
     """
@@ -102,22 +110,26 @@ def triage_email_content(context_id: str, subject: str, sender: str, body: str) 
     """
     config_path = get_config_path()
     if not config_path.exists():
-        return json.dumps({
-            "status": "needs_config", 
-            "message": f"No labels configured for context '{context_id}'."
-        })
-        
+        return json.dumps(
+            {
+                "status": "needs_config",
+                "message": f"No labels configured for context '{context_id}'.",
+            }
+        )
+
     data = json.loads(config_path.read_text())
     if context_id not in data:
-        return json.dumps({
-            "status": "needs_config", 
-            "message": f"No labels configured for context '{context_id}'."
-        })
-        
+        return json.dumps(
+            {
+                "status": "needs_config",
+                "message": f"No labels configured for context '{context_id}'.",
+            }
+        )
+
     labels = data[context_id]
-    
+
     # Normally we call our local MLX evaluator here using `core.py` and `build_triage_questions`
     result = evaluate_email_with_mlx(subject, sender, body, labels)
     result["status"] = "success"
-    
+
     return json.dumps(result)

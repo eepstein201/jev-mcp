@@ -26,6 +26,7 @@ def sanitize_payload(text: Any) -> str:
     # Ignore case and replace with space
     return re.sub(pattern, " ", normalized_text, flags=re.IGNORECASE)
 
+
 import os
 import tempfile
 
@@ -35,15 +36,45 @@ _TEMP_ROOT = os.path.realpath(tempfile.gettempdir())
 
 # Every comparison below is on the case-folded path: macOS filesystems are
 # case-insensitive, so ~/.SSH opens ~/.ssh.
-FORBIDDEN_NAMES = frozenset({
-    ".ssh", ".aws", ".gnupg", ".kube", ".npmrc", ".bash_history", ".zsh_history", ".config",
-    ".netrc", ".git-credentials", ".docker", ".azure", ".pgpass", ".pypirc", ".jev-mcp",
-    ".credentials.json", "client_secrets.json", "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519",
-})
+FORBIDDEN_NAMES = frozenset(
+    {
+        ".ssh",
+        ".aws",
+        ".gnupg",
+        ".kube",
+        ".npmrc",
+        ".bash_history",
+        ".zsh_history",
+        ".config",
+        ".netrc",
+        ".git-credentials",
+        ".docker",
+        ".azure",
+        ".pgpass",
+        ".pypirc",
+        ".jev-mcp",
+        ".credentials.json",
+        "client_secrets.json",
+        "id_rsa",
+        "id_dsa",
+        "id_ecdsa",
+        "id_ed25519",
+    }
+)
 # Directories under a Library folder that hold keychains, cookies and browser profiles.
 FORBIDDEN_LIBRARY_DIRS = frozenset({"keychains", "cookies", "application support"})
 ENV_FILE_TEMPLATE_SUFFIXES = (".example", ".sample", ".template")
-FORBIDDEN_PREFIXES = ("/etc", "/var", "/dev", "/usr", "/bin", "/sbin", "/opt", "/system", "/private")
+FORBIDDEN_PREFIXES = (
+    "/etc",
+    "/var",
+    "/dev",
+    "/usr",
+    "/bin",
+    "/sbin",
+    "/opt",
+    "/system",
+    "/private",
+)
 
 
 def _is_env_file(name: str) -> bool:
@@ -66,7 +97,10 @@ def is_safe_path(requested_path: str) -> bool:
         # including inside the temp root (scratch copies of keys are a real pattern).
         if any(part in FORBIDDEN_NAMES or _is_env_file(part) for part in parts):
             return False
-        if any(parent == "library" and child in FORBIDDEN_LIBRARY_DIRS for parent, child in zip(parts, parts[1:])):
+        if any(
+            parent == "library" and child in FORBIDDEN_LIBRARY_DIRS
+            for parent, child in zip(parts, parts[1:])
+        ):
             return False
 
         # Allow the per-user temp root (macOS $TMPDIR lives under /private/var)
@@ -74,6 +108,8 @@ def is_safe_path(requested_path: str) -> bool:
             return True
 
         # Block known dangerous absolute paths (OS level)
-        return not any(resolved == p or resolved.startswith(p + "/") for p in FORBIDDEN_PREFIXES)
+        return not any(
+            resolved == p or resolved.startswith(p + "/") for p in FORBIDDEN_PREFIXES
+        )
     except Exception:
         return False

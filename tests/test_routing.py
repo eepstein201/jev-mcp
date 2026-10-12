@@ -19,7 +19,9 @@ def test_manage_config():
     assert res["buckets"]["b1"] == "claude-3-5-haiku"
 
     # Test setting
-    jev_manage_router_config(action="set_bucket", bucket_id="b1", model_name="test-model")
+    jev_manage_router_config(
+        action="set_bucket", bucket_id="b1", model_name="test-model"
+    )
     res2 = json.loads(jev_manage_router_config(action="view_all"))
     assert res2["buckets"]["b1"] == "test-model"
 
@@ -31,13 +33,16 @@ def test_manage_config():
 
 
 def test_determine_model_massive_context():
-    res = json.loads(jev_determine_best_model(task_description="test", estimated_tokens=150000))
+    res = json.loads(
+        jev_determine_best_model(task_description="test", estimated_tokens=150000)
+    )
     assert res["status"] == "MASSIVE_CONTEXT_DETECTED"
     assert "warning" in res
 
 
 def _routing_provider():
     from jev_mcp.routing_provider import RoutingProvider
+
     return RoutingProvider()
 
 
@@ -47,8 +52,10 @@ def test_routing_raises_when_no_engine_answers():
     from jev_mcp.provider import EngineUnavailableError, NoulQuestion
 
     provider = _routing_provider()
-    with patch.object(provider.fast_provider, "evaluate_batch", return_value={}), \
-         patch.object(provider.smart_provider, "evaluate_batch", return_value={}):
+    with (
+        patch.object(provider.fast_provider, "evaluate_batch", return_value={}),
+        patch.object(provider.smart_provider, "evaluate_batch", return_value={}),
+    ):
         with pytest.raises(EngineUnavailableError, match="q1"):
             provider.evaluate_batch("state", [NoulQuestion(key="q1", prompt="p")])
 
@@ -71,8 +78,10 @@ def test_routing_accepts_a_zero_confidence_answer_from_the_smart_tier():
     # The confidence gate answering "no signal" is an answer; only silence is an outage.
     gated = {"q1": {"probabilities": {"true": 0.0, "false": 0.0}, "noul": 0.0}}
     provider = _routing_provider()
-    with patch.object(provider.fast_provider, "evaluate_batch", return_value={}), \
-         patch.object(provider.smart_provider, "evaluate_batch", return_value=gated):
+    with (
+        patch.object(provider.fast_provider, "evaluate_batch", return_value={}),
+        patch.object(provider.smart_provider, "evaluate_batch", return_value=gated),
+    ):
         results = provider.evaluate_batch("state", [NoulQuestion(key="q1", prompt="p")])
 
     assert results["q1"]["noul"] == 0.0
@@ -84,8 +93,12 @@ def test_routing_marks_escalation_without_changing_the_engines_result():
 
     smart_answer = {"q1": {"probabilities": {"true": 0.9, "false": 0.1}, "noul": 0.9}}
     provider = _routing_provider()
-    with patch.object(provider.fast_provider, "evaluate_batch", return_value={}), \
-         patch.object(provider.smart_provider, "evaluate_batch", return_value=smart_answer):
+    with (
+        patch.object(provider.fast_provider, "evaluate_batch", return_value={}),
+        patch.object(
+            provider.smart_provider, "evaluate_batch", return_value=smart_answer
+        ),
+    ):
         results = provider.evaluate_batch("state", [NoulQuestion(key="q1", prompt="p")])
 
     assert results["q1"]["escalated"] is True

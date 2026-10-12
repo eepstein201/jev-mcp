@@ -6,6 +6,7 @@ models.dev catalog (the same-family auto-update then keeps them current);
 Google's top tiers repeat ``gemini-3.8-flash`` because its catalog currently
 offers nothing newer above the flash family (``pro`` is stale at 2.5).
 """
+
 import logging
 from typing import Any
 
@@ -65,6 +66,7 @@ class SeedingMiddleware:
 
     def __init__(self) -> None:
         import threading
+
         self._done = threading.Event()
 
     async def __call__(self, ctx: Any, call_next: Any) -> Any:
@@ -79,9 +81,12 @@ class SeedingMiddleware:
     def _seed(self, ctx: Any) -> None:
         params = getattr(ctx.session, "client_params", None)
         # The wire key is `clientInfo`; the SDK's parsed model exposes `client_info`.
-        client_info = getattr(params, "client_info", None) or getattr(params, "clientInfo", None)
+        client_info = getattr(params, "client_info", None) or getattr(
+            params, "clientInfo", None
+        )
         client_name = getattr(client_info, "name", None)
         if not client_name:
             return
         from jev_mcp import router_config
+
         router_config.seed_defaults_for_client(client_name)

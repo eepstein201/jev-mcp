@@ -1,9 +1,19 @@
 from jev_mcp.server import (
-    calibrate_prompt, compact_jev_prompt, evaluate_prompt,
-    explain_decision_prompt, generate_data_prompt, handoff_prompt,
-    model_router_prompt, router_config_prompt, optimize_prompt,
-    temperature_prompt, train_prompt, scan_repo_prompt, read_file_prompt
+    calibrate_prompt,
+    compact_jev_prompt,
+    evaluate_prompt,
+    explain_decision_prompt,
+    generate_data_prompt,
+    handoff_prompt,
+    model_router_prompt,
+    router_config_prompt,
+    optimize_prompt,
+    temperature_prompt,
+    train_prompt,
+    scan_repo_prompt,
+    read_file_prompt,
 )
+
 
 def test_all_prompts():
     assert isinstance(calibrate_prompt(), str)

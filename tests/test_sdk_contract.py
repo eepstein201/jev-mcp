@@ -8,6 +8,7 @@ fails first and names the contract, before the stdio server misbehaves at
 a real handshake. (ServerMiddleware is marked provisional upstream — these
 are the tripwires.)
 """
+
 import subprocess
 import sys
 

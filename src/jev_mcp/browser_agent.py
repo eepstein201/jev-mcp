@@ -36,7 +36,11 @@ _RUN_LOCK = threading.Lock()
 
 def ultrafast_path() -> Path:
     override = os.environ.get("JEV_ULTRAFAST_PATH")
-    return Path(override) if override else Path(__file__).resolve().parents[2] / "jev-ultrafast"
+    return (
+        Path(override)
+        if override
+        else Path(__file__).resolve().parents[2] / "jev-ultrafast"
+    )
 
 
 def load_ultrafast() -> tuple[Any, Any]:
@@ -49,10 +53,14 @@ def load_ultrafast() -> tuple[Any, Any]:
         )
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
-    return importlib.import_module("jev_ultrafast.agent"), importlib.import_module("jev_ultrafast.model")
+    return importlib.import_module("jev_ultrafast.agent"), importlib.import_module(
+        "jev_ultrafast.model"
+    )
 
 
-def choose_locally(model: Any, page: dict[str, Any], goal: str, history: list[Any]) -> dict[str, Any]:
+def choose_locally(
+    model: Any, page: dict[str, Any], goal: str, history: list[Any]
+) -> dict[str, Any]:
     """Local stand-in for jev_ultrafast.model.choose: same decision shape, no hosted API."""
     marker = success_marker(goal)
     marker_on_page = bool(marker) and (
@@ -75,9 +83,14 @@ def choose_locally(model: Any, page: dict[str, Any], goal: str, history: list[An
     _, targets, controls = model.action_space(page["actions"])
     operations = {key: OPERATION_LABELS[key] for key in targets}
     operations.update({key: value["label"] for key, value in controls.items()})
-    operations.update(DONE="Every requirement is visibly satisfied.", BLOCKED="No supported operation can progress.")
+    operations.update(
+        DONE="Every requirement is visibly satisfied.",
+        BLOCKED="No supported operation can progress.",
+    )
 
-    answers = local_choose({"page": page}, goal, history, operations, targets, controls)["answers"]
+    answers = local_choose(
+        {"page": page}, goal, history, operations, targets, controls
+    )["answers"]
     # validate_choice raises unless the answer is one of the offered ids with sane probabilities,
     # so a confused model can never trigger an action that was not observed on the page.
     operation_answer = model.validate_choice(answers.get("operation", {}), operations)
@@ -86,7 +99,11 @@ def choose_locally(model: Any, page: dict[str, Any], goal: str, history: list[An
         # Premature DONE: the stated success condition is not on the page, so
         # fall back to the engine's best non-terminal operation instead.
         runner_up = max(
-            (op for op in operation_answer["probabilities"] if op not in ("DONE", "BLOCKED")),
+            (
+                op
+                for op in operation_answer["probabilities"]
+                if op not in ("DONE", "BLOCKED")
+            ),
             key=operation_answer["probabilities"].get,
             default=None,
         )
@@ -99,10 +116,15 @@ def choose_locally(model: Any, page: dict[str, Any], goal: str, history: list[An
             }
     target = None
     if operation in targets:
-        target_answer = model.validate_choice(answers.get(operation.lower() + "_target", {}), targets[operation])
+        target_answer = model.validate_choice(
+            answers.get(operation.lower() + "_target", {}), targets[operation]
+        )
         target = target_answer["choice"]
         choice = targets[operation][target]["id"]
-        probabilities = {a["id"]: target_answer["probabilities"][index] for index, a in targets[operation].items()}
+        probabilities = {
+            a["id"]: target_answer["probabilities"][index]
+            for index, a in targets[operation].items()
+        }
     else:
         choice = controls[operation]["id"] if operation in controls else operation
         probabilities = {choice: operation_answer["probabilities"][operation]}
@@ -137,10 +159,16 @@ def local_field_text(context: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     )
     try:
         value = json.loads(response["choices"][0]["message"]["content"])["text"]
-        if not isinstance(value, str) or not value.strip() or len(value) > MAX_FIELD_TEXT_CHARS:
+        if (
+            not isinstance(value, str)
+            or not value.strip()
+            or len(value) > MAX_FIELD_TEXT_CHARS
+        ):
             raise ValueError()
     except (ValueError, KeyError, TypeError, IndexError):
-        raise ValueError("Local text helper returned no valid field value; nothing typed.") from None
+        raise ValueError(
+            "Local text helper returned no valid field value; nothing typed."
+        ) from None
     return value, {
         "model": "jev-mcp-local",
         "latency_ms": round((time.perf_counter() - started) * 1000),
@@ -156,12 +184,16 @@ def _is_stuck_in_waits(history: list[Any]) -> bool:
     """True when the last three actions were all no-effect waits — waiting stopped paying."""
     tail = history[-3:]
     return len(tail) == 3 and all(
-        isinstance(h, dict) and h.get("kind") == "wait" and h.get("page_changed") is False
+        isinstance(h, dict)
+        and h.get("kind") == "wait"
+        and h.get("page_changed") is False
         for h in tail
     )
 
 
-def run_browser_agent(url: str, goal: str, max_steps: int = DEFAULT_MAX_STEPS) -> dict[str, Any]:
+def run_browser_agent(
+    url: str, goal: str, max_steps: int = DEFAULT_MAX_STEPS
+) -> dict[str, Any]:
     """Drive a browser toward `goal`, starting at `url`, until done, blocked, or `max_steps` actions."""
     parsed = urlparse(url or "")
     if parsed.scheme not in ("http", "https") or not parsed.netloc:
@@ -175,7 +207,9 @@ def run_browser_agent(url: str, goal: str, max_steps: int = DEFAULT_MAX_STEPS) -
 
     with _RUN_LOCK:
         original = (agent_module.choose, agent_module.field_text)
-        agent_module.choose = lambda page, task, history: choose_locally(model_module, page, task, history)
+        agent_module.choose = lambda page, task, history: choose_locally(
+            model_module, page, task, history
+        )
         agent_module.field_text = local_field_text
         try:
             with agent_module.Agent(url, goal) as agent:
@@ -187,11 +221,14 @@ def run_browser_agent(url: str, goal: str, max_steps: int = DEFAULT_MAX_STEPS) -
                 state = agent.state
                 return {
                     "status": "SUCCESS",
-                    "result": state["status"] if state["status"] in TERMINAL_STATUSES else "step_limit",
+                    "result": state["status"]
+                    if state["status"] in TERMINAL_STATUSES
+                    else "step_limit",
                     "final_url": state["page"]["url"],
                     "elapsed_ms": state["elapsed_ms"],
                     "steps": [
-                        {k: h.get(k) for k in ("step", "kind", "action", "text", "url")} for h in state["history"]
+                        {k: h.get(k) for k in ("step", "kind", "action", "text", "url")}
+                        for h in state["history"]
                     ],
                 }
         except Exception as e:

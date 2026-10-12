@@ -61,9 +61,11 @@ def test_claude_code_name_maps_to_anthropic_tiers():
     buckets = client_defaults.default_buckets_for_client("Claude Code v2.1")
     assert buckets == dict(router_config.FALLBACK_BUCKETS)
 
+
 def test_unknown_client_maps_to_none():
     assert client_defaults.default_buckets_for_client("opencode") is None
     assert client_defaults.default_buckets_for_client("") is None
+
 
 def test_seeds_when_no_config_file_exists(monkeypatch):
     # no config file in the tmp home
@@ -75,19 +77,28 @@ def test_seeds_when_no_config_file_exists(monkeypatch):
     assert on_disk["buckets_source"] == "detected"
     assert on_disk["detected_client"] == "Claude Code"
 
+
 def test_fieldless_existing_config_is_never_reseeded():
     router_config.save_router_config({"buckets": {"b1": "my-model"}, "rules": []})
     before = Path(router_config.ROUTER_CONFIG_PATH).read_text()
     assert router_config.seed_defaults_for_client("Claude Code") is None
     assert Path(router_config.ROUTER_CONFIG_PATH).read_text() == before
 
+
 def test_detected_config_reseeds_to_current_table():
-    router_config.save_router_config({"buckets": {"b1": "old"}, "rules": [],
-                                     "buckets_source": "detected", "detected_client": "Claude Code"})
+    router_config.save_router_config(
+        {
+            "buckets": {"b1": "old"},
+            "rules": [],
+            "buckets_source": "detected",
+            "detected_client": "Claude Code",
+        }
+    )
     written = router_config.seed_defaults_for_client("Claude Code")
     assert written["buckets"] == dict(router_config.FALLBACK_BUCKETS)
     # non-bucket fields survive
     assert router_config.load_router_config()["detected_client"] == "Claude Code"
+
 
 def test_unknown_client_never_writes():
     assert router_config.seed_defaults_for_client("opencode") is None
@@ -136,16 +147,24 @@ git commit -m "feat: map connecting-client name to router default buckets with p
 
 ```python
 def test_set_bucket_stamps_user_provenance():
-    router_config.save_router_config({"buckets": dict(router_config.FALLBACK_BUCKETS), "rules": [],
-                                     "buckets_source": "detected", "detected_client": "Claude Code"})
+    router_config.save_router_config(
+        {
+            "buckets": dict(router_config.FALLBACK_BUCKETS),
+            "rules": [],
+            "buckets_source": "detected",
+            "detected_client": "Claude Code",
+        }
+    )
     server.jev_manage_router_config(action="set_bucket", bucket_id="b1", model_name="m")
     assert router_config.load_router_config()["buckets_source"] == "user"
+
 
 def test_apply_updates_stamps_user_provenance(cached_catalog):
     # STALE buckets from tests/test_router_updates.py style fixture + catalog with newer same-family models
     ...
     server.jev_manage_router_config(action="apply_updates")
     assert router_config.load_router_config()["buckets_source"] == "user"
+
 
 def test_background_auto_update_preserves_detected(monkeypatch, cached_catalog):
     # auto_update=True + STALE buckets + buckets_source "detected"; run app._sync_models()

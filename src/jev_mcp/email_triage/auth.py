@@ -33,14 +33,18 @@ def jwt_decode(token: str) -> dict:
         # An identity provider signs tokens for every app it serves, so its signature
         # alone does not show the token was issued for this webhook.
         if not audience:
-            raise ValueError("JEV_MCP_JWT_AUDIENCE must be set when JEV_MCP_JWKS_URL is used")
-        key =_jwks_client(jwks_url).get_signing_key_from_jwt(token).key
+            raise ValueError(
+                "JEV_MCP_JWT_AUDIENCE must be set when JEV_MCP_JWKS_URL is used"
+            )
+        key = _jwks_client(jwks_url).get_signing_key_from_jwt(token).key
         algorithms = JWKS_ALGORITHMS
     elif secret:
         key = secret
         algorithms = SHARED_SECRET_ALGORITHMS
     else:
-        raise ValueError("No JWT verification key configured (JEV_MCP_JWKS_URL or JEV_MCP_JWT_SECRET)")
+        raise ValueError(
+            "No JWT verification key configured (JEV_MCP_JWKS_URL or JEV_MCP_JWT_SECRET)"
+        )
 
     return jwt.decode(
         token,

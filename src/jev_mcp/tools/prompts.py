@@ -1,4 +1,5 @@
 """The optimize-prompt tool."""
+
 import json
 from typing import Annotated, Any, Dict, List, Optional
 
@@ -14,22 +15,49 @@ from jev_mcp.provider import ChoiceQuestion, NoulQuestion, QuestionType, ScoreQu
     description="Automated Prompt Engineer: Generates semantic variations of a prompt and scores them. With `dataset` (rows of state + expected) it returns the phrasing with the highest measured accuracy. With only a single `state` it can only return the most confident phrasing, which is not the same as the most accurate.",
 )
 def jev_optimize_prompt(
-    question: Annotated[QuestionType, Field(description="The draft question to optimize.")],
-    state: Annotated[Optional[Dict[str, Any]], Field(description="One sample context state. Used only when no dataset is given; selection is then by confidence.")] = None,
-    dataset: Annotated[Optional[List[Dict[str, Any]]], Field(description="Labelled rows, each {\"state\": ..., \"expected\": ...}: true/false for a noul question, the option for a choice question, the label for a score question. Selection is then by accuracy.")] = None,
+    question: Annotated[
+        QuestionType, Field(description="The draft question to optimize.")
+    ],
+    state: Annotated[
+        Optional[Dict[str, Any]],
+        Field(
+            description="One sample context state. Used only when no dataset is given; selection is then by confidence."
+        ),
+    ] = None,
+    dataset: Annotated[
+        Optional[List[Dict[str, Any]]],
+        Field(
+            description='Labelled rows, each {"state": ..., "expected": ...}: true/false for a noul question, the option for a choice question, the label for a score question. Selection is then by accuracy.'
+        ),
+    ] = None,
 ) -> str:
     import json
     from jev_mcp import prompt_selection
     from jev_mcp.security import sanitize_payload
 
     if dataset is not None:
-        rows_ok = isinstance(dataset, list) and bool(dataset) and all(
-            isinstance(row, dict) and "state" in row and "expected" in row for row in dataset
+        rows_ok = (
+            isinstance(dataset, list)
+            and bool(dataset)
+            and all(
+                isinstance(row, dict) and "state" in row and "expected" in row
+                for row in dataset
+            )
         )
         if not rows_ok:
-            return json.dumps({"status": "ERROR", "message": "dataset must be a non-empty list of rows, each with \"state\" and \"expected\"."})
+            return json.dumps(
+                {
+                    "status": "ERROR",
+                    "message": 'dataset must be a non-empty list of rows, each with "state" and "expected".',
+                }
+            )
     elif state is None:
-        return json.dumps({"status": "ERROR", "message": "Provide a dataset of labelled rows (preferred) or a single state."})
+        return json.dumps(
+            {
+                "status": "ERROR",
+                "message": "Provide a dataset of labelled rows (preferred) or a single state.",
+            }
+        )
 
     logger.info("Starting Prompt Optimization...")
     q_dict: Dict[str, Any] = {}
@@ -77,7 +105,9 @@ def jev_optimize_prompt(
         if not isinstance(variations, list):
             variations = []
     except Exception as e:
-        return json.dumps({"status": "ERROR", "message": f"Optimizer Generator Failed: {str(e)}"})
+        return json.dumps(
+            {"status": "ERROR", "message": f"Optimizer Generator Failed: {str(e)}"}
+        )
 
     variations.insert(0, q_dict["prompt"])  # include original
     test_questions: List[QuestionType] = []
@@ -97,11 +127,20 @@ def jev_optimize_prompt(
 
     if dataset is not None:
         try:
-            row_results = [app.provider.evaluate_batch(row["state"], test_questions) for row in dataset]
+            row_results = [
+                app.provider.evaluate_batch(row["state"], test_questions)
+                for row in dataset
+            ]
         except Exception as e:
-            return json.dumps({"status": "ERROR", "message": f"Optimizer Evaluation Failed: {str(e)}"})
-        per_variation = [[res.get(q.key, {}) for res in row_results] for q in test_questions]
-        stats = prompt_selection.score_variations(per_variation, [row["expected"] for row in dataset])
+            return json.dumps(
+                {"status": "ERROR", "message": f"Optimizer Evaluation Failed: {str(e)}"}
+            )
+        per_variation = [
+            [res.get(q.key, {}) for res in row_results] for q in test_questions
+        ]
+        stats = prompt_selection.score_variations(
+            per_variation, [row["expected"] for row in dataset]
+        )
         best = prompt_selection.best_variation(stats)
         gain = (stats[best]["accuracy"] - stats[0]["accuracy"]) * 100
         return json.dumps(
@@ -122,7 +161,9 @@ def jev_optimize_prompt(
                     {
                         "prompt": variations[i],
                         "accuracy": f"{s['accuracy'] * 100:.2f}%",
-                        "mean_correct_probability": round(s["mean_correct_probability"], 4),
+                        "mean_correct_probability": round(
+                            s["mean_correct_probability"], 4
+                        ),
                     }
                     for i, s in enumerate(stats)
                 ],
@@ -133,7 +174,9 @@ def jev_optimize_prompt(
     try:
         results = app.provider.evaluate_batch(state, test_questions)
     except Exception as e:
-        return json.dumps({"status": "ERROR", "message": f"Optimizer Evaluation Failed: {str(e)}"})
+        return json.dumps(
+            {"status": "ERROR", "message": f"Optimizer Evaluation Failed: {str(e)}"}
+        )
 
     best_var: Dict[str, Any] | None = None
     best_conf = -1.0

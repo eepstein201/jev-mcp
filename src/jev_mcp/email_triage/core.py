@@ -2,14 +2,24 @@ from pydantic import BaseModel, Field
 
 from jev_mcp.provider import ChoiceQuestion, NoulQuestion, QuestionType
 
+
 class JevMailConfig(BaseModel):
     action_threshold: float = Field(default=0.8)
     important_threshold: float = Field(default=0.8)
 
+
 class CategoryConfig(BaseModel):
     categories: list[str] = Field(
-        default=["Follow Up", "Pending", "Receipts", "Newsletter", "Notifications", "Review"]
+        default=[
+            "Follow Up",
+            "Pending",
+            "Receipts",
+            "Newsletter",
+            "Notifications",
+            "Review",
+        ]
     )
+
 
 def build_triage_questions(categories: list[str] | None = None) -> list[QuestionType]:
     if categories is None:
@@ -18,46 +28,40 @@ def build_triage_questions(categories: list[str] | None = None) -> list[Question
     return [
         NoulQuestion(
             key="requires_action",
-            prompt="Does this email require an action from me? Examples: a question I must answer, a meeting I must schedule, a task I must complete."
+            prompt="Does this email require an action from me? Examples: a question I must answer, a meeting I must schedule, a task I must complete.",
         ),
         NoulQuestion(
             key="is_important",
-            prompt="Is this email important? Examples: messages from my boss, critical alerts, high-priority client emails."
+            prompt="Is this email important? Examples: messages from my boss, critical alerts, high-priority client emails.",
         ),
         ChoiceQuestion(
             key="bucket",
             prompt="Which category best fits this email?",
-            options=categories
-        )
+            options=categories,
+        ),
     ]
 
+
 def decide_routing(
-    requires_action_score: float, 
-    is_important_score: float, 
-    bucket: str, 
-    bucket_confidence: float, 
-    config: JevMailConfig | None = None
+    requires_action_score: float,
+    is_important_score: float,
+    bucket: str,
+    bucket_confidence: float,
+    config: JevMailConfig | None = None,
 ) -> dict:
     if config is None:
         config = JevMailConfig()
-        
+
     # High action probability means it's an Action item
     if requires_action_score > config.action_threshold:
-        return {
-            "decision": "Action",
-            "suggested_routing": "escalate_to_slack"
-        }
-    
+        return {"decision": "Action", "suggested_routing": "escalate_to_slack"}
+
     # Ambiguous action scores (between 0.3 and the threshold) should be reviewed manually
     # or if the bucket confidence is low
-    if (requires_action_score > 0.3 and requires_action_score <= config.action_threshold) or bucket_confidence < 0.6:
-        return {
-            "decision": "Review",
-            "suggested_routing": "hitl_slack_block"
-        }
-        
+    if (
+        requires_action_score > 0.3 and requires_action_score <= config.action_threshold
+    ) or bucket_confidence < 0.6:
+        return {"decision": "Review", "suggested_routing": "hitl_slack_block"}
+
     # Otherwise, confidently route to the assigned bucket
-    return {
-        "decision": bucket,
-        "suggested_routing": "archive_and_label"
-    }
+    return {"decision": bucket, "suggested_routing": "archive_and_label"}

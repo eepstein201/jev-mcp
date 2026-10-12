@@ -39,14 +39,22 @@ def _is_alternating(history: List[Any]) -> bool:
         and labels[0] != labels[1]
     )
 
-def local_choose(state: Dict[str, Any], goal: str, history: List[Any], operations: Dict[str, str], targets: Dict[str, Any], controls: Dict[str, Any]) -> Dict[str, Any]:
+
+def local_choose(
+    state: Dict[str, Any],
+    goal: str,
+    history: List[Any],
+    operations: Dict[str, str],
+    targets: Dict[str, Any],
+    controls: Dict[str, Any],
+) -> Dict[str, Any]:
     """
     Acts as a drop-in local replacement for the TypeSafe API call made by Jev-Ultrafast.
     Maps operations/targets to ChoiceQuestions, evaluates them via Jev-MCP's local engines,
     and returns a TypeSafe-compatible response payload.
     """
     provider = RoutingProvider()
-    
+
     questions: List[QuestionType] = []
 
     # Steering notes keep the decision layer from looping: the goal's stated
@@ -55,27 +63,35 @@ def local_choose(state: Dict[str, Any], goal: str, history: List[Any], operation
     marker = success_marker(goal)
     if marker:
         notes.append(f"The goal is complete only when the page shows {marker}.")
-    if history and isinstance(history[-1], dict) and history[-1].get("page_changed") is False:
+    if (
+        history
+        and isinstance(history[-1], dict)
+        and history[-1].get("page_changed") is False
+    ):
         notes.append("Your last action did not change the page.")
     if _is_alternating(history):
         notes.append(
             "You are alternating between the same two actions without completing the goal; "
-            "choose a different target, or DONE if the goal is visibly satisfied.")
+            "choose a different target, or DONE if the goal is visibly satisfied."
+        )
     if history and isinstance(history[-1], dict) and history[-1].get("kind") == "fill":
         notes.append(
             "A field was just filled; waiting rarely completes a form — click the goal's "
-            "next element (e.g. Submit) if the goal names one.")
+            "next element (e.g. Submit) if the goal names one."
+        )
     recent_labels = [h.get("action") for h in history[-5:] if isinstance(h, dict)]
     if recent_labels:
         common = max(set(recent_labels), key=recent_labels.count)
         if recent_labels.count(common) >= 4:
             notes.append(
                 f"You have chosen '{common}' {recent_labels.count(common)} of the last "
-                f"{len(recent_labels)} times in a row without completing the goal; choose a different operation.")
+                f"{len(recent_labels)} times in a row without completing the goal; choose a different operation."
+            )
     if any(len(candidates) > NARROW_MIN_CANDIDATES for candidates in targets.values()):
         notes.append(
             "If no listed element clearly matches the goal, scroll to reveal more elements "
-            "instead of clicking a poor match.")
+            "instead of clicking a poor match."
+        )
     note_suffix = (" " + " ".join(notes)) if notes else ""
 
     # 1. Add the operation choice question
@@ -83,10 +99,10 @@ def local_choose(state: Dict[str, Any], goal: str, history: List[Any], operation
     q_operation = ChoiceQuestion(
         key="operation",
         prompt=f"Goal: {goal}\nChoose the best operation.{note_suffix}",
-        options=list(operations.keys())
+        options=list(operations.keys()),
     )
     questions.append(q_operation)
-    
+
     # 2. Add target choice questions for each operation
     tried = _tried_labels(history)
     for op, candidates in targets.items():
@@ -94,7 +110,7 @@ def local_choose(state: Dict[str, Any], goal: str, history: List[Any], operation
         # Recently tried elements are flagged so the engine does not pick them again.
         lines = []
         for index, candidate in candidates.items():
-            label_text = candidate.get('label', candidate.get('element', ''))
+            label_text = candidate.get("label", candidate.get("element", ""))
             line = f"[{index}] {label_text}"
             if label_text in tried:
                 line += f" (tried {tried[label_text]} step(s) ago — it did not complete the goal)"
@@ -103,18 +119,23 @@ def local_choose(state: Dict[str, Any], goal: str, history: List[Any], operation
         q_target = ChoiceQuestion(
             key=f"{op.lower()}_target",
             prompt=f"Goal: {goal}\nOperation: {op}\nChoose the target index.{note_suffix}\nElements:\n{listing}",
-            options=list(candidates.keys())
+            options=list(candidates.keys()),
         )
         questions.append(q_target)
-        
+
     # Simplify state for context limits
     slim_state = {
-        "page": {k: state["page"][k] for k in ("url", "title", "text") if k in state.get("page", {})},
+        "page": {
+            k: state["page"][k]
+            for k in ("url", "title", "text")
+            if k in state.get("page", {})
+        },
         "recent_actions": [
-            {k: h.get(k) for k in ("action", "kind", "text", "page_changed")} for h in history[-10:]
+            {k: h.get(k) for k in ("action", "kind", "text", "page_changed")}
+            for h in history[-10:]
         ],
     }
-    
+
     # Run evaluation
     results = provider.evaluate_batch(slim_state, questions)
 
@@ -126,18 +147,26 @@ def local_choose(state: Dict[str, Any], goal: str, history: List[Any], operation
         answer = results.get(f"{op.lower()}_target")
         if not answer or len(answer.get("probabilities", {})) < 2:
             continue
-        top = sorted(candidates, key=lambda i: answer["probabilities"].get(i, 0.0), reverse=True)[:SHORTLIST_K]
+        top = sorted(
+            candidates, key=lambda i: answer["probabilities"].get(i, 0.0), reverse=True
+        )[:SHORTLIST_K]
         if len(top) < 2:
             continue
         short = {i: candidates[i] for i in top}
-        listing = "\n".join(f"[{i}] {short[i].get('label', short[i].get('element', ''))}" for i in top)
+        listing = "\n".join(
+            f"[{i}] {short[i].get('label', short[i].get('element', ''))}" for i in top
+        )
         q_shortlist = ChoiceQuestion(
             key=f"{op.lower()}_target",
-            prompt=(f"Goal: {goal}\nOperation: {op}\nChoose the target index.{note_suffix}\n"
-                    f"Shortlist — the most likely candidates:\n{listing}"),
+            prompt=(
+                f"Goal: {goal}\nOperation: {op}\nChoose the target index.{note_suffix}\n"
+                f"Shortlist — the most likely candidates:\n{listing}"
+            ),
             options=top,
         )
-        refined = provider.evaluate_batch(slim_state, [q_shortlist]).get(f"{op.lower()}_target")
+        refined = provider.evaluate_batch(slim_state, [q_shortlist]).get(
+            f"{op.lower()}_target"
+        )
         if refined:
             # validate_choice requires probabilities over exactly the offered ids,
             # so expand the shortlist answer back over every candidate (zeros elsewhere).
@@ -145,18 +174,14 @@ def local_choose(state: Dict[str, Any], goal: str, history: List[Any], operation
             for index, probability in refined.get("probabilities", {}).items():
                 expanded[index] = probability
             results[f"{op.lower()}_target"] = {**refined, "probabilities": expanded}
-    
+
     # Map back to the TypeSafe "answers" dict format
     answers = {}
     for key, ans in results.items():
         answers[key] = {
             "choice": ans.get("choice", ""),
             "confidence": ans.get("confidence", 1.0),
-            "probabilities": ans.get("probabilities", {})
+            "probabilities": ans.get("probabilities", {}),
         }
-        
-    return {
-        "model": "jev-mcp-local",
-        "usage": {"total_tokens": 0},
-        "answers": answers
-    }
+
+    return {"model": "jev-mcp-local", "usage": {"total_tokens": 0}, "answers": answers}

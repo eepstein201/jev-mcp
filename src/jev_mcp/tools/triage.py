@@ -1,4 +1,5 @@
 """The email triage tools."""
+
 import contextlib
 import json
 import os
@@ -22,13 +23,13 @@ def _error(message: str) -> str:
     description=(
         "Evaluates an email using MLX and returns the recommended triage action.\n"
         "If 'status' == 'needs_config', you must ask the user what labels they want to track and call configure_triage_labels."
-    )
+    ),
 )
 def tool_triage_email_content(
     context_id: str = Field(description="The mailbox or context identifier."),
     subject: str = Field(description="Email subject."),
     sender: str = Field(description="Email sender."),
-    body: str = Field(description="Email body content.")
+    body: str = Field(description="Email body content."),
 ) -> str:
     try:
         return triage_email_content(context_id, subject, sender, body)
@@ -36,13 +37,14 @@ def tool_triage_email_content(
         logger.error(f"triage_email_content failed: {e}")
         return _error(str(e))
 
+
 @mcp.tool(
     name="configure_triage_labels",
-    description="Configures dynamic labels for a specific mailbox or context ID."
+    description="Configures dynamic labels for a specific mailbox or context ID.",
 )
 def tool_configure_triage_labels(
     context_id: str = Field(description="The mailbox or context identifier."),
-    labels: List[str] = Field(description="List of desired labels/buckets.")
+    labels: List[str] = Field(description="List of desired labels/buckets."),
 ) -> str:
     try:
         return json.dumps(configure_triage_labels(context_id, labels))
@@ -50,13 +52,19 @@ def tool_configure_triage_labels(
         logger.error(f"configure_triage_labels failed: {e}")
         return _error(str(e))
 
+
 @mcp.tool(
     name="setup_gas_workflow",
-    description="Automated Setup Flow for Google Apps Script. webhook_url is required. Leave api_key unset to use the JEV_MCP_API_KEY environment variable, which keeps the key out of the conversation."
+    description="Automated Setup Flow for Google Apps Script. webhook_url is required. Leave api_key unset to use the JEV_MCP_API_KEY environment variable, which keeps the key out of the conversation.",
 )
 def tool_setup_gas_workflow(
-    webhook_url: Optional[str] = Field(None, description="The Webhook URL to route emails to."),
-    api_key: Optional[str] = Field(None, description="The secure API Key to protect the webhook. Defaults to the JEV_MCP_API_KEY environment variable.")
+    webhook_url: Optional[str] = Field(
+        None, description="The Webhook URL to route emails to."
+    ),
+    api_key: Optional[str] = Field(
+        None,
+        description="The secure API Key to protect the webhook. Defaults to the JEV_MCP_API_KEY environment variable.",
+    ),
 ) -> str:
     # The wizard prompts on stdin for anything missing; here stdin is the JSON-RPC stream.
     parsed = urlparse(webhook_url or "")
@@ -64,7 +72,9 @@ def tool_setup_gas_workflow(
         return _error("webhook_url must be an http:// or https:// address.")
     key = api_key or os.environ.get("JEV_MCP_API_KEY")
     if not key:
-        return _error("No API key: pass api_key or set the JEV_MCP_API_KEY environment variable.")
+        return _error(
+            "No API key: pass api_key or set the JEV_MCP_API_KEY environment variable."
+        )
 
     try:
         # The wizard prints its progress; stdout is the JSON-RPC stream, so send that to stderr.
