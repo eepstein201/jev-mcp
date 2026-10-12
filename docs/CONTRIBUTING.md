@@ -61,8 +61,9 @@ CI enforces only the 85% overall threshold; the 95% per-file rule is a local gat
 `.github/workflows/ci.yml` runs on pushes and PRs to `main` (macos-latest, Python 3.12, submodules checked out):
 
 1. `pip install -e ".[dev,engines]"`
-2. `mypy src/jev_mcp/`
-3. `pytest --cov=src --cov-report=term --cov-fail-under=85 tests/`
+2. `ruff format --check src tests`
+3. `mypy src/jev_mcp/`
+4. `pytest --cov=src --cov-report=term --cov-fail-under=85 tests/`
 
 ## PR checklist
 
