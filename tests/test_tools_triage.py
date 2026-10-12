@@ -13,9 +13,9 @@ from jev_mcp.tools import triage
 def setup_calls(monkeypatch):
     calls = []
 
-    def fake_setup(webhook_url, api_key):
+    def fake_setup(webhook_url):
         print("Welcome to the wizard")  # the real wizard prints progress
-        calls.append({"webhook_url": webhook_url, "api_key": api_key})
+        calls.append({"webhook_url": webhook_url})
         return "https://script.google.com/d/abc/edit"
 
     monkeypatch.setattr(triage, "setup_gas_workflow", fake_setup)
@@ -23,16 +23,22 @@ def setup_calls(monkeypatch):
 
 
 def test_setup_tool_returns_json_and_keeps_stdout_clean(setup_calls, capsys):
-    res = json.loads(
-        server.tool_setup_gas_workflow("https://hook.example/api", "secret")
-    )
+    res = json.loads(server.tool_setup_gas_workflow("https://hook.example/api"))
 
-    assert res == {"status": "SUCCESS", "url": "https://script.google.com/d/abc/edit"}
+    assert res["status"] == "SUCCESS"
+    assert res["url"] == "https://script.google.com/d/abc/edit"
     assert capsys.readouterr().out == ""  # stdout is the JSON-RPC stream
 
 
+def test_setup_tool_tells_the_caller_to_set_the_script_property(setup_calls):
+    res = json.loads(server.tool_setup_gas_workflow("https://hook.example/api"))
+
+    assert "Script Properties" in res["next_step"]
+    assert "JEV_MCP_API_KEY" in res["next_step"]
+
+
 def test_setup_tool_refuses_to_prompt_when_the_webhook_url_is_missing(setup_calls):
-    res = json.loads(server.tool_setup_gas_workflow(None, "secret"))
+    res = json.loads(server.tool_setup_gas_workflow(None))
 
     assert res["status"] == "ERROR"
     assert "webhook_url" in res["message"]
@@ -40,42 +46,37 @@ def test_setup_tool_refuses_to_prompt_when_the_webhook_url_is_missing(setup_call
 
 
 def test_setup_tool_rejects_a_webhook_url_that_is_not_http(setup_calls):
-    res = json.loads(server.tool_setup_gas_workflow("javascript:alert(1)", "secret"))
+    res = json.loads(server.tool_setup_gas_workflow("javascript:alert(1)"))
 
     assert res["status"] == "ERROR"
     assert setup_calls == []
 
 
-def test_setup_tool_takes_the_api_key_from_the_environment(setup_calls, monkeypatch):
+def test_setup_tool_has_no_api_key_parameter():
+    import inspect
+
+    params = inspect.signature(server.tool_setup_gas_workflow).parameters
+
+    assert list(params) == ["webhook_url"]
+
+
+def test_setup_tool_never_reads_the_key_from_the_environment(setup_calls, monkeypatch):
     monkeypatch.setenv("JEV_MCP_API_KEY", "env-secret")
 
-    res = json.loads(server.tool_setup_gas_workflow("https://hook.example/api", None))
+    res = json.loads(server.tool_setup_gas_workflow("https://hook.example/api"))
 
     assert res["status"] == "SUCCESS"
-    assert setup_calls[0]["api_key"] == "env-secret"
-
-
-def test_setup_tool_refuses_to_prompt_when_no_api_key_is_available(
-    setup_calls, monkeypatch
-):
-    monkeypatch.delenv("JEV_MCP_API_KEY", raising=False)
-
-    res = json.loads(server.tool_setup_gas_workflow("https://hook.example/api", None))
-
-    assert res["status"] == "ERROR"
-    assert "JEV_MCP_API_KEY" in res["message"]
-    assert setup_calls == []
+    assert "env-secret" not in json.dumps(res)
+    assert setup_calls == [{"webhook_url": "https://hook.example/api"}]
 
 
 def test_setup_tool_reports_a_failure_as_json(monkeypatch):
-    def failing_setup(webhook_url, api_key):
+    def failing_setup(webhook_url):
         raise FileNotFoundError("Missing OAuth credentials")
 
     monkeypatch.setattr(triage, "setup_gas_workflow", failing_setup)
 
-    res = json.loads(
-        server.tool_setup_gas_workflow("https://hook.example/api", "secret")
-    )
+    res = json.loads(server.tool_setup_gas_workflow("https://hook.example/api"))
 
     assert res == {"status": "ERROR", "message": "Missing OAuth credentials"}
 

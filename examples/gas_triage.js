@@ -1,6 +1,11 @@
 const JEV_MCP_WEBHOOK_URL = 'TEMPLATE';
-const JEV_MCP_API_KEY = 'TEMPLATE';
 const CONTEXT_ID = 'default_mailbox'; // Change this if you have multiple mailboxes
+
+// The webhook key is read from Script Properties (Project Settings > Script Properties,
+// property JEV_MCP_API_KEY), so it is not part of this source or its version history.
+function getApiKey_() {
+  return PropertiesService.getScriptProperties().getProperty('JEV_MCP_API_KEY') || '';
+}
 
 function processUnreadEmails() {
   if (JEV_MCP_WEBHOOK_URL === 'TEMPLATE') {
@@ -48,10 +53,11 @@ function processUnreadEmails() {
       muteHttpExceptions: true
     };
     
-    // Add authentication header if API key is provided
-    if (JEV_MCP_API_KEY !== 'TEMPLATE' && JEV_MCP_API_KEY.length > 0) {
+    // Add authentication header if the Script Property is set
+    const apiKey = getApiKey_();
+    if (apiKey.length > 0) {
       options.headers = {
-        'Authorization': `Bearer ${JEV_MCP_API_KEY}`
+        'Authorization': `Bearer ${apiKey}`
       };
     }
     

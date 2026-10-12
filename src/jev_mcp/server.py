@@ -154,16 +154,13 @@ def main():
         parser.add_argument(
             "--webhook-url", type=str, help="The Webhook URL to route emails to."
         )
-        parser.add_argument(
-            "--api-key", type=str, help="The secure API Key to protect the webhook."
-        )
 
         # Parse arguments starting from the 3rd argument since sys.argv[1] is 'setup-gas'
         args = parser.parse_args(sys.argv[2:])
 
         from jev_mcp.email_triage.gas_setup import setup_gas_workflow
 
-        setup_gas_workflow(webhook_url=args.webhook_url, api_key=args.api_key)
+        setup_gas_workflow(webhook_url=args.webhook_url)
         return
 
     if len(sys.argv) > 1 and sys.argv[1] == "serve-webhook":
