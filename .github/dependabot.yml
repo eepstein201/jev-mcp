@@ -6,6 +6,9 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # Refresh uv.lock only. The default also raises the minimums declared in pyproject.toml
+    # to whatever is locked, which upgrades nothing and drops versions verified on purpose.
+    versioning-strategy: "lockfile-only"
     open-pull-requests-limit: 3
     groups:
       python-dependencies:

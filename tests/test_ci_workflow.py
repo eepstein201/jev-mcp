@@ -69,3 +69,13 @@ def test_dependabot_watches_the_lockfile_and_the_workflow_actions():
     assert config["version"] == 2
     assert ecosystems == {"uv", "github-actions"}
     assert all(update["directory"] == "/" for update in config["updates"])
+
+
+def test_dependabot_only_refreshes_the_lockfile_and_leaves_declared_ranges_alone():
+    # Its default raises the minimums in pyproject.toml to whatever is locked, which drops
+    # support for versions that were verified on purpose (mcp 2.2.x) and upgrades nothing.
+    config = yaml.safe_load((ROOT / ".github" / "dependabot.yml").read_text())
+
+    uv_update = next(u for u in config["updates"] if u["package-ecosystem"] == "uv")
+
+    assert uv_update["versioning-strategy"] == "lockfile-only"
