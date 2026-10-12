@@ -56,11 +56,17 @@ def decide_routing(
     if requires_action_score > config.action_threshold:
         return {"decision": "Action", "suggested_routing": "escalate_to_slack"}
 
-    # Ambiguous action scores (between 0.3 and the threshold) should be reviewed manually
-    # or if the bucket confidence is low
+    # Ambiguous action scores (between 0.3 and the threshold) should be reviewed manually,
+    # as should a low bucket confidence, and an important email that needs no action: filing
+    # it away silently is the costly mistake, an extra review card is not.
     if (
-        requires_action_score > 0.3 and requires_action_score <= config.action_threshold
-    ) or bucket_confidence < 0.6:
+        (
+            requires_action_score > 0.3
+            and requires_action_score <= config.action_threshold
+        )
+        or bucket_confidence < 0.6
+        or is_important_score > config.important_threshold
+    ):
         return {"decision": "Review", "suggested_routing": "hitl_slack_block"}
 
     # Otherwise, confidently route to the assigned bucket

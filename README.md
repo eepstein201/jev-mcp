@@ -454,7 +454,7 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
 *   **First use:** if no labels exist for the `context_id`, the tool returns `{"status": "needs_config", ...}`. Call `configure_triage_labels(context_id, labels)` to save them (stored in `~/.jev-mcp/triage_configs.json`).
 *   **Routing rules** (`core.decide_routing`, defaults `action_threshold=0.8`, `important_threshold=0.8`):
     *   `requires_action` score above `0.8` → `Action`, routed to `escalate_to_slack`.
-    *   `requires_action` score between `0.3` and `0.8`, or bucket confidence below `0.6` → `Review`, routed to `hitl_slack_block`.
+    *   `requires_action` score between `0.3` and `0.8`, bucket confidence below `0.6`, or `is_important` score above `0.8` → `Review`, routed to `hitl_slack_block`. The importance rule is what stops an important email that needs no action (an FYI from your boss, a critical alert) from being filed away silently; the Review card has a "Mark Important" button for it. It applies only when the email is not already an `Action`.
     *   otherwise → the predicted label, routed to `archive_and_label`.
 
 #### ⚡ Email Triage Webhook & Apps Script

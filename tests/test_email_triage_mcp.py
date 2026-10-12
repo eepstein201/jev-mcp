@@ -317,3 +317,34 @@ def test_configure_triage_labels_keeps_the_old_file_when_the_write_fails(
         configure_triage_labels("b@mailbox.com", ["HR"])
     assert config_file.read_text() == before
     assert os.listdir(tmp_path) == ["triage_configs.json"]
+
+
+def test_triage_sends_an_important_email_that_needs_no_action_to_review(
+    tmp_path, monkeypatch
+):
+    """The importance answer the engines return now reaches the routing decision."""
+    from unittest.mock import MagicMock
+
+    monkeypatch.setattr(
+        "jev_mcp.email_triage.mcp_tool.get_config_path",
+        lambda: tmp_path / "triage_configs.json",
+    )
+    configure_triage_labels("boss@mailbox.com", ["Notifications", "Receipts"])
+    provider = MagicMock()
+    provider.evaluate_batch.return_value = {
+        "requires_action": {"probabilities": {"true": 0.05}},
+        "is_important": {"probabilities": {"true": 0.93}},
+        "bucket": {"probabilities": {"Notifications": 0.9, "Receipts": 0.1}},
+    }
+    monkeypatch.setattr("jev_mcp.routing_provider.RoutingProvider", lambda: provider)
+
+    response = json.loads(
+        triage_email_content(
+            "boss@mailbox.com", "FYI: board notes", "ceo@test.com", "For your records."
+        )
+    )
+
+    assert response["decision"] == "Review"
+    assert response["suggested_routing"] == "hitl_slack_block"
+    assert response["is_important_score"] == 0.93
+    assert response["bucket"] == "Notifications"
