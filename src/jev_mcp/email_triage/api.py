@@ -1,10 +1,12 @@
 import json
-from fastapi import FastAPI, Header, HTTPException, Depends
+import math
+from fastapi import FastAPI, Header, HTTPException, Depends, Request
 from pydantic import BaseModel, Field
 from typing import Optional
 
 from jev_mcp.email_triage.auth import verify_auth_token
 from jev_mcp.email_triage.mcp_tool import triage_email_content
+from jev_mcp.email_triage.rate_limit import SlidingWindowLimiter, limit_from_env
 from jev_mcp.email_triage.slack import build_escalation_message, build_hitl_message
 from jev_mcp.provider import EngineUnavailableError
 
@@ -94,7 +96,26 @@ def get_auth(authorization: Optional[str] = Header(None)):
     return verify_auth_token(authorization)
 
 
-@app.post("/api/v1/triage/email")
+# Per client address. Behind a reverse proxy every caller arrives from the proxy's address and
+# shares one allowance.
+limiter = SlidingWindowLimiter(limit=limit_from_env())
+
+
+async def enforce_rate_limit(request: Request) -> None:
+    # async so a refusal is answered from the event loop, not queued behind triage calls in the
+    # worker thread pool.
+    client_address = request.client.host if request.client else "unknown"
+    retry_after = limiter.check(client_address)
+    if retry_after is not None:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many requests",
+            headers={"Retry-After": str(max(1, math.ceil(retry_after)))},
+        )
+
+
+# Route-level dependencies run before the handler's own, so the limit is checked before auth.
+@app.post("/api/v1/triage/email", dependencies=[Depends(enforce_rate_limit)])
 def triage_email(payload: EmailPayload, auth: dict = Depends(get_auth)):
     try:
         result_str = triage_email_content(
