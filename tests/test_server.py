@@ -1182,3 +1182,22 @@ def test_jev_train_lora_quotes_paths_with_spaces_in_the_run_script(
     assert f"--data {shlex.quote(res['data_dir'])}" in script
     assert "--adapter-path '" in script
     assert 'echo "Training complete. Adapter saved to' not in script
+
+
+@patch("subprocess.Popen")
+def test_jev_train_lora_run_script_is_private_to_the_owner(
+    mock_popen, tmp_path, monkeypatch
+):
+    import os
+    import stat
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    mock_popen.return_value = MagicMock(pid=1)
+    ds = tmp_path / "mydata.jsonl"
+    ds.write_text('{"messages": []}\n')
+
+    res = json.loads(server.jev_train_lora(str(ds), fuse=False))
+
+    assert res["status"] == "TRAINING_STARTED", res.get("message")
+    script = mock_popen.call_args[0][0][1]
+    assert stat.S_IMODE(os.stat(script).st_mode) == 0o600
