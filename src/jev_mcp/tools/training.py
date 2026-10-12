@@ -33,7 +33,7 @@ def jev_train_lora(
     import importlib.util
     import time
     from jev_mcp import lora_training
-    from jev_mcp.security import is_safe_path
+    from jev_mcp.security import denial_message, is_safe_path
 
     try:
         if target_gguf_path:
@@ -41,7 +41,7 @@ def jev_train_lora(
                 return json.dumps(
                     {
                         "status": "BLOCKED",
-                        "message": f"Access denied: '{target_gguf_path}' resolves to a sensitive system or credential location.",
+                        "message": denial_message(target_gguf_path),
                     }
                 )
             if not target_gguf_path.endswith(".gguf"):
@@ -65,10 +65,7 @@ def jev_train_lora(
 
         if not is_safe_path(dataset_path):
             return json.dumps(
-                {
-                    "status": "BLOCKED",
-                    "message": f"Access denied: '{dataset_path}' resolves to a sensitive system or credential location.",
-                }
+                {"status": "BLOCKED", "message": denial_message(dataset_path)}
             )
 
         dataset_path = os.path.expanduser(dataset_path)

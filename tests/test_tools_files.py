@@ -6,8 +6,8 @@ from unittest.mock import MagicMock, patch
 from jev_mcp import server
 
 
-def test_read_file_reports_missing_file():
-    res = json.loads(server.jev_read_file("/nonexistent/file.py", "any task"))
+def test_read_file_reports_missing_file(tmp_path):
+    res = json.loads(server.jev_read_file(str(tmp_path / "missing.py"), "any task"))
     assert res["status"] == "ERROR"
     assert "not found" in res["message"]
 

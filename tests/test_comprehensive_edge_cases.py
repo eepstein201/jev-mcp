@@ -193,8 +193,8 @@ def test_routing_provider_no_uncertain_questions_early_return(mock_fast):
 from jev_mcp.server import jev_scan_repo
 
 
-def test_scan_repo_directory_not_found():
-    res_str = jev_scan_repo("/completely/fake/directory/path/12345", "Fix something")
+def test_scan_repo_directory_not_found(tmp_path):
+    res_str = jev_scan_repo(str(tmp_path / "no" / "such" / "dir"), "Fix something")
     res = json.loads(res_str)
     assert res["status"] == "ERROR"
     assert "Directory not found" in res["message"]

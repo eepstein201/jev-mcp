@@ -417,7 +417,7 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
 *   **Underlying Tool:** `read-file`
 *   **Natural Language Triggers:** *"Read this file,"*, *"Check if this file has the database logic..."*
 *   **What it does:** Uses the Dual-Engine logit cascade to mathematically evaluate if a file is actually relevant to your task *before* loading it into your context window. If filtering by chunk, it uses **Tree-sitter AST parsing** to semantically extract intact functions/classes (preventing arbitrary string-split errors), and then returns only the verbatim logic blocks you need, eliminating context bloat and hallucination. **(Note: It uses a 0.50 final acceptance threshold to prevent false negatives on edge cases after escalation).**
-*   **Path Security:** Every request is validated with `is_safe_path` before any content is read — sensitive system and credential locations (e.g. `/etc`, `~/.ssh`, `~/.aws`) are blocked.
+*   **Path Security:** Every request is validated with `is_safe_path` before any content is read. Only paths under the server's working directory (unless that is your home directory or above it), `~/.jev`, the repo's `models/` directory, the system temp directory, or a root listed in `JEV_ALLOWED_ROOTS` (see the environment table) are allowed, and credential locations (e.g. `~/.ssh`, `~/.aws`, `.env`) stay blocked inside all of them.
 *   **Size Limit:** A file over 1,048,576 characters returns an `ERROR` instead of being read, since every chunk costs an engine call.
 *   **Arguments:**
     *   `file_path` *(string)*: Absolute path to the file.
@@ -430,7 +430,7 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
 *   **Underlying Tool:** `scan-repo`
 *   **Natural Language Triggers:** *"Scan the repo for...", "Find the auth logic across all files..."*
 *   **What it does:** Performs Repository-Scale Context Filtering. Uses a Coarse-to-Fine Surgical Architecture: It maps the directory and leverages the Smart Engine to logically isolate target files. It then uses Tree-sitter to parse the code into syntax-aware semantic chunks (functions/classes) and runs them through the Dual-Engine cascade. It returns a surgically precise block of code containing only the logic relevant to your task, entirely eliminating file-bloat and arbitrary chunk-splitting errors.
-*   **Path Security:** The scanned directory is validated with `is_safe_path` up front — requests resolving to sensitive system or credential locations are blocked before any file is walked.
+*   **Path Security:** The scanned directory is validated with `is_safe_path` up front. A directory outside the allowed roots (working directory, `~/.jev`, the temp directory, `JEV_ALLOWED_ROOTS`), or one that resolves to a sensitive system or credential location, is blocked before any file is walked.
 *   **Arguments:**
     *   `directory_path` *(string)*: Absolute path to the directory or workspace root.
     *   `task_description` *(string)*: The goal or bug description used to filter the codebase.
@@ -779,6 +779,7 @@ Ports come from `JEV_FAST_PORT` (default `8080`) and `JEV_SMART_PORT` (default `
 | `JEV_MCP_JWKS_URL` | none | `email_triage/auth.py` | Identity provider's JWKS URL; webhook JWTs are verified against it (RS256/ES256). |
 | `JEV_MCP_JWT_SECRET` | none | `email_triage/auth.py` | Shared HS256 secret for webhook JWTs, used when `JEV_MCP_JWKS_URL` is unset. At least 32 bytes. |
 | `JEV_MCP_JWT_AUDIENCE` / `JEV_MCP_JWT_ISSUER` | none | `email_triage/auth.py` | When set, a webhook JWT must carry this `aud` / `iss`. The audience is required with `JEV_MCP_JWKS_URL`. |
+| `JEV_ALLOWED_ROOTS` | none | `security.py` | Extra directories `read-file`, `scan-repo` and `train` may touch, separated by `:`. The server's working directory, `~/.jev` and the temp directory are always allowed; credential locations stay blocked inside every root; `/` is ignored. The working directory is **not** a root when it is your home directory or above it, because a server started there would expose all of home: start the server in a project, or list your projects here. The repo's `models/` directory is always allowed, so `train` targets work wherever the server starts. |
 | `JEV_ULTRAFAST_PATH` | `<repo>/jev-ultrafast` | `browser_agent.py` | Location of the `jev-ultrafast` checkout used by `run-browser-agent`. |
 
 ---
