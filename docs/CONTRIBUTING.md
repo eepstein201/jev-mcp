@@ -32,7 +32,7 @@ Copy `.env.example` to `.env` if you need non-default ports or batch size.
 | `make audit` | `scripts/pip_audit.sh`: pip-audit on the installed environment; advisories listed in `.pip-audit-ignore` are accepted, any other fails (needs network) |
 | `make check` | `format-check`, then `lint`, then `test`, then `audit`: the same four gates CI runs, in CI order |
 | `make eval` | `python tests/run_evals.py`: warm-up + timed benchmark of both engines on `tests/golden_dataset.json` (daemons must be running) |
-| `make train` | Prints a pointer; training runs through the `train` MCP tool |
+| `make train` | Prints a pointer; training runs through the `jev_train_lora` MCP tool |
 <!-- /AUTO-GENERATED -->
 
 ## Tests
