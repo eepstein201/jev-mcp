@@ -84,3 +84,67 @@ def test_decide_bucket():
 
     assert decision["decision"] == "Receipts"
     assert decision["suggested_routing"] == "archive_and_label"
+
+
+def test_an_important_email_that_needs_no_action_is_reviewed_not_archived():
+    # An FYI from the boss or a critical alert must not be silently filed away.
+    decision = decide_routing(
+        requires_action_score=0.1,
+        is_important_score=0.95,
+        bucket="Notifications",
+        bucket_confidence=0.95,
+    )
+
+    assert decision == {"decision": "Review", "suggested_routing": "hitl_slack_block"}
+
+
+def test_importance_exactly_at_the_threshold_is_not_enough():
+    # Strictly above, like the action threshold.
+    decision = decide_routing(
+        requires_action_score=0.1,
+        is_important_score=0.8,
+        bucket="Receipts",
+        bucket_confidence=0.95,
+    )
+
+    assert decision["decision"] == "Receipts"
+    assert decision["suggested_routing"] == "archive_and_label"
+
+
+def test_a_high_action_score_still_escalates_when_the_email_is_also_important():
+    decision = decide_routing(
+        requires_action_score=0.95,
+        is_important_score=0.99,
+        bucket="Notifications",
+        bucket_confidence=0.95,
+    )
+
+    assert decision == {"decision": "Action", "suggested_routing": "escalate_to_slack"}
+
+
+def test_the_importance_threshold_comes_from_the_config():
+    config = JevMailConfig(important_threshold=0.5)
+
+    decision = decide_routing(
+        requires_action_score=0.1,
+        is_important_score=0.6,
+        bucket="Receipts",
+        bucket_confidence=0.95,
+        config=config,
+    )
+
+    assert decision["decision"] == "Review"
+
+
+def test_an_unimportant_confident_email_is_still_filed_by_bucket():
+    decision = decide_routing(
+        requires_action_score=0.05,
+        is_important_score=0.3,
+        bucket="Newsletter",
+        bucket_confidence=0.9,
+    )
+
+    assert decision == {
+        "decision": "Newsletter",
+        "suggested_routing": "archive_and_label",
+    }
