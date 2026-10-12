@@ -95,7 +95,11 @@ def test_an_important_email_that_needs_no_action_is_reviewed_not_archived():
         bucket_confidence=0.95,
     )
 
-    assert decision == {"decision": "Review", "suggested_routing": "hitl_slack_block"}
+    assert decision == {
+        "decision": "Review",
+        "suggested_routing": "hitl_slack_block",
+        "reason": "important_no_action",
+    }
 
 
 def test_importance_exactly_at_the_threshold_is_not_enough():
@@ -119,7 +123,11 @@ def test_a_high_action_score_still_escalates_when_the_email_is_also_important():
         bucket_confidence=0.95,
     )
 
-    assert decision == {"decision": "Action", "suggested_routing": "escalate_to_slack"}
+    assert decision == {
+        "decision": "Action",
+        "suggested_routing": "escalate_to_slack",
+        "reason": "requires_action",
+    }
 
 
 def test_the_importance_threshold_comes_from_the_config():
@@ -147,7 +155,27 @@ def test_an_unimportant_confident_email_is_still_filed_by_bucket():
     assert decision == {
         "decision": "Newsletter",
         "suggested_routing": "archive_and_label",
+        "reason": "confident_bucket",
     }
+
+
+@pytest.mark.parametrize(
+    "action,important,confidence,reason",
+    [
+        (0.95, 0.1, 0.9, "requires_action"),
+        (0.50, 0.1, 0.9, "ambiguous_action"),
+        (0.50, 0.95, 0.9, "ambiguous_action"),  # ambiguity is named before importance
+        (0.10, 0.95, 0.9, "important_no_action"),
+        (0.10, 0.10, 0.5, "low_bucket_confidence"),
+        (0.10, 0.10, 0.9, "confident_bucket"),
+        (0.50, 0.95, 0.5, "ambiguous_action"),  # ambiguity wins over low confidence
+        (0.10, 0.95, 0.5, "important_no_action"),  # importance wins over low confidence
+    ],
+)
+def test_every_decision_carries_its_reason(action, important, confidence, reason):
+    decision = decide_routing(action, important, "Receipts", confidence)
+
+    assert decision["reason"] == reason
 
 
 # --- thresholds from the environment ---------------------------------------------

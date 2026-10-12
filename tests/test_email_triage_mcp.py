@@ -392,3 +392,9 @@ def test_triage_honours_an_action_threshold_set_in_the_environment(
     # 0.6 is "ambiguous" under the 0.8 default but an Action under the configured 0.5.
     assert response["decision"] == "Action"
     assert response["suggested_routing"] == "escalate_to_slack"
+
+
+def test_the_triage_result_includes_the_reason(tmp_path, monkeypatch):
+    response = _triage_with_scores(tmp_path, monkeypatch, action=0.05, important=0.93)
+
+    assert response["reason"] == "important_no_action"
