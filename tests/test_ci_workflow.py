@@ -47,6 +47,6 @@ def test_ignore_file_lists_each_advisory_once_in_a_known_id_format():
         if line.strip() and not line.lstrip().startswith("#")
     ]
 
-    assert ids
+    # Empty is the goal; the file only has to stay well formed when an entry is added.
     assert all(re.fullmatch(r"(PYSEC|GHSA|CVE)-[\w-]+", i) for i in ids)
     assert len(ids) == len(set(ids))

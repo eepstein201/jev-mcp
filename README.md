@@ -276,7 +276,7 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
     *   The result reports the commit in use as `converter_commit`.
     *   If the download fails and an older converter is present, the run continues with it and logs a warning. If none is present, `train` returns `NOT_AVAILABLE`.
     *   To manage the converter yourself, set `JEV_LLAMA_CPP_SRC` to your own directory; `train` then never downloads into it.
-    *   The converter runs in the project environment and needs `torch` and `transformers` from the `engines` extra.
+    *   The converter runs in the project environment and needs `torch` (`>=2.14.1`, the first release `pip-audit` reports clean) and `sentencepiece` from the `engines` extra, and `transformers` through `mlx-lm`.
 *   **Restore:** `train` with `action="restore"` and `target_gguf_path` moves `<target>.bak` back over the fine-tuned model and restarts that agent.
 *   **Measured on 2026-10-10 (Qwen2.5-7B, M2 Pro 16 GB, `mlx_lm` 0.31.3, llama.cpp `d81235049`):**
     *   The route works end to end. 120 iterations on 56 rows took about 3.5 minutes at 6.3 GB peak memory; fuse, convert and quantize took about 5 minutes more.
@@ -763,7 +763,7 @@ questions.json:0: ERROR: GENERATIVE_INTENT_DETECTED - Question asks the model to
 ### 5. Daemon Launch Flags (`jev_mac_manager.sh`)
 The manager writes one launchd agent per engine (`com.jev.mlx_server_fast`, `com.jev.mlx_server_smart`; logs in `~/.jev/mlx_server_fast.log` and `~/.jev/mlx_server_smart.log`) and picks the launcher from the model path:
 *   **`.gguf` models** (the default Kev and Qwen files): `llama-server -m <model> --port <port> --parallel <n> -c <n × 16384>`. `<n>` is `JEV_BATCH_SIZE` if set; otherwise it is chosen from RAM (≥64 GB: 16, ≥32 GB: 8, ≥16 GB: 4, less: 2) and halved for 7B models (minimum 1). The context is 16K tokens per parallel slot.
-*   **Paths containing `kev` that are not `.gguf`**: `python -m kev.serve --run <model> --port <port>`.
+*   **Paths containing `kev` that are not `.gguf`**: `python -m kev.serve --run <model> --port <port>`. This needs the `kev` extra (`pip install -e ".[kev]"`), which caps `torch<2.9` and so must live in its own environment, not the one with `engines`. The default GGUF setup does not use it.
 *   **Anything else**: `python -m mlx_lm.server --model <model> --port <port> --prompt-cache-size 20 --prompt-cache-bytes 12G --prefill-step-size 2048 --log-level WARNING`. The prompt-cache and prefill flags apply only to this MLX path, not to `llama-server`.
 
 Ports come from `JEV_FAST_PORT` (default `8080`) and `JEV_SMART_PORT` (default `8081`), read from your shell or from a `.env` file in the repository root.

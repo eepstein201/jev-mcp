@@ -4,7 +4,7 @@
 
 - Apple Silicon Mac. `jev_mac_manager.sh` exits on anything other than `arm64`.
 - `llama-server` (llama.cpp); the manager checks for it before starting daemons.
-- Python ≥3.12 (`requires-python` in `pyproject.toml`; matches CI and `kev` in the `engines` extra). `pyproject.toml` is the only dependency list: runtime packages under `dependencies`, the pinned local engines under the `engines` extra, and tooling under `dev`. For a manual setup run `pip install -e ".[dev,engines]"`.
+- Python ≥3.12 (`requires-python` in `pyproject.toml`; matches CI and the `kev` extra). `pyproject.toml` is the only dependency list: runtime packages under `dependencies`, the local engines and the llama.cpp converter's `torch` under the `engines` extra, the alternate `kev.serve` engine under `kev`, and tooling under `dev`. For a manual setup run `pip install -e ".[dev,engines]"`. `kev` caps `torch<2.9`, so it conflicts with `engines`: install it in a separate environment.
 - Git with submodules: `git clone --recurse-submodules https://github.com/eepstein201/jev-mcp.git`. The `jev-ultrafast` submodule is required by `tests/test_browser_agent_e2e.py`.
 
 ## Setup
