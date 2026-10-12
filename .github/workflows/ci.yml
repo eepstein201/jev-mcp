@@ -33,3 +33,6 @@ jobs:
       
     - name: Mathematical Unit Tests (85% coverage gate)
       run: pytest --cov=src --cov-report=term --cov-fail-under=85 tests/
+
+    - name: Dependency Audit (accepted advisories in .pip-audit-ignore)
+      run: ./scripts/pip_audit.sh

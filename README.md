@@ -709,7 +709,8 @@ The easiest way to interact with Jev MCP locally. It wraps the core bash script.
 *   **`make format-check`**: Runs `ruff format --check src tests` inside `.venv`. This is also the CI formatting gate.
 *   **`make lint`**: Runs `mypy src/jev_mcp/` inside `.venv`. This is also the CI type-check step.
 *   **`make test`**: Runs pytest with `--cov=src --cov-fail-under=85`.
-*   **`make check`**: Runs `format-check`, `lint` and `test` in that order: the same three gates CI runs.
+*   **`make audit`**: Runs `scripts/pip_audit.sh` (pip-audit) on the installed environment. Advisories listed with a reason in `.pip-audit-ignore` are accepted; any other one fails. Needs network access.
+*   **`make check`**: Runs `format-check`, `lint`, `test` and `audit` in that order: the same four gates CI runs.
 *   **`make eval`**: Benchmarks both engines on `tests/golden_dataset.json` (warm-up pass, then a timed pass; daemons must be running).
 *   **`make train`**: Informational only; training is triggered through the `train` MCP tool.
 

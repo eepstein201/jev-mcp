@@ -12,7 +12,7 @@ Both engines run side by side (`make start`); requests route between them automa
 - MCP SDK `mcp` (`>=2.2,<3`; middleware verified identical on 2.2.0 and 2.3.0), pydantic 2.x for question models.
 - Runtime engines (not imports): `llama.cpp` (`llama-server`) daemons — Kev-0.8B on `JEV_FAST_PORT` (8080), Qwen-2.5-7B on `JEV_SMART_PORT` (8081), managed by `jev_mac_manager.sh` (launchd).
 - scikit-learn (Platt scaling), tree-sitter (AST chunking, py/js/ts).
-- Tools: pytest + pytest-mock, mypy (`make lint`, CI gate), ruff format (`make format`; `ruff format --check src tests` is a CI gate). No mypy/ruff/pytest config files — defaults apply.
+- Tools: pytest + pytest-mock, mypy (`make lint`, CI gate), ruff format (`make format`; `ruff format --check src tests` is a CI gate). The only tool config is `[tool.mypy] warn_unused_ignores` in `pyproject.toml`; the dev tools are pinned in the `dev` extra. `make audit` (`scripts/pip_audit.sh`, pip-audit) is a CI gate: advisories accepted with a reason live in `.pip-audit-ignore`, anything new fails.
 
 ## Project Structure
 

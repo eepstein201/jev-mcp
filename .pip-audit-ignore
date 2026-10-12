@@ -1,0 +1,19 @@
+# Advisories pip-audit may report without failing the build (scripts/pip_audit.sh).
+# One ID per line; everything after the ID is a comment. A NEW advisory fails the audit.
+#
+# All eight are in torch 2.8.0, which jev-mcp never imports: it arrives through kev, peft
+# and accelerate, and only runs inside llama.cpp's convert_hf_to_gguf.py, which `train`
+# starts as a subprocess on the user's own freshly fused model. None of the affected ops
+# (or the checkpoint unpickler) is reachable from jev-mcp's code or from webhook input.
+#
+# Remove an entry once torch is upgraded past its fix. Fixed in 2.9.0 / 2.9.1 / 2.10.0 / 2.13.0
+# (PYSEC-2026-139 lists no fixed version). docs/TODO.md tracks the upgrade.
+
+PYSEC-2025-193   # torch.nn.utils.rnn.unpack_sequence memory corruption (fixed 2.9.1)
+PYSEC-2025-194   # torch.jit.script memory corruption (fixed 2.13.0)
+PYSEC-2025-195   # torch.lstm_cell memory corruption (fixed 2.10.0)
+PYSEC-2025-203   # torch.linalg.lu slice DoS (fixed 2.9.0)
+PYSEC-2025-204   # torch.rot90 / randn_like unexpected behaviour (fixed 2.9.0)
+PYSEC-2025-206   # torch.nan_to_num integer overflow (fixed 2.9.0)
+PYSEC-2026-139   # pt2 loading handler deserialization, no fixed version listed
+PYSEC-2026-2286  # weights_only unpickler bypass via a crafted checkpoint (fixed 2.10.0)

@@ -140,7 +140,10 @@ The high and medium findings landed in #19 (`c40a822`, `409cbd9`). These are wha
 
 ### Repo hygiene
 
-- [ ] No dependency audit: `pip-audit` is not installed and there is no `.github/dependabot.yml`.
-- [ ] Four `# type: ignore` comments are unused according to `mypy --warn-unused-ignores`: `tools/evaluate.py:209,217` and `tools/calibrate.py:40,44`. Likely relocated by the ruff pass in #20. Remove them and run that flag in CI.
-- [ ] CI installs `mypy`, `pytest` and `pytest-cov` unpinned and does not install from `uv.lock`, so a new release can break the gate with no code change (ruff was pinned in #23 for the same reason).
+- [x] No dependency audit. *(fixed: `pip-audit` runs in CI and in `make check` through `scripts/pip_audit.sh`; advisories accepted with a reason are listed in `.pip-audit-ignore`, anything new fails the build. It needs network access, so a PyPI outage fails the step.)*
+- [ ] No `.github/dependabot.yml`. The audit catches a vulnerable pin on the next CI run; Dependabot would open the bump PR itself. A past session mentioned Dependabot PRs, so it may be enabled in repo settings; not checked.
+- [ ] **Upgrade `torch` and empty `.pip-audit-ignore`.** All eight accepted advisories are in `torch 2.8.0`, a transitive dependency of `kev`, `peft` and `accelerate` that only runs inside llama.cpp's converter subprocess. Fixes are in 2.9.0 to 2.13.0 (`PYSEC-2026-139` lists none). Needs the `train` fuse → convert path re-run end to end on the new version.
+- [x] Four `# type: ignore` comments were unused (`tools/evaluate.py` x2, `tools/calibrate.py` x2). *(fixed: removed; `[tool.mypy] warn_unused_ignores = true` in `pyproject.toml` makes `make lint` and CI fail on a new unused one)*
+- [x] `mypy`, `pytest` and `pytest-cov` were unpinned. *(fixed: pinned to the CI-resolved versions in the `dev` extra with `pip-audit`; `uv.lock` re-locked, which had been left stale by #23. 16 packages added, none changed.)*
+- [ ] CI installs with `pip install -e ".[dev,engines]"`, not from `uv.lock`, so transitive dependencies (for example `torch`) are still resolved fresh on every run; `uv sync --locked` in CI would make the lockfile what is tested.
 - [ ] Branch protection: make `build-and-test` a required status check so CI is enforced by rule.

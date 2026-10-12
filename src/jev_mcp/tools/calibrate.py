@@ -37,11 +37,11 @@ def jev_calibrate_threshold(
     elif isinstance(question, ChoiceQuestion):
         q_obj = ChoiceQuestion(
             key=question.key, prompt=question.prompt, options=question.options
-        )  # type: ignore
+        )
     elif isinstance(question, ScoreQuestion):
         q_obj = ScoreQuestion(
             key=question.key, prompt=question.prompt, labels=question.labels
-        )  # type: ignore
+        )
 
     try:
         results = app.provider.evaluate_dataset(dataset, q_obj)
