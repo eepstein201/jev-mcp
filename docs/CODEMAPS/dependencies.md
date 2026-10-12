@@ -4,7 +4,7 @@
 ## Python (pyproject.toml, py>=3.12)
 mcp[cli]>=2.2,<3 · pydantic>=2 · fastapi>=0.143 · scikit-learn · tree-sitter(+python/js/ts)
 browser-harness · h2 · google-api-python-client · google-auth-oauthlib · pyjwt[crypto] · uvicorn · python-dotenv
-extras: engines = mlx==0.32.2 · mlx-lm==0.31.3 · kev (git, pinned to a commit, needs py>=3.12) | dev = ruff==0.17.0 · mypy==2.4.0 · pytest==9.1.1 · pytest-cov==7.1.0 · pip-audit==2.10.1 (all pinned; `[tool.mypy] warn_unused_ignores`)
+extras: engines = mlx==0.32.2 · mlx-lm==0.31.3 · torch>=2.14.1 · sentencepiece (torch is for llama.cpp's converter) | kev = kev (git, pinned to a commit, needs py>=3.12; caps torch<2.9 so conflicts with engines, `[tool.uv] conflicts`) | dev = ruff==0.17.0 · mypy==2.4.0 · pytest==9.1.1 · pytest-cov==7.1.0 · pip-audit==2.10.1 (all pinned; `[tool.mypy] warn_unused_ignores`)
 pyproject.toml is the only dependency list (no requirements.txt); CI and the manager install `-e ".[dev,engines]"` / `-e ".[engines]"`
 
 ## Runtime engines (not imports)
