@@ -718,8 +718,8 @@ def test_jev_agent_handoff(mock_provider_class):
     assert res["recommended_agent"] == "Python_Agent"
 
 
-def test_jev_train_lora_rejects_missing_dataset():
-    res = json.loads(server.jev_train_lora("/nonexistent/path/data.jsonl"))
+def test_jev_train_lora_rejects_missing_dataset(tmp_path):
+    res = json.loads(server.jev_train_lora(str(tmp_path / "missing" / "data.jsonl")))
     assert res["status"] == "ERROR"
     assert ".jsonl" in res["message"] or "not" in res["message"].lower()
 

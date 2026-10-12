@@ -35,15 +35,10 @@ def jev_read_file(
 ) -> str:
     import os
     import json
-    from jev_mcp.security import is_safe_path
+    from jev_mcp.security import denial_message, is_safe_path
 
     if not is_safe_path(file_path):
-        return json.dumps(
-            {
-                "status": "BLOCKED",
-                "message": f"Access denied: '{file_path}' resolves to a sensitive system or credential location.",
-            }
-        )
+        return json.dumps({"status": "BLOCKED", "message": denial_message(file_path)})
 
     file_path = os.path.expanduser(file_path)
 
@@ -283,14 +278,11 @@ def jev_scan_repo(
     from jev_mcp.scanner import walk_repository, generate_repo_map
     from jev_mcp.chunker import SemanticChunker
     from jev_mcp.routing_provider import RoutingProvider
-    from jev_mcp.security import is_safe_path
+    from jev_mcp.security import denial_message, is_safe_path
 
     if not is_safe_path(directory_path):
         return json.dumps(
-            {
-                "status": "BLOCKED",
-                "message": f"Access denied: '{directory_path}' resolves to a sensitive system or credential location.",
-            }
+            {"status": "BLOCKED", "message": denial_message(directory_path)}
         )
 
     directory_path = os.path.expanduser(directory_path)

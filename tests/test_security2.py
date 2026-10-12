@@ -1,7 +1,8 @@
 from jev_mcp.security import is_safe_path
 
 
-def test_is_safe_path():
+def test_is_safe_path(monkeypatch):
+    monkeypatch.setenv("JEV_ALLOWED_ROOTS", "/Users/test")
     # Safe paths
     assert is_safe_path("/Users/test/workspace/file.py") == True
     assert is_safe_path("local_file.txt") == True
