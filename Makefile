@@ -1,4 +1,4 @@
-.PHONY: install test lint clean format update start stop hybrid train eval
+.PHONY: install test lint clean format format-check check update start stop hybrid train eval
 
 install:
 	@echo "Installing Jev MCP Environment..."
@@ -20,6 +20,12 @@ stop:
 format:
 	@echo "Formatting code with Ruff..."
 	bash -c "source .venv/bin/activate && ruff format src tests"
+
+format-check:
+	@echo "Checking formatting with Ruff..."
+	bash -c "source .venv/bin/activate && ruff format --check src tests"
+
+check: format-check lint test
 
 lint:
 	@echo "Running MyPy Static Type Checking..."

@@ -108,3 +108,38 @@ Found during the 2026-10-10 documentation and benchmark review. Each item lists 
 - [x] CI: `actions/checkout@v4` and `actions/setup-python@v5` trigger a Node 20 deprecation warning. *(fixed: both on v7; the warning is gone from the main run)*
 - [x] Some tests reached a real daemon when one was running (two `compact` tests, and two linter tests whose auto-fixer made a real generation call, taking 9-13 s with model-dependent results). *(fixed: an autouse fixture in `tests/conftest.py` makes unmocked daemon calls fail as in CI; the suite runs in about 6 s instead of 35 s)*
 - [ ] Golden dataset: 80 of 88 rows were written in one pass by an LLM and frontier models score 100%; add real, hard cases.
+
+## Review follow-ups: 2026-10-11 security and Python review
+
+The high and medium findings landed in #19 (`c40a822`, `409cbd9`). These are what remains. Items under "Needs a decision" are behaviour changes, so they wait for a call.
+
+### Needs a decision
+
+- [ ] **`is_safe_path` is a denylist.** `security.py` blocks known system and credential paths but allows any other path. Moving to an allowlist of roots (cwd, `~/.jev`, the temp dir, plus an env var such as `JEV_ALLOWED_ROOTS`) is breaking: `tests/test_path_security.py` currently requires arbitrary non-system paths to pass. Needs the list of roots.
+- [ ] **Webhook key sits in the Apps Script source.** `examples/gas_triage.js` has `const JEV_MCP_API_KEY = 'TEMPLATE'` and `setup_gas_workflow` writes the real key into the script text. Move it to script properties; the setup flow then has to tell the user to set the property.
+- [ ] **`is_important_score` is computed and never used.** `email_triage/core.py::decide_routing` takes it as a parameter and ignores it. Either let it affect routing or remove the parameter.
+- [ ] **JWKS mode now needs an audience.** A deployed webhook that sets `JEV_MCP_JWKS_URL` without `JEV_MCP_JWT_AUDIENCE` rejects every JWT. Check what is deployed.
+
+### Security lows
+
+- [ ] `email_triage/auth.py`: `auth_header.replace("Bearer ", "")` replaces the prefix anywhere in the header; slice after the `startswith` check.
+- [ ] `email_triage/auth.py`: the HS256 shared secret has no minimum length; require at least 32 bytes.
+- [ ] `read-file` has no size cap (`tools/files.py`).
+- [ ] `tools/training.py`: the generated run script is `chmod 0o755`; `0o700` is enough.
+- [ ] Webhook: no request-size cap (FastAPI reads the whole body before the field caps apply) and no rate limiting. `serve-webhook` binds localhost, so rate limiting can wait unless it is exposed.
+- [ ] `lora_training.py` fetches the llama.cpp converter from a GitHub archive by commit SHA with no hash check. GitHub does not promise byte-stable archives, so a pinned hash would be brittle; candidate to accept as a known risk.
+
+### Correctness and quality
+
+- [ ] Choice questions with more than 26 options run out of letter labels; check what happens and fail with a clear error.
+- [ ] `linter.py` (~line 139) warns "missing fallback" when one is present.
+- [ ] Functions over 50 lines: `jev_calibrate_threshold` 274, `jev_evaluate_batch` 255, `jev_optimize_prompt` 204, `jev_train_lora` 203, `lint` 177, `local_choose` 145. Split the first two behind the existing tests.
+- [ ] Config loaders (`router_config.py`, `model_catalog.py`) return untyped dicts.
+- [ ] `run-browser-agent`: deep or below-fold rows are still missed (see the dense-click item above).
+
+### Repo hygiene
+
+- [ ] No dependency audit: `pip-audit` is not installed and there is no `.github/dependabot.yml`.
+- [ ] Four `# type: ignore` comments are unused according to `mypy --warn-unused-ignores`: `tools/evaluate.py:209,217` and `tools/calibrate.py:40,44`. Likely relocated by the ruff pass in #20. Remove them and run that flag in CI.
+- [ ] CI installs `mypy`, `pytest` and `pytest-cov` unpinned and does not install from `uv.lock`, so a new release can break the gate with no code change (ruff was pinned in #23 for the same reason).
+- [ ] Branch protection: make `build-and-test` a required status check so CI is enforced by rule.
