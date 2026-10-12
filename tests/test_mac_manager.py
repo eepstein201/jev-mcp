@@ -92,3 +92,22 @@ def test_uninstall_unloads_every_agent_before_removing_its_plist(sandbox):
     assert any(str(fast) in b for b in bootouts)
     assert any(str(smart) in b for b in bootouts)
     assert not fast.exists() and not smart.exists()
+
+
+def test_uninstall_unlinks_opencode_while_the_virtualenv_still_exists(
+    sandbox, tmp_path
+):
+    # Arrange
+    _, run = sandbox
+    venv = tmp_path / "work" / ".venv"
+    (venv / "bin").mkdir(parents=True)
+    python = venv / "bin" / "python"
+    python.write_text(f'#!/bin/bash\necho "python $*" >> "{tmp_path / "calls.log"}"\n')
+    python.chmod(0o755)
+
+    # Act
+    calls = run("uninstall", "--headless")
+
+    # Assert
+    assert "python -m jev_mcp.client_config unlink-opencode" in calls
+    assert not venv.exists()
