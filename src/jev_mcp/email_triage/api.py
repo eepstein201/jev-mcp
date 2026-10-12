@@ -96,14 +96,20 @@ def get_auth(authorization: Optional[str] = Header(None)):
     return verify_auth_token(authorization)
 
 
-# Per client address. Behind a reverse proxy every caller arrives from the proxy's address and
-# shares one allowance.
+# Per client address as the ASGI server reports it. serve-webhook runs uvicorn with its
+# proxy-headers default (proxy_headers=True, forwarded_allow_ips=127.0.0.1,::1), so a local
+# proxy or tunnel that sets X-Forwarded-For already yields each caller's real address. A proxy
+# on another host, or one that sends no X-Forwarded-For, leaves every caller on the proxy's
+# address and one allowance; widen uvicorn's forwarded_allow_ips (FORWARDED_ALLOW_IPS) to match.
 limiter = SlidingWindowLimiter(limit=limit_from_env())
 
 
-async def enforce_rate_limit(request: Request) -> None:
-    # async so a refusal is answered from the event loop, not queued behind triage calls in the
-    # worker thread pool.
+async def enforce_rate_limit(request: Request, auth: dict = Depends(get_auth)) -> None:
+    # auth is a dependency of this dependency, so FastAPI solves it first: the limit is
+    # consulted only after authentication and counts authenticated requests alone.
+    # Unauthenticated requests are answered with 401 and never consume the allowance, so a
+    # flood of them cannot lock out the real sender. async so a refusal is answered from the
+    # event loop, not queued behind triage calls in the worker thread pool.
     client_address = request.client.host if request.client else "unknown"
     retry_after = limiter.check(client_address)
     if retry_after is not None:
@@ -114,7 +120,6 @@ async def enforce_rate_limit(request: Request) -> None:
         )
 
 
-# Route-level dependencies run before the handler's own, so the limit is checked before auth.
 @app.post("/api/v1/triage/email", dependencies=[Depends(enforce_rate_limit)])
 def triage_email(payload: EmailPayload, auth: dict = Depends(get_auth)):
     try:

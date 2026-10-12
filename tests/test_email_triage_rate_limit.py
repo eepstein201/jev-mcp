@@ -1,6 +1,8 @@
+import asyncio
 import logging
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from jev_mcp.email_triage import api
@@ -9,6 +11,22 @@ from jev_mcp.email_triage.rate_limit import SlidingWindowLimiter, limit_from_env
 client = TestClient(api.app)
 
 ENV_VAR = "JEV_MCP_RATE_LIMIT_PER_MINUTE"
+AUTH_HEADERS = {"Authorization": "Bearer test-key"}
+
+
+def _counting_webhook(monkeypatch, limiter):
+    """Installs a limiter, valid credentials and a triage stub that needs no engine."""
+    monkeypatch.setenv("JEV_MCP_API_KEY", "test-key")
+    monkeypatch.setattr(api, "limiter", limiter)
+    monkeypatch.setattr(
+        api, "triage_email_content", lambda **kwargs: '{"status": "OK"}'
+    )
+
+
+def _post(headers=None):
+    return client.post(
+        "/api/v1/triage/email", json={"context_id": "c"}, headers=headers
+    )
 
 
 def test_requests_up_to_the_limit_are_allowed_and_the_next_is_refused():
@@ -133,71 +151,101 @@ def test_an_unusable_limit_logs_a_warning_and_falls_back_to_the_default(
     assert ENV_VAR in caplog.text
 
 
-def test_the_webhook_answers_429_with_retry_after_before_checking_auth(monkeypatch):
-    monkeypatch.setattr(
-        api, "limiter", SlidingWindowLimiter(limit=1, clock=lambda: 0.0)
-    )
-    client.post("/api/v1/triage/email", json={"context_id": "c"})
-    response = client.post("/api/v1/triage/email", json={"context_id": "c"})
+def test_the_webhook_answers_429_with_retry_after_past_the_limit(monkeypatch):
+    _counting_webhook(monkeypatch, SlidingWindowLimiter(limit=1, clock=lambda: 0.0))
+
+    assert _post(AUTH_HEADERS).status_code == 200
+    response = _post(AUTH_HEADERS)
+
     assert response.status_code == 429 and int(response.headers["retry-after"]) >= 1
     assert response.headers["retry-after"] == "60"
     assert response.json() == {"detail": "Too many requests"}
 
 
+def test_unauthenticated_requests_get_401_and_never_consume_the_allowance(monkeypatch):
+    _counting_webhook(monkeypatch, SlidingWindowLimiter(limit=1, clock=lambda: 0.0))
+
+    statuses = [_post().status_code for _ in range(20)]
+
+    assert statuses == [401] * 20
+    assert _post(AUTH_HEADERS).status_code == 200
+
+
 def test_a_throttled_request_with_a_valid_key_never_reaches_triage(monkeypatch):
-    monkeypatch.setenv("JEV_MCP_API_KEY", "test-key")
-    monkeypatch.setattr(
-        api, "limiter", SlidingWindowLimiter(limit=1, clock=lambda: 0.0)
-    )
+    _counting_webhook(monkeypatch, SlidingWindowLimiter(limit=1, clock=lambda: 0.0))
+    _post(AUTH_HEADERS)
 
     def must_not_run(*args, **kwargs):
         raise AssertionError("triage ran on a throttled request")
 
-    client.post("/api/v1/triage/email", json={"context_id": "c"})
     monkeypatch.setattr(api, "triage_email_content", must_not_run)
-
-    response = client.post(
-        "/api/v1/triage/email",
-        json={"context_id": "c"},
-        headers={"Authorization": "Bearer test-key"},
-    )
+    response = _post(AUTH_HEADERS)
 
     assert response.status_code == 429
 
 
 def test_retry_after_is_rounded_up_to_whole_seconds(monkeypatch):
     now = [0.0]
-    monkeypatch.setattr(
-        api, "limiter", SlidingWindowLimiter(limit=1, clock=lambda: now[0])
-    )
-    client.post("/api/v1/triage/email", json={"context_id": "c"})
+    _counting_webhook(monkeypatch, SlidingWindowLimiter(limit=1, clock=lambda: now[0]))
+    _post(AUTH_HEADERS)
     now[0] = 59.6
 
-    response = client.post("/api/v1/triage/email", json={"context_id": "c"})
+    response = _post(AUTH_HEADERS)
 
     assert response.headers["retry-after"] == "1"
 
 
-def test_requests_under_the_limit_still_reach_auth(monkeypatch):
-    monkeypatch.setattr(
-        api, "limiter", SlidingWindowLimiter(limit=2, clock=lambda: 0.0)
-    )
+def test_the_limit_counts_only_authenticated_requests(monkeypatch):
+    _counting_webhook(monkeypatch, SlidingWindowLimiter(limit=2, clock=lambda: 0.0))
 
-    statuses = [
-        client.post("/api/v1/triage/email", json={"context_id": "c"}).status_code
-        for _ in range(3)
-    ]
+    authorized = [_post(AUTH_HEADERS).status_code for _ in range(3)]
+    anonymous = [_post().status_code for _ in range(3)]
 
-    assert statuses == [401, 401, 429]
+    assert authorized == [200, 200, 429]
+    assert anonymous == [401, 401, 401]
 
 
 def test_a_request_with_no_client_address_is_still_limited(monkeypatch):
+    _counting_webhook(monkeypatch, SlidingWindowLimiter(limit=1, clock=lambda: 0.0))
+    anonymous = TestClient(api.app, client=None)
+
+    first = anonymous.post(
+        "/api/v1/triage/email", json={"context_id": "c"}, headers=AUTH_HEADERS
+    )
+    response = anonymous.post(
+        "/api/v1/triage/email", json={"context_id": "c"}, headers=AUTH_HEADERS
+    )
+
+    assert first.status_code == 200
+    assert response.status_code == 429
+
+
+class _FakeClient:
+    def __init__(self, host: str) -> None:
+        self.host = host
+
+
+class _FakeRequest:
+    """Stands in for starlette's Request: the limiter must key on request.client.host."""
+
+    def __init__(self, host: str) -> None:
+        self.client = _FakeClient(host)
+
+
+def test_the_limit_is_keyed_on_the_asgi_reported_client_address(monkeypatch):
     monkeypatch.setattr(
         api, "limiter", SlidingWindowLimiter(limit=1, clock=lambda: 0.0)
     )
-    anonymous = TestClient(api.app, client=None)
+    sender = _FakeRequest("203.0.113.7")
 
-    anonymous.post("/api/v1/triage/email", json={"context_id": "c"})
-    response = anonymous.post("/api/v1/triage/email", json={"context_id": "c"})
+    asyncio.run(api.enforce_rate_limit(sender, auth={"sub": "sender"}))
+    # A second address has its own allowance.
+    asyncio.run(
+        api.enforce_rate_limit(_FakeRequest("198.51.100.9"), auth={"sub": "other"})
+    )
 
-    assert response.status_code == 429
+    with pytest.raises(HTTPException) as excinfo:
+        asyncio.run(api.enforce_rate_limit(sender, auth={"sub": "sender"}))
+
+    assert excinfo.value.status_code == 429
+    assert excinfo.value.headers["Retry-After"] == "60"
