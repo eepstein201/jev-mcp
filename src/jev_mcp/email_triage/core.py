@@ -1,11 +1,54 @@
+import logging
+import math
+import os
+
 from pydantic import BaseModel, Field
 
 from jev_mcp.provider import ChoiceQuestion, NoulQuestion, QuestionType
+
+logger = logging.getLogger(__name__)
 
 
 class JevMailConfig(BaseModel):
     action_threshold: float = Field(default=0.8)
     important_threshold: float = Field(default=0.8)
+
+
+ACTION_THRESHOLD_ENV = "JEV_TRIAGE_ACTION_THRESHOLD"
+IMPORTANT_THRESHOLD_ENV = "JEV_TRIAGE_IMPORTANT_THRESHOLD"
+
+
+def _threshold_from_env(name: str, default: float) -> float:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        value = math.nan
+    # NaN fails both comparisons, so it is rejected here too.
+    if not 0.0 <= value <= 1.0:
+        logger.warning(
+            "%s=%r is not a number between 0 and 1; using the default %s",
+            name,
+            raw,
+            default,
+        )
+        return default
+    return value
+
+
+def load_mail_config() -> JevMailConfig:
+    """The routing thresholds, each overridable with an environment variable."""
+    defaults = JevMailConfig()
+    return JevMailConfig(
+        action_threshold=_threshold_from_env(
+            ACTION_THRESHOLD_ENV, defaults.action_threshold
+        ),
+        important_threshold=_threshold_from_env(
+            IMPORTANT_THRESHOLD_ENV, defaults.important_threshold
+        ),
+    )
 
 
 class CategoryConfig(BaseModel):

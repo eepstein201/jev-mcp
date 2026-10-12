@@ -348,3 +348,47 @@ def test_triage_sends_an_important_email_that_needs_no_action_to_review(
     assert response["suggested_routing"] == "hitl_slack_block"
     assert response["is_important_score"] == 0.93
     assert response["bucket"] == "Notifications"
+
+
+def _triage_with_scores(tmp_path, monkeypatch, action, important):
+    from unittest.mock import MagicMock
+
+    monkeypatch.setattr(
+        "jev_mcp.email_triage.mcp_tool.get_config_path",
+        lambda: tmp_path / "triage_configs.json",
+    )
+    configure_triage_labels("tune@mailbox.com", ["Notifications", "Receipts"])
+    provider = MagicMock()
+    provider.evaluate_batch.return_value = {
+        "requires_action": {"probabilities": {"true": action}},
+        "is_important": {"probabilities": {"true": important}},
+        "bucket": {"probabilities": {"Notifications": 0.9, "Receipts": 0.1}},
+    }
+    monkeypatch.setattr("jev_mcp.routing_provider.RoutingProvider", lambda: provider)
+    return json.loads(
+        triage_email_content("tune@mailbox.com", "FYI", "ceo@test.com", "For you.")
+    )
+
+
+def test_triage_honours_an_importance_threshold_set_in_the_environment(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("JEV_TRIAGE_IMPORTANT_THRESHOLD", "0.99")
+
+    response = _triage_with_scores(tmp_path, monkeypatch, action=0.05, important=0.93)
+
+    # 0.93 is over the 0.8 default but under the configured 0.99, so it is filed, not reviewed.
+    assert response["decision"] == "Notifications"
+    assert response["suggested_routing"] == "archive_and_label"
+
+
+def test_triage_honours_an_action_threshold_set_in_the_environment(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("JEV_TRIAGE_ACTION_THRESHOLD", "0.5")
+
+    response = _triage_with_scores(tmp_path, monkeypatch, action=0.6, important=0.1)
+
+    # 0.6 is "ambiguous" under the 0.8 default but an Action under the configured 0.5.
+    assert response["decision"] == "Action"
+    assert response["suggested_routing"] == "escalate_to_slack"
