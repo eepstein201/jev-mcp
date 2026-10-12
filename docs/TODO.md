@@ -134,11 +134,11 @@ The high and medium findings landed in #19 (`c40a822`, `409cbd9`). These are wha
 
 ### Correctness and quality
 
-- [ ] Choice questions with more than 26 options run out of letter labels; check what happens and fail with a clear error.
+- [x] Choice questions with more than 26 options ran out of letter labels. *(fixed. It was a silent wrong answer, not an error: the smart tier offered option 27 as `[` and read it back as `{`, so options 27 and up always scored 0.0. Live on the 7B with 40 cities and "which is the capital of France?", Paris at option 36 returned Toulouse at 0.994 confidence. `DaemonProvider` now picks a winner in each group of 26 and then chooses among the winners; probabilities still cover every option and sum to one. 26 or fewer is unchanged; over 676 raises a clear error. A 40-option question takes about 4s instead of 2s.)*
 - [ ] `linter.py` (~line 139) warns "missing fallback" when one is present.
 - [ ] Functions over 50 lines: `jev_calibrate_threshold` 274, `jev_evaluate_batch` 255, `jev_optimize_prompt` 204, `jev_train_lora` 203, `lint` 177, `local_choose` 145. Split the first two behind the existing tests.
 - [ ] Config loaders (`router_config.py`, `model_catalog.py`) return untyped dicts.
-- [ ] `run-browser-agent`: deep or below-fold rows are still missed (see the dense-click item above).
+- [ ] `run-browser-agent`: deep or below-fold rows are still missed (see the dense-click item above). **Re-measure this first:** the agent offers every page element as a choice option, so on a page with more than 26 elements an escalated question could never pick or shortlist element 27 or later until the 26-option fix above. That may account for some or all of these misses; the dense-page eval has not been re-run since.
 
 ### Repo hygiene
 
