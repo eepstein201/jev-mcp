@@ -1,0 +1,25 @@
+# Weekly and grouped, so the lockfile is refreshed in one reviewable PR rather than many.
+# CI installs from uv.lock, so every bump proposed here is tested as locked.
+version: 2
+updates:
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+    groups:
+      python-dependencies:
+        patterns:
+          - "*"
+    ignore:
+      # Pinned for Apple Silicon reproducibility: bump by hand and re-run `make eval`.
+      - dependency-name: "mlx"
+      - dependency-name: "mlx-lm"
+      # A ruff bump changes formatting output: bump by hand with `make format` in the same commit.
+      - dependency-name: "ruff"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 2

@@ -19,7 +19,7 @@ JEV_MCP_JWKS_URL JEV_MCP_JWT_SECRET JEV_MCP_JWT_AUDIENCE JEV_MCP_JWT_ISSUER (web
 JEV_MCP_API_KEY (webhook bearer token; the generated Apps Script holds JEV_MCP_WEBHOOK_URL as a constant and reads the key from a Script Property of the same name, never from source)
 
 ## Build / CI
-make install|update|start|hybrid|stop|clean|test|lint|format|format-check|audit|check|eval|train · ci.yml (macos-latest, py3.12, checkout with submodules): ruff format --check src tests + mypy src/jev_mcp/ + pytest --cov-fail-under=85 + scripts/pip_audit.sh (accepted advisories: .pip-audit-ignore)
+make install|update|start|hybrid|stop|clean|test|lint|format|format-check|audit|check|eval|train · ci.yml (macos-latest, py3.12, checkout with submodules; installs with `uv sync --locked --extra dev --extra engines`) · dependabot.yml (weekly: uv lockfile, github-actions): ruff format --check src tests + mypy src/jev_mcp/ + pytest --cov-fail-under=85 + scripts/pip_audit.sh (accepted advisories: .pip-audit-ignore)
 Commit gate: AGENTS.md (95% per file, 85% overall)
 
 ## External integrations

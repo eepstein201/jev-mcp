@@ -50,3 +50,22 @@ def test_ignore_file_lists_each_advisory_once_in_a_known_id_format():
     # Empty is the goal; the file only has to stay well formed when an entry is added.
     assert all(re.fullmatch(r"(PYSEC|GHSA|CVE)-[\w-]+", i) for i in ids)
     assert len(ids) == len(set(ids))
+
+
+def test_ci_installs_from_the_lockfile_so_the_lock_is_what_gets_tested():
+    install = "\n".join(step["run"] for step in _steps() if "run" in step)
+
+    assert "uv sync --locked" in install
+    assert "--extra dev" in install and "--extra engines" in install
+    # A plain `pip install -e` resolves transitive dependencies fresh on every run.
+    assert 'pip install -e ".[dev,engines]"' not in install
+
+
+def test_dependabot_watches_the_lockfile_and_the_workflow_actions():
+    config = yaml.safe_load((ROOT / ".github" / "dependabot.yml").read_text())
+
+    ecosystems = {update["package-ecosystem"] for update in config["updates"]}
+
+    assert config["version"] == 2
+    assert ecosystems == {"uv", "github-actions"}
+    assert all(update["directory"] == "/" for update in config["updates"])

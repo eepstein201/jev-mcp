@@ -63,7 +63,7 @@ CI enforces only the 85% overall threshold; the 95% per-file rule is a local gat
 
 `.github/workflows/ci.yml` runs on pushes and PRs to `main` (macos-latest, Python 3.12, submodules checked out):
 
-1. `pip install -e ".[dev,engines]"`
+1. `uv sync --locked --extra dev --extra engines` (installs exactly what `uv.lock` pins; it fails if the lock is out of date with `pyproject.toml`)
 2. `ruff format --check src tests`
 3. `mypy src/jev_mcp/`
 4. `pytest --cov=src --cov-report=term --cov-fail-under=85 tests/`
@@ -72,6 +72,7 @@ CI enforces only the 85% overall threshold; the 95% per-file rule is a local gat
 ## PR checklist
 
 - [ ] `make check` passes locally (formatting, mypy, the test gate and the dependency audit)
+- [ ] If `pyproject.toml` dependencies changed: `uv lock` re-run and `uv.lock` committed (CI installs with `--locked` and fails otherwise)
 - [ ] A new `# type: ignore` is needed only where mypy reports an error on that line (unused ones now fail `make lint`)
 - [ ] Per-file coverage ≥95% for every file you touched
 - [ ] No `print()` in server code; no secrets committed
