@@ -492,3 +492,105 @@ def test_a_saved_temperature_applies_to_a_provider_built_before_it(
     after = provider.evaluate_batch("state", [q])["q"]["noul"]
 
     assert 0.5 < after < before
+
+
+# --- choice questions with more options than there are single-letter labels -------
+
+import re
+
+
+def _oracle(target, calls=None):
+    """A model that picks `target` whenever it is offered, and is indifferent otherwise.
+
+    The prior call carries no state, so it is told apart by the missing marker. Each oracle
+    reports its own model id: the provider caches priors per model, and a shared id would
+    let one test's prior satisfy another's.
+    """
+    import uuid
+
+    model_id = f"m-large-choice-{uuid.uuid4().hex[:8]}"
+
+    def fake(prompt, keys):
+        if calls is not None:
+            calls.append(len(keys))
+        flat = {k: math.log(1 / len(keys)) for k in keys}
+        if "SEEN_STATE" not in prompt or len(keys) == 1:
+            return flat, model_id
+        offered = dict(re.findall(r"\b([A-Z]): (opt\d+)", prompt))
+        letter = next((le.lower() for le, o in offered.items() if o == target), None)
+        if letter is None:
+            return flat, model_id
+        rest = math.log(0.03 / (len(keys) - 1))
+        return {k: (math.log(0.97) if k == letter else rest) for k in keys}, model_id
+
+    return fake
+
+
+def _ask(option_count, target, calls=None, extra_questions=()):
+    options = [f"opt{i:03d}" for i in range(option_count)]
+    provider = DaemonProvider()
+    provider.get_logprobs = _oracle(target, calls)
+    provider._get_daemon_pid = lambda: "1234"
+    question = ChoiceQuestion(key="pick", prompt="Which one?", options=options)
+    return provider.evaluate_batch("SEEN_STATE", [*extra_questions, question])
+
+
+@pytest.mark.parametrize(
+    "option_count,target",
+    [(27, "opt026"), (30, "opt029"), (30, "opt003"), (60, "opt045"), (53, "opt052")],
+)
+def test_a_choice_past_the_26th_option_can_be_chosen(option_count, target):
+    # Options 27 and up used to be offered as "[", "\\", "]" and read back as "{", "|", "}",
+    # so they always scored 0.0 and could never win.
+    result = _ask(option_count, target)["pick"]
+
+    assert result["choice"] == target
+    assert result["probabilities"][target] == max(result["probabilities"].values())
+    assert result["confidence"] == result["probabilities"][target]
+
+
+def test_a_large_choice_reports_a_probability_for_every_option_summing_to_one():
+    result = _ask(60, "opt045")["pick"]
+
+    assert len(result["probabilities"]) == 60
+    assert sum(result["probabilities"].values()) == pytest.approx(1.0, abs=1e-6)
+    assert all(p > 0 for p in result["probabilities"].values())
+
+
+def test_a_large_choice_only_ever_offers_26_labels_at_a_time():
+    calls = []
+
+    _ask(60, "opt045", calls)
+
+    assert max(calls) <= 26
+
+
+def test_exactly_26_options_still_takes_the_single_question_path():
+    calls = []
+
+    result = _ask(26, "opt025", calls)["pick"]
+
+    assert result["choice"] == "opt025"
+    assert calls == [26, 26]  # the answer and its prior, nothing more
+
+
+def test_a_large_choice_does_not_leak_its_internal_questions_into_the_results():
+    results = _ask(40, "opt033")
+
+    assert set(results) == {"pick"}
+
+
+def test_a_large_choice_shares_a_batch_with_other_questions():
+    results = _ask(
+        40,
+        "opt033",
+        extra_questions=[NoulQuestion(key="flag", prompt="Is it so?")],
+    )
+
+    assert results["pick"]["choice"] == "opt033"
+    assert "flag" in results
+
+
+def test_more_options_than_two_rounds_can_cover_is_refused_with_a_clear_error():
+    with pytest.raises(ValueError, match="676"):
+        _ask(677, "opt000")

@@ -5,7 +5,7 @@ import random
 import string
 import math
 import subprocess
-from typing import Any, List, Tuple
+from typing import Any, List, Optional, Tuple
 import logging
 from jev_mcp.provider import JevProvider, NoulQuestion, ChoiceQuestion, ScoreQuestion
 from jev_mcp.security import sanitize_payload
@@ -14,6 +14,8 @@ logger = logging.getLogger(__name__)
 
 SMALL_MODEL_MARKER = "0.5b"
 DEFAULT_TEMPERATURE = 1.0
+# A choice is read from the log-probability of a single letter token, A to Z.
+MAX_CHOICE_LABELS = 26
 
 
 def _saved_temperature() -> float:
@@ -225,6 +227,55 @@ class DaemonProvider(JevProvider):
             [str(i) for i in range(len(q.labels))],
         )
 
+    def _evaluate_large_choice(
+        self, state: Any, q: ChoiceQuestion
+    ) -> Optional[dict[str, Any]]:
+        """Answer a choice with more options than there are single-letter labels.
+
+        Each answer is read from the log-probability of one letter token, so only 26
+        options can be offered at once. Pick a winner in each group of 26, then choose
+        among the winners. An option's probability is its share within its group times
+        its group winner's share of the final round, so the whole set still sums to one.
+        """
+        if len(q.options) > MAX_CHOICE_LABELS**2:
+            raise ValueError(
+                f"Choice question {q.key!r} has {len(q.options)} options; the smart tier "
+                f"can rank at most {MAX_CHOICE_LABELS**2} (two rounds of {MAX_CHOICE_LABELS})."
+            )
+
+        groups = [
+            q.options[start : start + MAX_CHOICE_LABELS]
+            for start in range(0, len(q.options), MAX_CHOICE_LABELS)
+        ]
+        group_questions = [
+            ChoiceQuestion(key=f"{q.key}__group{i}", prompt=q.prompt, options=group)
+            for i, group in enumerate(groups)
+        ]
+        group_results = self.evaluate_batch(state, group_questions)
+        if any(gq.key not in group_results for gq in group_questions):
+            return None
+
+        winners = [group_results[gq.key]["choice"] for gq in group_questions]
+        final_key = f"{q.key}__final"
+        final_results = self.evaluate_batch(
+            state, [ChoiceQuestion(key=final_key, prompt=q.prompt, options=winners)]
+        )
+        if final_key not in final_results:
+            return None
+        final_probabilities = final_results[final_key]["probabilities"]
+
+        probabilities = {
+            option: within_group * final_probabilities.get(winner, 0.0)
+            for gq, winner in zip(group_questions, winners)
+            for option, within_group in group_results[gq.key]["probabilities"].items()
+        }
+        best = max(probabilities.items(), key=lambda item: item[1])[0]
+        return {
+            "probabilities": probabilities,
+            "choice": best,
+            "confidence": probabilities[best],
+        }
+
     def evaluate_batch(
         self, state: Any, questions: List[Any]
     ) -> dict[str, dict[str, Any]]:
@@ -247,6 +298,12 @@ class DaemonProvider(JevProvider):
         is_small_model = SMALL_MODEL_MARKER in self.current_model_id.lower()
 
         for q in questions:
+            if isinstance(q, ChoiceQuestion) and len(q.options) > MAX_CHOICE_LABELS:
+                large_choice = self._evaluate_large_choice(state, q)
+                if large_choice is not None:
+                    results[q.key] = large_choice
+                continue
+
             prompt_str = sanitize_payload(q.prompt)
 
             salt = "".join(random.choices(string.ascii_lowercase + string.digits, k=8))
