@@ -20,6 +20,11 @@ updates:
       - dependency-name: "mlx-lm"
       # A ruff bump changes formatting output: bump by hand with `make format` in the same commit.
       - dependency-name: "ruff"
+      # kev caps torch<2.9 and the engines extra needs torch>=2.14.1. The repo declares that with
+      # [tool.uv] conflicts, which Dependabot's resolver does not apply, so it reports "No solution"
+      # for both. Bump either by hand; pip-audit still gates torch advisories on every CI run.
+      - dependency-name: "kev"
+      - dependency-name: "torch"
 
   - package-ecosystem: "github-actions"
     directory: "/"
