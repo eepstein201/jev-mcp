@@ -30,6 +30,7 @@ def sanitize_payload(text: Any) -> str:
 import os
 import tempfile
 from collections.abc import Iterable
+from pathlib import Path
 
 # Per-user scratch space stays readable: on macOS the system temp root lives
 # under /private/var, which the forbidden prefixes below would otherwise block.
@@ -86,6 +87,9 @@ def _is_env_file(name: str) -> bool:
 
 ALLOWED_ROOTS_ENV = "JEV_ALLOWED_ROOTS"
 JEV_HOME = "~/.jev"
+# jev_mac_manager.sh keeps the GGUF models under <repo>/models, which is where `train`
+# swaps files, so it is allowed wherever the server was started.
+_MODELS_DIR = Path(__file__).resolve().parents[2] / "models"
 
 SENSITIVE_MESSAGE = (
     "Access denied: '{path}' resolves to a sensitive system or credential location."
@@ -94,6 +98,10 @@ OUTSIDE_ROOTS_MESSAGE = (
     "Access denied: '{path}' is outside the allowed roots (the server's working "
     f"directory, {JEV_HOME}, the temp directory, and anything listed in "
     f"{ALLOWED_ROOTS_ENV}, separated by '{os.pathsep}')."
+)
+BROAD_CWD_HINT = (
+    " The server was started in your home directory (or above it), which is too "
+    f"broad to allow: start it in a project directory or list the project in {ALLOWED_ROOTS_ENV}."
 )
 
 
@@ -116,8 +124,20 @@ def _explicit_roots() -> list[str]:
     return _resolve_roots(r for r in raw.split(os.pathsep) if r.strip())
 
 
+def _home() -> str:
+    return os.path.realpath(os.path.expanduser("~")).casefold()
+
+
+def _cwd_is_too_broad() -> bool:
+    """True when the working directory is the home directory or above it."""
+    return _within(_home(), os.path.realpath(os.getcwd()).casefold())
+
+
 def _default_roots() -> list[str]:
-    return _resolve_roots([os.getcwd(), JEV_HOME])
+    # A server started in $HOME (or above it) would otherwise allow the whole home
+    # directory, so then only ~/.jev, the models directory and explicit roots apply.
+    working_directory = [] if _cwd_is_too_broad() else [os.getcwd()]
+    return _resolve_roots([*working_directory, JEV_HOME, str(_MODELS_DIR)])
 
 
 def _classify(requested_path: str) -> str | None:
@@ -172,5 +192,9 @@ def denial_message(requested_path: str) -> str:
         reason = _classify(requested_path)
     except Exception:
         reason = "sensitive"
-    template = OUTSIDE_ROOTS_MESSAGE if reason == "outside_roots" else SENSITIVE_MESSAGE
-    return template.format(path=requested_path)
+    if reason != "outside_roots":
+        return SENSITIVE_MESSAGE.format(path=requested_path)
+    message = OUTSIDE_ROOTS_MESSAGE.format(path=requested_path)
+    if _cwd_is_too_broad():
+        message += BROAD_CWD_HINT
+    return message

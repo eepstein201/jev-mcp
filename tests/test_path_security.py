@@ -219,3 +219,92 @@ def test_scan_repo_names_the_allowed_roots_when_refusing_an_outside_path(
 
     assert res["status"] == "BLOCKED"
     assert "JEV_ALLOWED_ROOTS" in res["message"]
+
+
+# --- a working directory that is too broad / the repo's models directory --------
+
+
+@pytest.fixture
+def home(monkeypatch):
+    monkeypatch.delenv("JEV_ALLOWED_ROOTS", raising=False)
+    monkeypatch.setenv("HOME", "/Users/test")
+    return "/Users/test"
+
+
+def test_a_working_directory_equal_to_home_is_not_a_root(home, monkeypatch):
+    monkeypatch.setattr(os, "getcwd", lambda: "/Users/test")
+
+    assert is_safe_path("/Users/test/documents/notes.md") is False
+    assert is_safe_path("/Users/test/Desktop/todo.txt") is False
+
+
+def test_a_working_directory_above_home_is_not_a_root(home, monkeypatch):
+    monkeypatch.setattr(os, "getcwd", lambda: "/Users")
+
+    assert is_safe_path("/Users/test/documents/notes.md") is False
+    assert is_safe_path("/Users/someone-else/notes.md") is False
+
+
+def test_a_project_directory_under_home_is_still_a_root(home, monkeypatch):
+    monkeypatch.setattr(os, "getcwd", lambda: "/Users/test/code/app")
+
+    assert is_safe_path("/Users/test/code/app/src/main.py") is True
+    assert is_safe_path("/Users/test/code/other/main.py") is False
+
+
+def test_home_can_still_be_chosen_explicitly(home, monkeypatch):
+    monkeypatch.setattr(os, "getcwd", lambda: "/Users/test")
+    monkeypatch.setenv("JEV_ALLOWED_ROOTS", "~")
+
+    assert is_safe_path("/Users/test/documents/notes.md") is True
+    assert is_safe_path("/Users/test/.ssh/id_rsa") is False
+
+
+def test_jev_home_stays_allowed_when_the_working_directory_is_home(home, monkeypatch):
+    monkeypatch.setattr(os, "getcwd", lambda: "/Users/test")
+
+    assert is_safe_path("/Users/test/.jev/router_config.json") is True
+
+
+def test_the_refusal_explains_a_home_working_directory(home, monkeypatch):
+    from jev_mcp.security import denial_message
+
+    monkeypatch.setattr(os, "getcwd", lambda: "/Users/test")
+
+    message = denial_message("/Users/test/documents/notes.md")
+
+    assert "home directory" in message
+    assert "JEV_ALLOWED_ROOTS" in message
+
+
+def test_the_refusal_does_not_blame_home_for_an_ordinary_outside_path(
+    home, monkeypatch
+):
+    from jev_mcp.security import denial_message
+
+    monkeypatch.setattr(os, "getcwd", lambda: "/Users/test/code/app")
+
+    assert "home directory" not in denial_message("/Users/test/documents/notes.md")
+
+
+def test_the_repo_models_directory_is_a_root_wherever_the_server_starts(
+    home, monkeypatch
+):
+    from jev_mcp import security
+
+    monkeypatch.setattr(os, "getcwd", lambda: "/Users/test/elsewhere")
+    gguf = security._MODELS_DIR / "Qwen2.5-7B-Instruct-GGUF" / "model.gguf"
+
+    assert is_safe_path(str(gguf)) is True
+    assert is_safe_path(str(security._MODELS_DIR.parent / "src" / "x.py")) is False
+
+
+def test_the_models_directory_is_the_repos_models_folder():
+    from pathlib import Path
+
+    from jev_mcp import security
+
+    repo_root = Path(security.__file__).resolve().parents[2]
+
+    assert security._MODELS_DIR == repo_root / "models"
+    assert (repo_root / "pyproject.toml").exists()
