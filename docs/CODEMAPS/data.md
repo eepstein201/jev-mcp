@@ -12,6 +12,7 @@
 | ~/.jev-mcp/triage_configs.json | email_triage/mcp_tool.py | {context_id: [labels]} |
 | ~/.jev-mcp/client_secrets.json | email_triage/gas_setup.py | Google OAuth client (user-supplied, read only) |
 | tests/golden_dataset.json | tests/run_evals.py | calibration/eval set |
+| tests/evals/triage_synthetic.jsonl | tests/evals/triage_eval.py | 30 labelled synthetic emails with expected routing |
 
 ## Models (pydantic)
 provider.py: NoulQuestion{prompt,key} · ChoiceQuestion{prompt,options,key} · ScoreQuestion{prompt,labels,key} · QuestionType=Union

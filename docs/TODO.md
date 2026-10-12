@@ -140,7 +140,7 @@ The high and medium findings landed in #19 (`c40a822`, `409cbd9`). These are wha
 - [ ] Config loaders (`router_config.py`, `model_catalog.py`) return untyped dicts.
 - [x] `run-browser-agent`: deep or below-fold rows were missed. *(fixed by the 26-option fix, #35. Re-measured 2026-10-12 on the dense eval page, which sends the smart tier 30 to 40 candidates: the below-fold case was blocked 3 of 3 runs at `9db9bbb` (it scrolled, then never picked the target) and done 4 of 4 with the fix, in 2 steps each. Only the fixed runs use the more-than-26 path. The other dense cases held, and the steel-vs-ceramic one needs 3 steps instead of 4.)*
 - [ ] **`run-browser-agent`: the two-field fill-and-submit flow passes about 1 run in 4.** Found by repeating the eval: 1 of 4 at `9db9bbb` and 1 of 5 on current `main`, so it is not a regression; the earlier "done" was a single lucky run. The failing runs fill the first field and resubmit without ever filling the second. It never uses the more-than-26 path.
-- [ ] **The browser eval runs each case once.** One run misreported the two-field case as passing and would not have shown the deep-row fix as reliable. Run each case several times and report a rate. The runner and pages are in the gitignored `.reports/browser-agent-eval/`.
+- [x] **The browser eval runs each case once.** One run misreported the two-field case as passing and would not have shown the deep-row fix as reliable. Run each case several times and report a rate. *(fixed. The runner and pages moved from the gitignored `.reports/browser-agent-eval/` to `tests/evals/`; `make eval-browser` runs each case 4 times and prints a pass rate per case.)*
 
 ### Repo hygiene
 
