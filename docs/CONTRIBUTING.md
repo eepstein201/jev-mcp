@@ -25,7 +25,7 @@ Copy `.env.example` to `.env` if you need non-default ports or batch size.
 | `make start` / `make hybrid` | `jev_mac_manager.sh hybrid` |
 | `make stop` | `jev_mac_manager.sh stop` |
 | `make clean` | `jev_mac_manager.sh uninstall --headless` |
-| `make format` | `ruff format .` in `.venv` |
+| `make format` | `ruff format src tests` in `.venv` |
 | `make lint` | `mypy src/jev_mcp/` in `.venv` |
 | `make test` | `pytest --cov=src --cov-report=term-missing --cov-fail-under=85 tests/` in `.venv` |
 | `make eval` | `python tests/run_evals.py`: warm-up + timed benchmark of both engines on `tests/golden_dataset.json` (daemons must be running) |

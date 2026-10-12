@@ -19,7 +19,7 @@ stop:
 
 format:
 	@echo "Formatting code with Ruff..."
-	bash -c "source .venv/bin/activate && ruff format ."
+	bash -c "source .venv/bin/activate && ruff format src tests"
 
 lint:
 	@echo "Running MyPy Static Type Checking..."

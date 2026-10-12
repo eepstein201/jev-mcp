@@ -704,7 +704,7 @@ The easiest way to interact with Jev MCP locally. It wraps the core bash script.
 *   **`make update`**: Re-pulls code, updates packages, and restarts.
 *   **`make stop`**: Gracefully halts the background daemons without destroying your installation.
 *   **`make clean`**: Completely uninstalls artifacts and tears down the daemons (`uninstall --headless`).
-*   **`make format`**: Runs `ruff format .` inside `.venv`.
+*   **`make format`**: Runs `ruff format src tests` inside `.venv`.
 *   **`make lint`**: Runs `mypy src/jev_mcp/` inside `.venv`. This is also the CI type-check step.
 *   **`make test`**: Runs pytest with `--cov=src --cov-fail-under=85`.
 *   **`make eval`**: Benchmarks both engines on `tests/golden_dataset.json` (warm-up pass, then a timed pass; daemons must be running).
