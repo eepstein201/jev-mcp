@@ -3,11 +3,15 @@
     python -m tests.evals.browser_eval [--repeats N] [--cases D4 T3 ...]
 
 It drives a real browser through `run_browser_agent` on the local engines, so both daemons must
-be running. It measures; it does not gate, so it always exits 0.
+be running. It measures; it does not gate, so it always exits 0. A run that could not be carried
+out (engines down, no browser) counts as a failed run, is reported on stderr, and is counted in
+a line after the table so that it is not mistaken for the agent failing.
 """
 
 import argparse
+import sys
 import threading
+from collections import Counter
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from functools import partial
@@ -66,8 +70,19 @@ def serve_pages() -> Iterator[None]:
         thread.join()
 
 
-def run_case(url: str, goal: str) -> bool:
-    return run_browser_agent(url, goal, max_steps=MAX_STEPS)["result"] == "done"
+def run_case(name: str, url: str, goal: str, errored: list[str]) -> bool:
+    """One run; True when the agent finished. A run that errored is reported and noted in `errored`."""
+    try:
+        outcome = run_browser_agent(url, goal, max_steps=MAX_STEPS)
+    except Exception as e:
+        message = f"{type(e).__name__}: {e}"
+    else:
+        if outcome.get("status") != "ERROR":
+            return outcome.get("result") == "done"
+        message = str(outcome.get("message", "no message"))
+    print(f"{name}: run errored: {message}", file=sys.stderr)
+    errored.append(name)
+    return False
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -77,13 +92,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--cases", nargs="+", choices=names, default=names)
     args = parser.parse_args(argv)
 
+    errored: list[str] = []
     with serve_pages():
         rates = {
-            name: run_repeated(partial(run_case, url, goal), args.repeats)
+            name: run_repeated(
+                partial(run_case, name, url, goal, errored), args.repeats
+            )
             for name, url, goal in CASES
             if name in args.cases
         }
     print(format_table(rates))
+    for name, count in Counter(errored).items():
+        print(f"{name}: {count} of {rates[name].runs} runs errored")
     return 0
 
 
