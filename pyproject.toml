@@ -35,7 +35,7 @@ engines = [
     "kev @ git+https://github.com/jaredpalmer/kev.git@2ecafc49fe1e8945cd600443e6c04c1cf0b3a78f",
 ]
 dev = [
-    "ruff",
+    "ruff==0.17.0",
     "mypy",
     "pytest",
     "pytest-cov",
