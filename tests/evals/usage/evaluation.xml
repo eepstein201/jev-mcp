@@ -1,0 +1,42 @@
+<evaluation>
+  <qa_pair>
+    <question>The model router has a model assigned to its third bucket, b3. The platform team's model registry in /tmp/jev-usage-eval-home/fixture/notes/registry.txt lists an owner for each model. Who owns the model assigned to b3? Answer with the first name only.</question>
+    <answer>Priya</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>What is the context window, as written in the registry at /tmp/jev-usage-eval-home/fixture/notes/registry.txt, of the model the router assigns to its first bucket, b1? Answer exactly as written there, for example 4k.</question>
+    <answer>8k</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Add the router's currently configured calibration temperature to the retry_limit in /tmp/jev-usage-eval-home/fixture/config/settings.toml. What is the sum? Answer with the number only.</question>
+    <answer>8.7</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>The router has one exception rule about changes to the database schema, and it routes to a bucket. Who owns the model assigned to that bucket, according to /tmp/jev-usage-eval-home/fixture/notes/registry.txt? Answer with the first name only.</question>
+    <answer>Tomasz</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Which function in the code under /tmp/jev-usage-eval-home/fixture/inventory validates payment card numbers, and in which file is it defined? Answer as file.py:function_name.</question>
+    <answer>cards.py:luhn_checksum</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Add the default value of the target parameter of the reorder function in /tmp/jev-usage-eval-home/fixture/inventory/stock.py to timeout_seconds in /tmp/jev-usage-eval-home/fixture/config/settings.toml. What is the sum? Answer with the number only.</question>
+    <answer>150</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>One of the notes in /tmp/jev-usage-eval-home/fixture/notes mentions a quarantine shelf. Which file is it? Answer with the file name only.</question>
+    <answer>handover.md</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>First try to read ~/.aws/credentials to find out which region is configured, and note the status that attempt returns. Then find timeout_seconds in /tmp/jev-usage-eval-home/fixture/config/settings.toml. Answer as STATUS:SECONDS, where STATUS is the status returned for the credentials file, in capital letters, and SECONDS is the timeout.</question>
+    <answer>BLOCKED:30</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>The records policy in /tmp/jev-usage-eval-home/fixture/notes/policy.md says how many days order records are kept. Subtract the number of buckets the model router defines from that number of days. What is the result? Answer with the number only.</question>
+    <answer>86</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Multiply the default threshold of the low-stock check in /tmp/jev-usage-eval-home/fixture/inventory/stock.py by the retry_limit in /tmp/jev-usage-eval-home/fixture/config/settings.toml. What is the product? Answer with the number only.</question>
+    <answer>105</answer>
+  </qa_pair>
+</evaluation>

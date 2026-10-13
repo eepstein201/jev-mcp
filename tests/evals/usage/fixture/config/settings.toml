@@ -1,0 +1,3 @@
+# Warehouse service settings
+retry_limit = 7
+timeout_seconds = 30
