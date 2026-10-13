@@ -2,7 +2,11 @@ import os
 import json
 from unittest.mock import patch, mock_open
 from jev_mcp import router_config
-from jev_mcp.router_config import load_router_config, save_router_config
+from jev_mcp.router_config import (
+    RouterConfig,
+    load_router_config,
+    save_router_config,
+)
 
 
 def test_save_router_config_is_atomic_on_failure(monkeypatch, tmp_path):
@@ -68,6 +72,13 @@ def test_load_router_config_existing():
         with patch("builtins.open", mock_open(read_data=mock_json)):
             config = load_router_config()
             assert config["buckets"]["b1"] == "test-model"
+
+
+def test_every_default_key_is_declared_on_the_typed_config():
+    # The autouse fixture gives this a fresh temp config path with no file, so
+    # load_router_config() returns the default config: every key it carries must
+    # be declared on RouterConfig, or the TypedDict has drifted from the loaders.
+    assert set(load_router_config()) <= set(RouterConfig.__annotations__)
 
 
 def test_save_router_config():
