@@ -1,4 +1,5 @@
 import sys
+from types import ModuleType
 from unittest.mock import MagicMock
 
 
@@ -25,12 +26,36 @@ class DummyMCPServer:
         pass
 
 
+class DummyToolAnnotations:
+    """Stand-in for mcp.types.ToolAnnotations: a title plus the four behaviour hints."""
+
+    def __init__(
+        self,
+        title=None,
+        read_only_hint=None,
+        destructive_hint=None,
+        idempotent_hint=None,
+        open_world_hint=None,
+    ):
+        self.title = title
+        self.read_only_hint = read_only_hint
+        self.destructive_hint = destructive_hint
+        self.idempotent_hint = idempotent_hint
+        self.open_world_hint = open_world_hint
+
+
 mock_mcpserver = MagicMock()
 mock_mcpserver.MCPServer = DummyMCPServer
 
 sys.modules["mcp.server.mcpserver"] = mock_mcpserver
 sys.modules["mcp.server.fastmcp"] = MagicMock()
 sys.modules["mcp.server"] = MagicMock()
+# The real mcp.types cannot be imported once mcp.server is stubbed: importing it runs the
+# real mcp package __init__, which reaches mcp.server.runner and dies on the stub. The
+# stdio e2e and the sdk-contract tests exercise the real ToolAnnotations in subprocesses.
+mcp_types = ModuleType("mcp.types")
+mcp_types.ToolAnnotations = DummyToolAnnotations
+sys.modules["mcp.types"] = mcp_types
 
 import json
 import os

@@ -4,6 +4,7 @@ import json
 import subprocess
 from typing import Any, Dict, List
 
+from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from jev_mcp import app
@@ -17,9 +18,16 @@ def _error(message: str) -> str:
 
 @mcp.tool(
     name="jev_evaluate_batch",
+    title="Score questions against a state",
     description=(
         "Evaluate a complex state against a batch of polymorphic System-1 questions.\n"
         "WARNING: The 'state' payload MUST be under 2048 tokens. If exceeded, QFE middleware will attempt to compress it."
+    ),
+    annotations=ToolAnnotations(
+        read_only_hint=True,
+        destructive_hint=False,
+        idempotent_hint=True,
+        open_world_hint=False,
     ),
 )
 def jev_evaluate_batch(
@@ -281,7 +289,14 @@ def jev_evaluate_batch(
 
 @mcp.tool(
     name="jev_explain_decision",
+    title="Explain a scored decision",
     description="Evidence Highlighting: Generates a Post-Hoc Rationale for a decision by extracting the exact, verbatim sentence from the state that proves the decision.",
+    annotations=ToolAnnotations(
+        read_only_hint=True,
+        destructive_hint=False,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
 )
 def jev_explain_decision(
     state: Dict[str, Any] = Field(
@@ -348,7 +363,14 @@ def jev_explain_decision(
 
 @mcp.tool(
     name="jev_generate_synthetic_dataset",
+    title="Generate a labelled test dataset",
     description="Dataset Generator: Automatically generates a Golden Dataset using the local 7B model if available, otherwise returns instructions for the primary LLM to generate it.",
+    annotations=ToolAnnotations(
+        read_only_hint=True,
+        destructive_hint=False,
+        idempotent_hint=False,
+        open_world_hint=False,
+    ),
 )
 def jev_generate_synthetic_dataset(
     question: QuestionType = Field(
