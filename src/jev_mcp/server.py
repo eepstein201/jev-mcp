@@ -188,6 +188,11 @@ def main():
         uvicorn.run(app, host=args.host, port=args.port)
         return
 
+    if len(sys.argv) > 1 and sys.argv[1] == "doctor":
+        from jev_mcp.doctor import main as doctor_main
+
+        sys.exit(doctor_main(sys.argv[2:]))
+
     start_model_sync()
     mcp.run(transport="stdio")
 

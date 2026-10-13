@@ -308,3 +308,12 @@ def test_the_models_directory_is_the_repos_models_folder():
 
     assert security._MODELS_DIR == repo_root / "models"
     assert (repo_root / "pyproject.toml").exists()
+
+
+def test_roots_report_says_when_the_working_directory_was_ignored(monkeypatch):
+    from jev_mcp.security import allowed_roots_report
+
+    monkeypatch.setenv("HOME", "/Users/test")
+    monkeypatch.setattr(os, "getcwd", lambda: "/Users/test")
+
+    assert allowed_roots_report()["working_directory_ignored"] is True
