@@ -1,5 +1,6 @@
 import pytest
 from jev_mcp.linter import DecisionPreflightLinter, LintFinding
+from jev_mcp.provider import ChoiceQuestion
 
 
 @pytest.fixture
@@ -131,3 +132,46 @@ def test_linter_reversed_polarity(linter):
     ]
     report = linter.lint({}, prompt, options, is_score=True)
     assert any(f.code == "REVERSED_POLARITY" for f in report.findings)
+
+
+FALLBACK_PROMPT = "Which team should handle this ticket?"
+
+
+def _warns_missing_fallback(options):
+    question = ChoiceQuestion(key="team", prompt=FALLBACK_PROMPT, options=options)
+    report = DecisionPreflightLinter().lint(
+        {"ticket": "charged twice"}, FALLBACK_PROMPT, question.to_llm_options()
+    )
+    return any(f.code == "MISSING_FALLBACK_OPTION" for f in report.findings)
+
+
+@pytest.mark.parametrize(
+    "fallback",
+    [
+        "Not sure",
+        "Unsure",
+        "Can't tell",
+        "Cannot determine",
+        "Don't know",
+        "Uncertain",
+    ],
+)
+def test_common_fallback_wordings_are_recognised(fallback):
+    assert not _warns_missing_fallback(["Billing", "Support", fallback])
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        ["Nonetheless urgent", "Routine"],
+        ["Another team", "Support"],
+        ["Mother's account", "Own account"],
+    ],
+)
+def test_a_fallback_word_inside_another_word_is_not_a_fallback(options):
+    assert _warns_missing_fallback(options)
+
+
+@pytest.mark.parametrize("fallback", ["Unknown", "Other", "N/A", "None of the above"])
+def test_existing_fallback_terms_still_count(fallback):
+    assert not _warns_missing_fallback(["Billing", "Support", fallback])
