@@ -101,6 +101,7 @@ def evaluate_email_with_mlx(
     return {
         "decision": decision["decision"],
         "suggested_routing": decision["suggested_routing"],
+        "reason": decision["reason"],
         "requires_action_score": requires_action_score,
         "is_important_score": is_important_score,
         "bucket": bucket,

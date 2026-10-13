@@ -55,6 +55,10 @@ dev = [
 # A `# type: ignore` that no longer suppresses anything hides the next real error on its line.
 warn_unused_ignores = true
 
+[tool.pytest.ini_options]
+# The eval tests import `tests.evals`, which needs the repo root on the path under a bare `pytest`.
+pythonpath = ["."]
+
 [tool.uv]
 # kev pins torch<2.9 and engines needs torch>=2.14.1, so they can never share a lock entry.
 conflicts = [[{ extra = "engines" }, { extra = "kev" }]]

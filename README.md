@@ -454,8 +454,9 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
 *   **First use:** if no labels exist for the `context_id`, the tool returns `{"status": "needs_config", ...}`. Call `jev_configure_triage_labels(context_id, labels)` to save them (stored in `~/.jev-mcp/triage_configs.json`).
 *   **Routing rules** (`core.decide_routing`, defaults `action_threshold=0.8`, `important_threshold=0.8`; override with `JEV_TRIAGE_ACTION_THRESHOLD` / `JEV_TRIAGE_IMPORTANT_THRESHOLD`, each a number from 0 to 1):
     *   `requires_action` score above `0.8` → `Action`, routed to `escalate_to_slack`.
-    *   `requires_action` score between `0.3` and `0.8`, bucket confidence below `0.6`, or `is_important` score above `0.8` → `Review`, routed to `hitl_slack_block`. The importance rule is what stops an important email that needs no action (an FYI from your boss, a critical alert) from being filed away silently; the Review card has a "Mark Important" button for it. It applies only when the email is not already an `Action`.
+    *   `requires_action` score between `0.3` and `0.8`, `is_important` score above `0.8`, or bucket confidence below `0.6` → `Review`, routed to `hitl_slack_block`. The importance rule is what stops an important email that needs no action (an FYI from your boss, a critical alert) from being filed away silently; the Review card has a "Mark Important" button for it. It applies only when the email is not already an `Action`.
     *   otherwise → the predicted label, routed to `archive_and_label`.
+    *   **`reason`:** every decision also carries a `reason`, copied into the tool result and the webhook response. When several conditions hold, the first in this order wins: `requires_action`, `ambiguous_action` (action score between `0.3` and the threshold), `important_no_action`, `low_bucket_confidence`, `confident_bucket` (the filed-by-label case). The Slack escalation and review cards show it as one fixed sentence (`*Why:* ...`); a `reason` outside this list adds no line, so no model or email text ever reaches the card.
     *   **Why 0.8 for importance:** on a 30-email check against the live engines (2026-10-12; synthetic emails, so a sanity check rather than a calibration) none of 12 unimportant emails was flagged at any threshold from 0.5 to 0.99, and 10 of 12 important ones were caught at 0.8; raising it to 0.95 or 0.99 lost real ones. 26 of the 30 scores were within 0.02 of 0 or 1, so values between roughly 0.1 and 0.9 behave alike. The two misses were personal rather than work mail (a clinic result, a school closure), which the question's work-flavoured examples do not cover.
 
 #### ⚡ Email Triage Webhook & Apps Script
@@ -737,7 +738,9 @@ The easiest way to interact with Jev MCP locally. It wraps the core bash script.
 *   **`make audit`**: Runs `scripts/pip_audit.sh` (pip-audit) on the installed environment. Advisories listed with a reason in `.pip-audit-ignore` are accepted; any other one fails. Needs network access.
 *   **`make check`**: Runs `format-check`, `lint`, `test` and `audit` in that order: the same four gates CI runs.
 *   **`make eval`**: Benchmarks both engines on `tests/golden_dataset.json` (warm-up pass, then a timed pass; daemons must be running).
-*   **`make train`**: Informational only; training is triggered through the `jev_train_lora` MCP tool.
+*   **`make eval-browser`**: Runs each of the 8 browser-agent cases in `tests/evals/` 4 times and prints a pass rate per case. It drives a real browser against pages served on `127.0.0.1:8791`; daemons must be running. It measures and always exits 0.
+*   **`make eval-triage`**: Triages every email in a labelled JSONL dataset and prints the agreement with its expected routing, then each disagreement with its two scores. The default dataset is the 30 synthetic emails in `tests/evals/triage_synthetic.jsonl`; `DATASET=<path>` uses another. Daemons must be running.
+*   **`make train`**: Informational only; training is triggered through the `train` MCP tool.
 
 ### 2. The Core Engine Manager (`jev_mac_manager.sh`)
 The underlying bash script that handles hardware memory, virtual environments, and macOS `launchd` plist generation.
@@ -837,7 +840,24 @@ All you need to do is add the following JSON block to your client's specific con
 *   **Antigravity CLI & IDE:** Add it to your global config at `~/.gemini/config/mcp_config.json`.
 *   **Claude Desktop:** Add it to your config at `~/Library/Application Support/Claude/claude_desktop_config.json`.
 *   **Claude Code CLI:** Simply run the terminal command: `claude mcp add jev -- jev-mcp`
-*   **Opencode / Custom Frameworks:** Insert the block into your standard workspace `.mcp` or `mcp_servers.json` configuration file, depending on your runner's specific documentation.
+*   **OpenCode:** The installer writes this for you (`./jev_mac_manager.sh install`, when the file already exists). OpenCode's global config at `~/.config/opencode/opencode.json` uses its own shape, not the block above: the server goes under `mcp.servers`, with `command` as one array.
+
+    ```json
+    {
+      "$schema": "https://opencode.ai/config.json",
+      "mcp": {
+        "servers": {
+          "jev-mcp": {
+            "type": "local",
+            "command": ["/abs/path/to/jev-mcp/.venv/bin/python", "-m", "jev_mcp.server"]
+          }
+        }
+      }
+    }
+    ```
+
+    To write or remove it yourself: `.venv/bin/python -m jev_mcp.client_config link-opencode` (or `unlink-opencode`). Your other servers and settings are kept, and a file that is not valid JSON is left untouched.
+*   **Custom Frameworks:** Insert the block into your standard workspace `.mcp` or `mcp_servers.json` configuration file, depending on your runner's specific documentation.
 
 Once saved, restart your client. It will automatically perform an MCP handshake, discover all of Jev's tools (like `jev_evaluate_batch`), and inject them directly into your LLM's context!
 

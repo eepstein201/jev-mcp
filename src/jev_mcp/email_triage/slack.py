@@ -3,6 +3,28 @@ def _escape(text: object) -> str:
     return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
+# The only text the cards show about a decision: a reason that is not a key here adds nothing.
+REASON_TEXT: dict[str, str] = {
+    "requires_action": "It asks you to do something.",
+    "ambiguous_action": "It may need an action from you; the model was not sure.",
+    "important_no_action": "It looks important, though nothing is asked of you.",
+    "low_bucket_confidence": "The model was not sure which label fits.",
+    "confident_bucket": "Nothing is asked of you and the label is clear.",
+}
+
+
+def _why_blocks(decision_data: dict) -> list[dict]:
+    reason = decision_data.get("reason")
+    if not isinstance(reason, str) or reason not in REASON_TEXT:
+        return []
+    return [
+        {
+            "type": "context",
+            "elements": [{"type": "mrkdwn", "text": f"*Why:* {REASON_TEXT[reason]}"}],
+        }
+    ]
+
+
 def build_hitl_message(email_data: dict, decision_data: dict) -> dict:
     """Builds an interactive Slack Block Kit message for Human-in-the-Loop review."""
     subject = _escape(email_data.get("subject", "No Subject"))
@@ -17,6 +39,7 @@ def build_hitl_message(email_data: dict, decision_data: dict) -> dict:
                     "text": f"*Review Required:* {subject}\nFrom: {sender}",
                 },
             },
+            *_why_blocks(decision_data),
             {
                 "type": "actions",
                 "elements": [
@@ -56,5 +79,6 @@ def build_escalation_message(email_data: dict, decision_data: dict) -> dict:
                 "type": "section",
                 "text": {"type": "mrkdwn", "text": f"*{subject}*\nFrom: {sender}"},
             },
+            *_why_blocks(decision_data),
         ]
     }
