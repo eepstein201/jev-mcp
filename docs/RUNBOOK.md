@@ -29,6 +29,14 @@ make clean     # uninstall: unload daemons, remove plists, the venv and ALL of ~
 
 `make clean` runs headless (no confirmation) and deletes `~/.jev`, which holds `router_config.json` (buckets, rules, fitted temperature), LoRA adapters, training artifacts and logs. Copy anything you want to keep first.
 
+## Health check
+
+```bash
+.venv/bin/python -m jev_mcp.server doctor   # or: jev-mcp doctor [--json]
+```
+
+One command answers "is anything misconfigured?": each engine's answer to `GET /health`, the router config's JSON validity, the path-security roots (including a working directory ignored for being the home directory), which webhook auth variables are set, the triage thresholds, and the Python / `mcp` / `torch` versions. Exit `0` = healthy, exit `1` = at least one finding, and each finding names its fix (`make start`, `JEV_MCP_JWT_AUDIENCE`, `JEV_ALLOWED_ROOTS`). Auth variables appear by name only; a value is never printed. Run this before anything in "Common issues".
+
 ## Common issues
 
 | Symptom | Likely cause | Fix |

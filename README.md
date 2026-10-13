@@ -839,6 +839,18 @@ Ports come from `JEV_FAST_PORT` (default `8080`) and `JEV_SMART_PORT` (default `
 | `JEV_ALLOWED_ROOTS` | none | `security.py` | Extra directories `jev_read_file`, `jev_scan_repo` and `jev_train_lora` may touch, separated by `:`. The server's working directory, `~/.jev` and the temp directory are always allowed; credential locations stay blocked inside every root; `/` is ignored. The working directory is **not** a root when it is your home directory or above it, because a server started there would expose all of home: start the server in a project, or list your projects here. The repo's `models/` directory is always allowed, so `jev_train_lora` targets work wherever the server starts. |
 | `JEV_ULTRAFAST_PATH` | `<repo>/jev-ultrafast` | `browser_agent.py` | Location of the `jev-ultrafast` checkout used by `jev_run_browser_agent`. |
 
+### 7. Health Check (`jev-mcp doctor`)
+
+```bash
+.venv/bin/python -m jev_mcp.server doctor   # or, from the venv: jev-mcp doctor
+```
+
+One run reports: whether each engine answers `GET /health` (2-second timeout, ports from `JEV_FAST_PORT` / `JEV_SMART_PORT`), whether `~/.jev/router_config.json` exists and parses as JSON, the path-security setup (the working directory, whether it was ignored for being your home directory, and every allowed root), which webhook auth variables are set, the triage thresholds in force, and the Python / `mcp` / `torch` versions.
+
+Exit code `0` when nothing is wrong, `1` when there is a finding. Every finding names its own fix — `make start` for a down engine, `JEV_MCP_JWT_AUDIENCE` when a `JEV_MCP_JWKS_URL` has no audience, `JEV_ALLOWED_ROOTS` when the server was started in its home directory, and so on. Pass `--json` to get the same report as JSON for scripts.
+
+Auth variables are reported by **name only**: a value is never printed, in either output mode.
+
 ---
 
 ---
