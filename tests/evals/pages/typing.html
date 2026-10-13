@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Service form — typing eval</title>
+<style>
+  body { font: 14px/1.45 system-ui, sans-serif; margin: 40px auto; max-width: 520px; }
+  h1 { font-size: 18px; }
+  label { display: block; margin: 14px 0 4px; font-weight: 600; }
+  input { width: 100%; padding: 8px 10px; font: inherit; box-sizing: border-box; }
+  button { margin-top: 16px; padding: 8px 18px; font: inherit; }
+  #banner { margin-top: 18px; padding: 12px 16px; border-radius: 6px; display: none; }
+  #banner.win { display: block; background: #dcfce7; color: #14532d; font-weight: 700; font-size: 20px; }
+  #banner.miss { display: block; background: #fee2e2; color: #7f1d1d; }
+</style>
+</head>
+<body>
+<h1>Service request form</h1>
+<p>Fill in the form and submit it.</p>
+<div id="banner" role="status"></div>
+<form id="f">
+  <label for="search">Search</label>
+  <input id="search" name="search" type="text" autocomplete="off">
+  <label for="ref">Reference code</label>
+  <input id="ref" name="ref" type="text" autocomplete="off">
+  <button type="submit" aria-label="Submit">Submit</button>
+</form>
+<script>
+// The submit handler is the judge: MISSION_COMPLETE only for the exact values
+// the case requires; anything else gets visible corrective feedback.
+const EXPECTED = {
+  t1: { search: "blue orchid 42" },
+  t2: { ref: "MR-8837" },
+  t3: { search: "sunset ferry 9", ref: "QX-2210" },
+};
+const caseName = new URLSearchParams(location.search).get("case") || "t1";
+const want = EXPECTED[caseName] || EXPECTED.t1;
+const banner = document.getElementById("banner");
+function show(kind, text) { banner.className = kind; banner.textContent = text; }
+document.getElementById("f").addEventListener("submit", (e) => {
+  e.preventDefault();
+  for (const [field, value] of Object.entries(want)) {
+    const got = document.getElementById(field).value;
+    if (got !== value) {
+      show("miss", "Field '" + field + "' was '" + got + "' but needed '" + value + "'. Keep going.");
+      return;
+    }
+  }
+  show("win", "MISSION_COMPLETE");
+  document.title = "MISSION_COMPLETE";
+});
+</script>
+</body>
+</html>

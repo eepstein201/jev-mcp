@@ -1,4 +1,4 @@
-.PHONY: install test lint clean format format-check audit check update start stop hybrid train eval
+.PHONY: install test lint clean format format-check audit check update start stop hybrid train eval eval-browser eval-triage
 
 install:
 	@echo "Installing Jev MCP Environment..."
@@ -42,6 +42,16 @@ test:
 eval:
 	@echo "Benchmarking Kev 0.8B and Qwen 7B on tests/golden_dataset.json (daemons must be running)..."
 	bash -c "source .venv/bin/activate && python tests/run_evals.py"
+
+eval-browser:
+	@echo "Running each browser-agent case several times and reporting pass rates (daemons must be running; drives a real browser)..."
+	bash -c "source .venv/bin/activate && python -m tests.evals.browser_eval"
+
+DATASET ?= tests/evals/triage_synthetic.jsonl
+
+eval-triage:
+	@echo "Triaging every email in $(DATASET) and reporting agreement with its expected routing (daemons must be running)..."
+	bash -c "source .venv/bin/activate && python -m tests.evals.triage_eval --dataset $(DATASET)"
 
 clean:
 	@echo "Completely uninstalling Jev MCP artifacts..."
