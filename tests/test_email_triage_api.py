@@ -5,6 +5,15 @@ from jev_mcp.email_triage.api import app
 client = TestClient(app)
 
 
+@pytest.fixture(autouse=True)
+def no_rate_limit(monkeypatch):
+    """Every test here posts from one address; the shared limiter must not count across them."""
+    from jev_mcp.email_triage import api
+    from jev_mcp.email_triage.rate_limit import SlidingWindowLimiter
+
+    monkeypatch.setattr(api, "limiter", SlidingWindowLimiter(limit=0))
+
+
 def test_webhook_requires_auth():
     """Asserts that calling the webhook without a valid IdP bearer token returns a 401."""
     response = client.post("/api/v1/triage/email", json={"subject": "Test"})

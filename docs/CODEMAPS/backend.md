@@ -31,6 +31,7 @@ optimize-prompt temperature train scan-repo read-file
 ## Email triage (email_triage/)
 `jev-mcp serve-webhook` (server.main → uvicorn, 127.0.0.1:8090 by default; refuses to start with no credential)
 POST /api/v1/triage/email → api.triage_email (Depends get_auth ← auth.verify_auth_token: static key, else auth.jwt_decode via JWKS or HS256 secret)
+  api.enforce_rate_limit after auth (route dep; api.limiter ← rate_limit.py keyed on request.client.host; JEV_MCP_RATE_LIMIT_PER_MINUTE per 60 s → 429 + Retry-After; counts authenticated requests only)
   → mcp_tool.triage_email_content → evaluate_email_with_mlx → core.build_triage_questions
       body > 2000 chars (COMPACTION_MIN_BODY_CHARS) → server.jev_compact_context(goal=labels, conf COMPACTION_CONFIDENCE=0.3) → body = compressed_context
       (lazy import of tools.files inside fn; any failure/empty result silently keeps original body)

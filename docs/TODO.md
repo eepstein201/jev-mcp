@@ -129,7 +129,7 @@ The high and medium findings landed in #19 (`c40a822`, `409cbd9`). These are wha
 - [x] `read-file` had no size cap. *(fixed: reads at most 1,048,576 characters, then returns `ERROR`; the file is never fully loaded)*
 - [x] `tools/training.py`: the generated run script was `chmod 0o755`. *(fixed: `0o600`; it is launched as `bash <path>`)*
 - [x] Webhook: no request-size cap. *(fixed: `BodySizeLimitMiddleware` answers `413` past 8 MiB, declared or streamed)*
-- [ ] Webhook: no rate limiting. `serve-webhook` binds localhost, so this can wait unless it is exposed.
+- [x] Webhook: no rate limiting. *(fixed: `email_triage/rate_limit.py` allows each client address `JEV_MCP_RATE_LIMIT_PER_MINUTE` requests (default 60, `0` disables) in any 60 seconds and answers `429` with `Retry-After`; only authenticated requests are counted, so a flood of unauthenticated posts cannot consume the allowance. At most 10,000 addresses are tracked. `serve-webhook`'s uvicorn honours `X-Forwarded-For` from local proxies, so the allowance is per real caller there; only a proxy on another host, or one without that header, leaves every caller on one shared address — add it to uvicorn's `FORWARDED_ALLOW_IPS`.)*
 - [ ] `lora_training.py` fetches the llama.cpp converter from a GitHub archive by commit SHA with no hash check. GitHub does not promise byte-stable archives, so a pinned hash would be brittle; candidate to accept as a known risk.
 
 ### Correctness and quality
