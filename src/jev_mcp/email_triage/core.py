@@ -71,7 +71,7 @@ def build_triage_questions(categories: list[str] | None = None) -> list[Question
     return [
         NoulQuestion(
             key="requires_action",
-            prompt="Does this email require an action from me? Examples: a question I must answer, a meeting I must schedule, a task I must complete.",
+            prompt="Does this email require an action from me? Examples: a question I must answer, a meeting I must schedule, a task I must complete. Not an action: a one-time code or sign-in approval, an automated notification (forum, social media, delivery or account status), a promotion, or an unsolicited message pressuring me to click a link.",
         ),
         NoulQuestion(
             key="is_important",
