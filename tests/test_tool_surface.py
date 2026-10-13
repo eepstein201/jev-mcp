@@ -41,7 +41,7 @@ ANNOTATIONS: dict[str, tuple[bool, bool, bool, bool]] = {
     "jev_compact_context": (True, False, True, False),
     "jev_evaluate_batch": (True, False, True, False),
     "jev_explain_decision": (True, False, True, False),
-    "jev_generate_synthetic_dataset": (True, False, False, False),
+    "jev_generate_synthetic_dataset": (False, False, False, False),
     "jev_optimize_prompt": (True, False, False, False),
     "jev_determine_best_model": (True, False, True, False),
     "jev_agent_handoff": (True, False, True, False),
@@ -187,16 +187,6 @@ def test_each_tools_hints_match_what_its_code_does(name):
     assert _hints(registered_tools()[name]["annotations"]) == ANNOTATIONS[name]
 
 
-# Known contradiction, reported to the controller for a ruling (task-11 report): the
-# table above marks jev_generate_synthetic_dataset read-only, but its body probes for a
-# running llama-server with subprocess.check_output(["pgrep", ...]) — a process start,
-# which _body_writes counts. The table is implemented as dispatched, so this assertion
-# stays known-false until the controller flips the row or changes the probe.
-@pytest.mark.xfail(
-    reason="jev_generate_synthetic_dataset is read-only per the table but starts "
-    "pgrep via subprocess.check_output; controller ruling pending",
-    strict=False,
-)
 def test_no_read_only_tool_saves_config_writes_a_file_or_starts_a_process():
     for name, (read_only, *_rest) in ANNOTATIONS.items():
         if read_only:

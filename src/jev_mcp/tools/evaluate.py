@@ -366,7 +366,7 @@ def jev_explain_decision(
     title="Generate a labelled test dataset",
     description="Dataset Generator: Automatically generates a Golden Dataset using the local 7B model if available, otherwise returns instructions for the primary LLM to generate it.",
     annotations=ToolAnnotations(
-        read_only_hint=True,
+        read_only_hint=False,
         destructive_hint=False,
         idempotent_hint=False,
         open_world_hint=False,

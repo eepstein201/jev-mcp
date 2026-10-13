@@ -507,7 +507,7 @@ Every tool carries a human-readable `title` and MCP `annotations` (behaviour hin
 | `jev_compact_context` | Compact context to what is relevant | yes | no | yes | no |
 | `jev_evaluate_batch` | Score questions against a state | yes | no | yes | no |
 | `jev_explain_decision` | Explain a scored decision | yes | no | yes | no |
-| `jev_generate_synthetic_dataset` | Generate a labelled test dataset | yes | no | no | no |
+| `jev_generate_synthetic_dataset` | Generate a labelled test dataset | no | no | no | no |
 | `jev_optimize_prompt` | Find a clearer wording for a question | yes | no | no | no |
 | `jev_determine_best_model` | Recommend a model for a task | yes | no | yes | no |
 | `jev_agent_handoff` | Choose an agent to hand a task to | yes | no | yes | no |
