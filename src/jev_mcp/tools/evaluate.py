@@ -16,6 +16,263 @@ def _error(message: str) -> str:
     return json.dumps({"status": "ERROR", "message": message})
 
 
+def _qfe_extraction(state, questions):
+    """Query-Focused Extraction: the state condensed to what answers the questions."""
+    q_prompts = []
+    for q in questions:
+        q_prompts.append(q.prompt)
+
+    qfe_prompt = (
+        "You are a strict data extraction middleware. "
+        "The user is about to evaluate the following questions against a massive context state. "
+        "Your job is to read the state and EXTRACT ONLY the exact sentences, facts, and entities that are necessary to answer the questions. "
+        "Do NOT answer the questions. Do NOT write a generic summary. "
+        "Just output a dense, condensed version of the original context retaining all relevant evidence.\n\n"
+        f"QUESTIONS TO BE ANSWERED:\n{json.dumps(q_prompts, indent=2)}"
+    )
+
+    return {
+        "qfe_extracted_context": app._chat_completion(
+            f"MASSIVE STATE:\n{json.dumps(state)}",
+            system=qfe_prompt,
+            temperature=0.1,
+            max_tokens=1500,
+        )
+    }
+
+
+def _qfe_compress(state, questions):
+    """(state, was_compressed, error): compress an oversized state via QFE first."""
+    token_count = app.provider.check_token_limit(state)
+    was_compressed = False
+
+    if token_count > app.provider.max_tokens:
+        logger.info(
+            f"State token count {token_count} exceeds limit {app.provider.max_tokens}. Triggering Query-Focused Extraction (QFE)..."
+        )
+        try:
+            compressed_state = _qfe_extraction(state, questions)
+            logger.info("QFE Compression successful. Re-checking token count...")
+
+            new_token_count = app.provider.check_token_limit(compressed_state)
+            if new_token_count > app.provider.max_tokens:
+                raise Exception("QFE output still exceeded max tokens.")
+
+            state = compressed_state
+            was_compressed = True
+            logger.info(
+                f"State compressed from {token_count} to {new_token_count} tokens."
+            )
+
+        except Exception as e:
+            logger.error(f"QFE Failed: {str(e)}")
+            return (
+                state,
+                was_compressed,
+                _error(
+                    f"CRITICAL SYSTEM ERROR: 'state' payload was {token_count} tokens and QFE compression failed: {str(e)}"
+                ),
+            )
+
+    return state, was_compressed, None
+
+
+def _semantic_lint_findings(qs):
+    """Model-based check: does any question ask the model to generate text?"""
+    findings: List[Dict[str, Any]] = []
+
+    # --- MODEL-BASED LINTING (Fuzzy Semantic Check) ---
+    # Uses SemIf itself to detect if the user's questions are generative!
+    lint_qs: List[QuestionType] = []
+    for i, q in enumerate(qs):
+        q_prompt = q.get("prompt", "") if isinstance(q, dict) else q.prompt
+        lint_qs.append(
+            NoulQuestion(
+                key=f"q_{i}",
+                prompt=f"Does the user's question require the AI to generate text, write a summary, extract a list, or provide an open-ended answer? Question: '{q_prompt}'",
+            )
+        )
+
+    try:
+        # Evaluate the questions against a tiny dummy state
+        lint_state = {"task": "Determine generative intent."}
+        lint_results = app.provider.evaluate_batch(lint_state, lint_qs)
+
+        for i, q in enumerate(qs):
+            res = lint_results.get(f"q_{i}", {})
+            q_key = q.key
+            if res.get("noul", 0.0) > 0.85:
+                findings.append(
+                    {
+                        "question_key": q_key,
+                        "severity": "ERROR",
+                        "code": "SEMANTIC_GENERATIVE_INTENT",
+                        "message": "Model-based linter detected generative or extraction intent.",
+                        "suggestion": "Fast decision models cannot generate text. Reframe as a boolean, multiple choice, or Likert scale.",
+                    }
+                )
+    except Exception as e:
+        logger.warning(f"Model-based linting failed: {e}")
+
+    return findings
+
+
+def _run_linter(state, qs):
+    """Every model-based and static finding for the batch, deduplicated."""
+    findings: List[Dict[str, Any]] = []
+    findings.extend(_semantic_lint_findings(qs))
+
+    # --- STATIC STRUCTURAL LINTING ---
+    for i, q in enumerate(qs):
+        is_score = isinstance(q, ScoreQuestion)
+        if isinstance(q, (NoulQuestion, ChoiceQuestion, ScoreQuestion)):
+            opts = q.to_llm_options()
+        else:
+            opts = []
+
+        prompt = q.prompt
+        key = q.key
+
+        report = app.linter.lint(state, prompt, opts, is_score=is_score)
+        for f in report.findings:
+            # Deduplicate generative errors if model-based linter already caught it
+            if f.code == "GENERATIVE_INTENT_DETECTED" and any(
+                x["code"] == "SEMANTIC_GENERATIVE_INTENT" and x["question_key"] == key
+                for x in findings
+            ):
+                continue
+
+            findings.append(
+                {
+                    "question_key": key,
+                    "severity": f.severity,
+                    "code": f.code,
+                    "message": f.message,
+                    "suggestion": f.suggestion,
+                }
+            )
+    return findings
+
+
+def _serialize_questions(questions):
+    """The plain-dict question shape the fast autofixer understands."""
+    q_dicts: List[Dict[str, Any]] = []
+    for q in questions:
+        if isinstance(q, NoulQuestion):
+            q_dicts.append({"type": "noul", "key": q.key, "prompt": q.prompt})
+        elif isinstance(q, ChoiceQuestion):
+            q_dicts.append(
+                {
+                    "type": "choice",
+                    "key": q.key,
+                    "prompt": q.prompt,
+                    "options": q.options,
+                }
+            )
+        elif isinstance(q, ScoreQuestion):
+            q_dicts.append(
+                {
+                    "type": "score",
+                    "key": q.key,
+                    "prompt": q.prompt,
+                    "labels": q.labels,
+                }
+            )
+    return q_dicts
+
+
+def _rebuild_fixed_questions(questions, fixed_qs_raw):
+    """Rebuild the autofixer's answers as questions, kept under the caller's keys."""
+    fixed_qs: List[QuestionType] = []
+    autofix_details = []
+    for original_q, fq in zip(questions, fixed_qs_raw):
+        orig_prompt = original_q.prompt
+        autofix_details.append({"original": orig_prompt, "fixed": fq["prompt"]})
+
+        # Results stay under the caller's key, whatever the autofixer called the question.
+        key = original_q.key
+        if fq["type"] == "noul":
+            fixed_qs.append(NoulQuestion(prompt=fq["prompt"], key=key))
+        elif fq["type"] == "choice":
+            fixed_qs.append(
+                ChoiceQuestion(
+                    prompt=fq["prompt"],
+                    key=key,
+                    options=fq.get("options", []),
+                )
+            )
+        elif fq["type"] == "score":
+            fixed_qs.append(
+                ScoreQuestion(
+                    prompt=fq["prompt"],
+                    key=key,
+                    labels=fq.get("labels", []),
+                )
+            )
+        else:
+            raise ValueError(
+                f"Autofixer returned an unknown question type: {fq['type']!r}"
+            )
+    return fixed_qs, autofix_details
+
+
+def _request_approval(all_findings, fixed_qs_raw, autofix_details):
+    """The REQUIRES_APPROVAL payload: the errors plus the AI's suggested fixes."""
+    return json.dumps(
+        {
+            "status": "REQUIRES_APPROVAL",
+            "message": "Your questions violate System 1 framing rules. Please review the AI's suggested fixes below. If you approve, resubmit with the fixed questions.",
+            "original_errors": all_findings,
+            "suggested_fixes": fixed_qs_raw,
+            "transformations": autofix_details,
+        },
+        indent=2,
+    )
+
+
+def _reject_payload(all_findings):
+    """The REJECTED_BY_LINTER payload returned when autofixing fails."""
+    return json.dumps(
+        {
+            "status": "REJECTED_BY_LINTER",
+            "reason": "Questions contained critical anti-patterns.",
+            "original_findings": all_findings,
+        },
+        indent=2,
+    )
+
+
+def _score_and_assemble(
+    state, questions, all_findings, was_autofixed, autofix_details, was_compressed
+):
+    """Score the batch and assemble the final response."""
+    try:
+        results = app.provider.evaluate_batch(state, questions)
+
+        response = {
+            "model": getattr(app.provider, "current_model_id", "unknown_model"),
+            "data": results,
+        }
+        if all_findings:
+            response["status"] = "SUCCESS_WITH_WARNINGS"
+            response["warnings"] = all_findings
+        else:
+            response["status"] = "SUCCESS"
+
+        if was_autofixed:
+            response["was_autofixed"] = True
+            response["autofix_transformations"] = autofix_details
+
+        if was_compressed:
+            response["was_compressed"] = True
+            response["qfe_state"] = state
+
+        return json.dumps(response, indent=2)
+    except Exception as e:
+        logger.error(f"Engine failure: {str(e)}")
+        return _error(f"INTERNAL ENGINE ERROR: {str(e)}")
+
+
 @mcp.tool(
     name="jev_evaluate_batch",
     title="Score questions against a state",
@@ -45,151 +302,17 @@ def jev_evaluate_batch(
     """Evaluate questions and return JSON results."""
     logger.info(f"Received batch of {len(questions)} questions.")
 
-    token_count = app.provider.check_token_limit(state)
-    was_compressed = False
+    state, was_compressed, qfe_error = _qfe_compress(state, questions)
+    if qfe_error is not None:
+        return qfe_error
 
-    if token_count > app.provider.max_tokens:
-        logger.info(
-            f"State token count {token_count} exceeds limit {app.provider.max_tokens}. Triggering Query-Focused Extraction (QFE)..."
-        )
-        try:
-            q_prompts = []
-            for q in questions:
-                q_prompts.append(q.prompt)
-
-            qfe_prompt = (
-                "You are a strict data extraction middleware. "
-                "The user is about to evaluate the following questions against a massive context state. "
-                "Your job is to read the state and EXTRACT ONLY the exact sentences, facts, and entities that are necessary to answer the questions. "
-                "Do NOT answer the questions. Do NOT write a generic summary. "
-                "Just output a dense, condensed version of the original context retaining all relevant evidence.\n\n"
-                f"QUESTIONS TO BE ANSWERED:\n{json.dumps(q_prompts, indent=2)}"
-            )
-
-            compressed_state = {
-                "qfe_extracted_context": app._chat_completion(
-                    f"MASSIVE STATE:\n{json.dumps(state)}",
-                    system=qfe_prompt,
-                    temperature=0.1,
-                    max_tokens=1500,
-                )
-            }
-            logger.info("QFE Compression successful. Re-checking token count...")
-
-            new_token_count = app.provider.check_token_limit(compressed_state)
-            if new_token_count > app.provider.max_tokens:
-                raise Exception("QFE output still exceeded max tokens.")
-
-            state = compressed_state
-            was_compressed = True
-            logger.info(
-                f"State compressed from {token_count} to {new_token_count} tokens."
-            )
-
-        except Exception as e:
-            logger.error(f"QFE Failed: {str(e)}")
-            return _error(
-                f"CRITICAL SYSTEM ERROR: 'state' payload was {token_count} tokens and QFE compression failed: {str(e)}"
-            )
-
-    def run_linter(qs):
-        findings = []
-
-        # --- MODEL-BASED LINTING (Fuzzy Semantic Check) ---
-        # Uses SemIf itself to detect if the user's questions are generative!
-        lint_qs: List[QuestionType] = []
-        for i, q in enumerate(qs):
-            q_prompt = q.get("prompt", "") if isinstance(q, dict) else q.prompt
-            lint_qs.append(
-                NoulQuestion(
-                    key=f"q_{i}",
-                    prompt=f"Does the user's question require the AI to generate text, write a summary, extract a list, or provide an open-ended answer? Question: '{q_prompt}'",
-                )
-            )
-
-        try:
-            # Evaluate the questions against a tiny dummy state
-            lint_state = {"task": "Determine generative intent."}
-            lint_results = app.provider.evaluate_batch(lint_state, lint_qs)
-
-            for i, q in enumerate(qs):
-                res = lint_results.get(f"q_{i}", {})
-                q_key = q.key
-                if res.get("noul", 0.0) > 0.85:
-                    findings.append(
-                        {
-                            "question_key": q_key,
-                            "severity": "ERROR",
-                            "code": "SEMANTIC_GENERATIVE_INTENT",
-                            "message": "Model-based linter detected generative or extraction intent.",
-                            "suggestion": "Fast decision models cannot generate text. Reframe as a boolean, multiple choice, or Likert scale.",
-                        }
-                    )
-        except Exception as e:
-            logger.warning(f"Model-based linting failed: {e}")
-
-        # --- STATIC STRUCTURAL LINTING ---
-        for i, q in enumerate(qs):
-            is_score = isinstance(q, ScoreQuestion)
-            if isinstance(q, (NoulQuestion, ChoiceQuestion, ScoreQuestion)):
-                opts = q.to_llm_options()
-            else:
-                opts = []
-
-            prompt = q.prompt
-            key = q.key
-
-            report = app.linter.lint(state, prompt, opts, is_score=is_score)
-            for f in report.findings:
-                # Deduplicate generative errors if model-based linter already caught it
-                if f.code == "GENERATIVE_INTENT_DETECTED" and any(
-                    x["code"] == "SEMANTIC_GENERATIVE_INTENT"
-                    and x["question_key"] == key
-                    for x in findings
-                ):
-                    continue
-
-                findings.append(
-                    {
-                        "question_key": key,
-                        "severity": f.severity,
-                        "code": f.code,
-                        "message": f.message,
-                        "suggestion": f.suggestion,
-                    }
-                )
-        return findings
-
-    all_findings = run_linter(questions)
+    all_findings = _run_linter(state, questions)
     was_autofixed = False
     autofix_details = []
 
     if any(f["severity"] == "ERROR" for f in all_findings):
         logger.info("Linter errors detected. Hitting fast background autofixer...")
-
-        q_dicts: List[Dict[str, Any]] = []
-        for q in questions:
-            if isinstance(q, NoulQuestion):
-                q_dicts.append({"type": "noul", "key": q.key, "prompt": q.prompt})
-            elif isinstance(q, ChoiceQuestion):
-                q_dicts.append(
-                    {
-                        "type": "choice",
-                        "key": q.key,
-                        "prompt": q.prompt,
-                        "options": q.options,
-                    }
-                )
-            elif isinstance(q, ScoreQuestion):
-                q_dicts.append(
-                    {
-                        "type": "score",
-                        "key": q.key,
-                        "prompt": q.prompt,
-                        "labels": q.labels,
-                    }
-                )
-
+        q_dicts = _serialize_questions(questions)
         try:
             fixed_qs_raw = app.call_fast_autofixer(state, q_dicts, all_findings)
 
@@ -198,52 +321,16 @@ def jev_evaluate_batch(
                     f"Autofixer returned {len(fixed_qs_raw)} questions for {len(questions)}."
                 )
 
-            fixed_qs: List[QuestionType] = []
-            for original_q, fq in zip(questions, fixed_qs_raw):
-                orig_prompt = original_q.prompt
-                autofix_details.append({"original": orig_prompt, "fixed": fq["prompt"]})
-
-                # Results stay under the caller's key, whatever the autofixer called the question.
-                key = original_q.key
-                if fq["type"] == "noul":
-                    fixed_qs.append(NoulQuestion(prompt=fq["prompt"], key=key))
-                elif fq["type"] == "choice":
-                    fixed_qs.append(
-                        ChoiceQuestion(
-                            prompt=fq["prompt"],
-                            key=key,
-                            options=fq.get("options", []),
-                        )
-                    )
-                elif fq["type"] == "score":
-                    fixed_qs.append(
-                        ScoreQuestion(
-                            prompt=fq["prompt"],
-                            key=key,
-                            labels=fq.get("labels", []),
-                        )
-                    )
-                else:
-                    raise ValueError(
-                        f"Autofixer returned an unknown question type: {fq['type']!r}"
-                    )
-
-            new_findings = run_linter(fixed_qs)
+            fixed_qs, autofix_details = _rebuild_fixed_questions(
+                questions, fixed_qs_raw
+            )
+            new_findings = _run_linter(state, fixed_qs)
             if any(f["severity"] == "ERROR" for f in new_findings):
                 raise Exception("Auto-fixed questions failed validation.")
 
             # Interactive Approval Gate
             if not auto_apply_fixes:
-                return json.dumps(
-                    {
-                        "status": "REQUIRES_APPROVAL",
-                        "message": "Your questions violate System 1 framing rules. Please review the AI's suggested fixes below. If you approve, resubmit with the fixed questions.",
-                        "original_errors": all_findings,
-                        "suggested_fixes": fixed_qs_raw,
-                        "transformations": autofix_details,
-                    },
-                    indent=2,
-                )
+                return _request_approval(all_findings, fixed_qs_raw, autofix_details)
 
             questions = fixed_qs
             all_findings = new_findings
@@ -251,40 +338,11 @@ def jev_evaluate_batch(
 
         except Exception as e:
             logger.warning(f"Rejecting payload. Autofix failed: {str(e)}")
-            return json.dumps(
-                {
-                    "status": "REJECTED_BY_LINTER",
-                    "reason": "Questions contained critical anti-patterns.",
-                    "original_findings": all_findings,
-                },
-                indent=2,
-            )
+            return _reject_payload(all_findings)
 
-    try:
-        results = app.provider.evaluate_batch(state, questions)
-
-        response = {
-            "model": getattr(app.provider, "current_model_id", "unknown_model"),
-            "data": results,
-        }
-        if all_findings:
-            response["status"] = "SUCCESS_WITH_WARNINGS"
-            response["warnings"] = all_findings
-        else:
-            response["status"] = "SUCCESS"
-
-        if was_autofixed:
-            response["was_autofixed"] = True
-            response["autofix_transformations"] = autofix_details
-
-        if was_compressed:
-            response["was_compressed"] = True
-            response["qfe_state"] = state
-
-        return json.dumps(response, indent=2)
-    except Exception as e:
-        logger.error(f"Engine failure: {str(e)}")
-        return _error(f"INTERNAL ENGINE ERROR: {str(e)}")
+    return _score_and_assemble(
+        state, questions, all_findings, was_autofixed, autofix_details, was_compressed
+    )
 
 
 @mcp.tool(
