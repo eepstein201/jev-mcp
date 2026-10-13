@@ -1,5 +1,5 @@
 import re
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Mapping
 from jev_mcp.routing_provider import RoutingProvider
 from jev_mcp.provider import ChoiceQuestion, QuestionType
 
@@ -11,6 +11,7 @@ _MARKER_RE = re.compile(r"\bshows?\s+[\"'“']?([A-Z][A-Z0-9_\-]{3,40})")
 # candidates: one-word discrimination works over five options, not fifty.
 NARROW_MIN_CANDIDATES = 12
 SHORTLIST_K = 5
+FIELD_VALUE_MAX_CHARS = 40
 
 
 def success_marker(goal: str) -> str | None:
@@ -38,6 +39,33 @@ def _is_alternating(history: List[Any]) -> bool:
         and labels[1] == labels[3]
         and labels[0] != labels[1]
     )
+
+
+def _field_text(candidate: Mapping[str, Any]) -> str | None:
+    """A field's current text with whitespace runs collapsed; None for elements that hold none.
+
+    The harness reports a select's choice as `current_value` and a fill action's text as
+    `value`. A click action's `value` is not field state, so only `fill` actions use it.
+    """
+    if "current_value" in candidate:
+        value = candidate["current_value"]
+    elif candidate.get("kind") == "fill" and "value" in candidate:
+        value = candidate["value"]
+    else:
+        return None
+    return " ".join(("" if value is None else str(value)).split())
+
+
+def _field_state(candidate: Mapping[str, Any]) -> str:
+    """What a form field currently holds, as a listing suffix; "" for elements without a value."""
+    text = _field_text(candidate)
+    if text is None:
+        return ""
+    if not text:
+        return " (currently empty)"
+    if len(text) > FIELD_VALUE_MAX_CHARS:
+        text = text[:FIELD_VALUE_MAX_CHARS] + "…"
+    return f' (currently "{text}")'
 
 
 def local_choose(
@@ -75,10 +103,26 @@ def local_choose(
             "choose a different target, or DONE if the goal is visibly satisfied."
         )
     if history and isinstance(history[-1], dict) and history[-1].get("kind") == "fill":
-        notes.append(
-            "A field was just filled; waiting rarely completes a form — click the goal's "
-            "next element (e.g. Submit) if the goal names one."
+        # Submitting with a field still empty is how a two-field form fails: the
+        # first fill otherwise reads as the whole job. Only a field the goal names
+        # counts; a page can show fields the goal never asks for.
+        goal_text = goal.lower()
+        still_empty = any(
+            _field_text(c) == ""
+            and (label := str(c.get("label", "")).strip().lower()) != ""
+            and label in goal_text
+            for c in targets.get("TYPE_TEXT", {}).values()
         )
+        if still_empty:
+            notes.append(
+                "A field was just filled, but another field is still empty; fill it "
+                "before submitting if the goal names it."
+            )
+        else:
+            notes.append(
+                "A field was just filled; waiting rarely completes a form — click the goal's "
+                "next element (e.g. Submit) if the goal names one."
+            )
     recent_labels = [h.get("action") for h in history[-5:] if isinstance(h, dict)]
     if recent_labels:
         common = max(set(recent_labels), key=recent_labels.count)
@@ -111,7 +155,7 @@ def local_choose(
         lines = []
         for index, candidate in candidates.items():
             label_text = candidate.get("label", candidate.get("element", ""))
-            line = f"[{index}] {label_text}"
+            line = f"[{index}] {label_text}{_field_state(candidate)}"
             if label_text in tried:
                 line += f" (tried {tried[label_text]} step(s) ago — it did not complete the goal)"
             lines.append(line)
@@ -154,7 +198,8 @@ def local_choose(
             continue
         short = {i: candidates[i] for i in top}
         listing = "\n".join(
-            f"[{i}] {short[i].get('label', short[i].get('element', ''))}" for i in top
+            f"[{i}] {short[i].get('label', short[i].get('element', ''))}{_field_state(short[i])}"
+            for i in top
         )
         q_shortlist = ChoiceQuestion(
             key=f"{op.lower()}_target",
