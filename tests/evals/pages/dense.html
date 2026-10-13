@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Parts catalog — dense page eval</title>
+<style>
+  body { font: 14px/1.45 system-ui, sans-serif; margin: 24px auto; max-width: 860px; }
+  h1 { font-size: 18px; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { padding: 6px 10px; border-bottom: 1px solid #ddd; text-align: left; }
+  th { background: #f4f4f5; }
+  #banner { margin-top: 18px; padding: 12px 16px; border-radius: 6px; display: none; }
+  #banner.win { display: block; background: #dcfce7; color: #14532d; font-weight: 700; font-size: 20px; }
+  #banner.miss { display: block; background: #fee2e2; color: #7f1d1d; }
+</style>
+</head>
+<body>
+<h1>Parts catalog</h1>
+<p id="intro">Select a part to continue.</p>
+<div id="banner" role="status"></div>
+<table>
+  <thead><tr><th>Part</th><th>Price</th><th>Stock</th><th>Actions</th></tr></thead>
+  <tbody id="rows"></tbody>
+</table>
+<script>
+// Deterministic catalog: 25 rows of deliberately similar parts.
+// Exactly one row satisfies each case criterion; the case is chosen by ?case=.
+const PARTS = [
+  {id: "p01", name: "8mm steel shim",           price: 12.40, stock: "In Stock"},
+  {id: "p02", name: "10mm steel shim",          price: 12.80, stock: "Out of Stock"},
+  {id: "p03", name: "12mm steel shim",          price: 13.10, stock: "Out of Stock"},
+  {id: "p04", name: "8mm brass shim",           price: 14.20, stock: "Out of Stock"},
+  {id: "p05", name: "6202 rubber seal",         price: 15.60, stock: "In Stock"},
+  {id: "p06", name: "6203 rubber seal",         price: 16.10, stock: "Out of Stock"},
+  {id: "p07", name: "25mm steel bearing",       price: 28.90, stock: "In Stock"},
+  {id: "p08", name: "8mm ceramic bearing",      price: 33.40, stock: "In Stock"},
+  {id: "p09", name: "25mm ceramic sleeve",      price: 31.20, stock: "Out of Stock"},
+  {id: "p10", name: "M6 left bracket",          price: 15.60, stock: "In Stock"},
+  {id: "p10a", name: "25mm ceramic bearing",    price: 31.20, stock: "Out of Stock"},
+  {id: "p11", name: "M6 right bracket",         price: 15.60, stock: "In Stock"},
+  {id: "p12", name: "M8 left bracket",          price: 16.90, stock: "Out of Stock"},
+  {id: "p13", name: "M8 right bracket",         price: 16.90, stock: "In Stock"},
+  {id: "p14", name: "16t drive sprocket",      price: 21.30, stock: "In Stock"},
+  {id: "p15", name: "18t drive sprocket",      price: 22.10, stock: "Out of Stock"},
+  {id: "p16", name: "16t idler sprocket",      price: 19.80, stock: "Out of Stock"},
+  {id: "p17", name: "5mm timing belt",         price: 18.00, stock: "In Stock"},
+  {id: "p18", name: "8mm timing belt",         price: 19.20, stock: "Out of Stock"},
+  {id: "p19", name: "35mm timing pulley",      price: 17.40, stock: "Out of Stock"},
+  {id: "p20", name: "41mm timing pulley",      price: 18.10, stock: "Out of Stock"},
+  {id: "p21", name: "43mm timing pulley",      price: 18.75, stock: "Out of Stock"},
+  {id: "p22", name: "49mm timing pulley",      price: 18.75, stock: "In Stock"},
+  {id: "p23", name: "ceramic bearing grease",  price: 11.90, stock: "Out of Stock"},
+  {id: "p24", name: "synthetic bearing grease",price: 12.60, stock: "Out of Stock"},
+];
+// Invariants: d2 — exactly one row is In Stock AND under $15 (p01: shims p23/p24
+// are cheaper but Out of Stock; p05/p10/p10a/p11 are In Stock but >= $15).
+// d3 — "M6 left bracket" (p10) sits directly beside "M6 right bracket" (p11).
+// d4 — "49mm timing pulley" (p22) is near the bottom, below the fold.
+function correctId(caseName) {
+  switch (caseName) {
+    case "d1": return "p10a";
+    case "d2": return "p01";
+    case "d3": return "p10";
+    case "d4": return "p22";
+    default:   return "p01";
+  }
+}
+const caseName = new URLSearchParams(location.search).get("case") || "d1";
+const want = correctId(caseName);
+const banner = document.getElementById("banner");
+function show(kind, text) { banner.className = kind; banner.textContent = text; }
+function judge(part) {
+  if (part.id === want) { show("win", "MISSION_COMPLETE"); document.title = "MISSION_COMPLETE"; }
+  else show("miss", "Clicked " + part.name + " ($" + part.price.toFixed(2) + ", " + part.stock + ") — not the target. Keep going.");
+}
+const tbody = document.getElementById("rows");
+for (const p of PARTS) {
+  const label = p.name + ", $" + p.price.toFixed(2) + ", " + p.stock;
+  const tr = document.createElement("tr");
+  const tdName = document.createElement("td"); tdName.textContent = p.name;
+  const tdPrice = document.createElement("td"); tdPrice.textContent = "$" + p.price.toFixed(2);
+  const tdStock = document.createElement("td"); tdStock.textContent = p.stock;
+  const tdAct = document.createElement("td");
+  const sel = document.createElement("button");
+  sel.textContent = "Select";
+  sel.setAttribute("aria-label", "Select — " + label);
+  sel.addEventListener("click", () => judge(p));
+  const det = document.createElement("a");
+  det.href = "#";
+  det.textContent = "Details";
+  det.setAttribute("aria-label", "Details — " + label);
+  det.addEventListener("click", (e) => { e.preventDefault(); judge(p); });
+  tdAct.append(sel, " ", det);
+  tr.append(tdName, tdPrice, tdStock, tdAct);
+  tbody.appendChild(tr);
+}
+</script>
+</body>
+</html>
