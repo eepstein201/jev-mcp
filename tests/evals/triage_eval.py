@@ -9,6 +9,7 @@ running. It measures; it does not gate.
 
 import argparse
 import json
+from collections import Counter
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -60,9 +61,28 @@ def agreement(scored: Sequence[dict[str, Any]]) -> PassRate:
     )
 
 
+def routing_by_label(scored: Sequence[dict[str, Any]]) -> dict[str, dict[str, int]]:
+    """Count the routing each label received; rows without a label are left out."""
+    counts: dict[str, Counter[str]] = {}
+    for row in scored:
+        if "label" in row:
+            counts.setdefault(row["label"], Counter())[row["got"]] += 1
+    return {label: dict(routings) for label, routings in counts.items()}
+
+
 def format_report(scored: Sequence[dict[str, Any]]) -> str:
     rate = agreement(scored)
     lines = [f"agreement  {rate.passes}/{rate.runs}  {rate.rate:.0%}"]
+    breakdown = routing_by_label(scored)
+    if breakdown:
+        lines.append("by label")
+        lines.extend(
+            f"  {label}: "
+            + " ".join(
+                f"{routing}={count}" for routing, count in sorted(routings.items())
+            )
+            for label, routings in sorted(breakdown.items())
+        )
     disagreements = [row for row in scored if row["expected"] != row["got"]]
     if disagreements:
         lines.append("subject | expected | got | requires_action | is_important")
