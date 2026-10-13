@@ -740,7 +740,7 @@ The easiest way to interact with Jev MCP locally. It wraps the core bash script.
 *   **`make eval`**: Benchmarks both engines on `tests/golden_dataset.json` (warm-up pass, then a timed pass; daemons must be running).
 *   **`make eval-browser`**: Runs each of the 8 browser-agent cases in `tests/evals/` 4 times and prints a pass rate per case. It drives a real browser against pages served on `127.0.0.1:8791`; daemons must be running. It measures and always exits 0.
 *   **`make eval-triage`**: Triages every email in a labelled JSONL dataset and prints the agreement with its expected routing, then each disagreement with its two scores. The default dataset is the 30 synthetic emails in `tests/evals/triage_synthetic.jsonl`; `DATASET=<path>` uses another. Daemons must be running.
-*   **`make train`**: Informational only; training is triggered through the `train` MCP tool.
+*   **`make train`**: Informational only; training is triggered through the `jev_train_lora` MCP tool.
 
 ### 2. The Core Engine Manager (`jev_mac_manager.sh`)
 The underlying bash script that handles hardware memory, virtual environments, and macOS `launchd` plist generation.
