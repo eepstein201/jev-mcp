@@ -32,7 +32,9 @@ Copy `.env.example` to `.env` if you need non-default ports or batch size.
 | `make audit` | `scripts/pip_audit.sh`: pip-audit on the installed environment; advisories listed in `.pip-audit-ignore` are accepted, any other fails (needs network) |
 | `make check` | `format-check`, then `lint`, then `test`, then `audit`: the same four gates CI runs, in CI order |
 | `make eval` | `python tests/run_evals.py`: warm-up + timed benchmark of both engines on `tests/golden_dataset.json` (daemons must be running) |
-| `make train` | Prints a pointer; training runs through the `train` MCP tool |
+| `make eval-browser` | `python -m tests.evals.browser_eval`: each browser-agent case 4 times, one pass rate per case (daemons must be running; drives a real browser; `--repeats N` and `--cases D4 T3 ...` when run directly) |
+| `make eval-triage` | `python -m tests.evals.triage_eval --dataset $(DATASET)`: agreement with the expected routing, then every disagreement (daemons must be running; `DATASET` defaults to `tests/evals/triage_synthetic.jsonl`; `--json` when run directly prints every row with its scores) |
+| `make train` | Prints a pointer; training runs through the `jev_train_lora` MCP tool |
 <!-- /AUTO-GENERATED -->
 
 ## Tests

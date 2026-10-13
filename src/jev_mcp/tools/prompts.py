@@ -1,4 +1,4 @@
-"""The optimize-prompt tool."""
+"""The jev_optimize_prompt tool."""
 
 import json
 from typing import Annotated, Any, Dict, List, Optional
@@ -11,7 +11,7 @@ from jev_mcp.provider import ChoiceQuestion, NoulQuestion, QuestionType, ScoreQu
 
 
 @mcp.tool(
-    name="optimize-prompt",
+    name="jev_optimize_prompt",
     description="Automated Prompt Engineer: Generates semantic variations of a prompt and scores them. With `dataset` (rows of state + expected) it returns the phrasing with the highest measured accuracy. With only a single `state` it can only return the most confident phrasing, which is not the same as the most accurate.",
 )
 def jev_optimize_prompt(

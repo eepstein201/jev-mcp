@@ -1,4 +1,4 @@
-"""Fuse, convert and swap steps behind the `train` tool.
+"""Fuse, convert and swap steps behind the `jev_train_lora` tool.
 
 The route was measured end to end on Qwen2.5-7B (mlx_lm 0.31.3, llama.cpp d81235049):
 mlx_lm fuse --dequantize -> convert_hf_to_gguf.py (Q8_0) -> llama-quantize (Q4_K_M).

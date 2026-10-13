@@ -205,12 +205,12 @@ def model_update_notice(
     notice = (
         f"NOTICE: Newer models are available for these router buckets: {listed}. "
         "The current models are kept until the user decides. Ask the user whether to switch; "
-        "if yes, call manage-router with action=apply_updates."
+        "if yes, call jev_manage_router_config with action=apply_updates."
     )
     if config.get("auto_update") is None:
         notice += (
             " Also ask whether Jev should move buckets to the newest model in the same family automatically "
-            "from now on, and record the answer with manage-router action=set_auto_update, enabled=true or false."
+            "from now on, and record the answer with jev_manage_router_config action=set_auto_update, enabled=true or false."
         )
     return notice
 
@@ -268,7 +268,7 @@ def get_temp_notice() -> str | None:
         if temp != 1.0:
             _has_notified_temp = True
             updated_at = config.get("temperature_updated_at", "an unknown time")
-            return f"NOTICE: Jev is running with a custom calibrated temperature of {temp} (set on {updated_at}). This globally affects ALL evaluations. You can ask me to reset it to default (1.0) at any time using the /jev-mcp:temperature command or temperature tool."
+            return f"NOTICE: Jev is running with a custom calibrated temperature of {temp} (set on {updated_at}). This globally affects ALL evaluations. You can ask me to reset it to default (1.0) at any time using the /jev-mcp:temperature command or the jev_manage_temperature tool."
     except Exception:
         pass
     return None

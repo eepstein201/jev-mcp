@@ -2,7 +2,7 @@
 
 `jev_mcp.app` builds the shared provider when it is first imported. If that first import
 happens inside a test that has already replaced `RoutingProvider` with a mock, the shared
-provider becomes the mock and `compact` keeps every chunk. conftest imports `jev_mcp.app`
+provider becomes the mock and `jev_compact_context` keeps every chunk. conftest imports `jev_mcp.app`
 up front so the order no longer matters; this runs the file that used to fail, alone.
 """
 

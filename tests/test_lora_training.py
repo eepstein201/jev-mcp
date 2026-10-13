@@ -242,7 +242,7 @@ def test_restore_reports_a_failed_restart(home):
     assert "Could not find service" in result["restart_error"]
 
 
-# --- the train tool ---
+# --- the jev_train_lora tool ---
 
 
 @patch("subprocess.Popen")

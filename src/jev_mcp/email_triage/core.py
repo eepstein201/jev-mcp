@@ -85,6 +85,14 @@ def build_triage_questions(categories: list[str] | None = None) -> list[Question
     ]
 
 
+def _decision(decision: str, suggested_routing: str, reason: str) -> dict:
+    return {
+        "decision": decision,
+        "suggested_routing": suggested_routing,
+        "reason": reason,
+    }
+
+
 def decide_routing(
     requires_action_score: float,
     is_important_score: float,
@@ -97,20 +105,17 @@ def decide_routing(
 
     # High action probability means it's an Action item
     if requires_action_score > config.action_threshold:
-        return {"decision": "Action", "suggested_routing": "escalate_to_slack"}
+        return _decision("Action", "escalate_to_slack", "requires_action")
 
-    # Ambiguous action scores (between 0.3 and the threshold) should be reviewed manually,
-    # as should a low bucket confidence, and an important email that needs no action: filing
-    # it away silently is the costly mistake, an extra review card is not.
-    if (
-        (
-            requires_action_score > 0.3
-            and requires_action_score <= config.action_threshold
-        )
-        or bucket_confidence < 0.6
-        or is_important_score > config.important_threshold
-    ):
-        return {"decision": "Review", "suggested_routing": "hitl_slack_block"}
+    # Anything below needs a person: an ambiguous action score (between 0.3 and the threshold),
+    # an important email that needs no action (filing it away silently is the costly mistake,
+    # an extra review card is not), or a low bucket confidence. The first that holds is the reason.
+    if 0.3 < requires_action_score <= config.action_threshold:
+        return _decision("Review", "hitl_slack_block", "ambiguous_action")
+    if is_important_score > config.important_threshold:
+        return _decision("Review", "hitl_slack_block", "important_no_action")
+    if bucket_confidence < 0.6:
+        return _decision("Review", "hitl_slack_block", "low_bucket_confidence")
 
     # Otherwise, confidently route to the assigned bucket
-    return {"decision": bucket, "suggested_routing": "archive_and_label"}
+    return _decision(bucket, "archive_and_label", "confident_bucket")

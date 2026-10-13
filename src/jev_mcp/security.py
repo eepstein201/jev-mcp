@@ -87,7 +87,7 @@ def _is_env_file(name: str) -> bool:
 
 ALLOWED_ROOTS_ENV = "JEV_ALLOWED_ROOTS"
 JEV_HOME = "~/.jev"
-# jev_mac_manager.sh keeps the GGUF models under <repo>/models, which is where `train`
+# jev_mac_manager.sh keeps the GGUF models under <repo>/models, which is where `jev_train_lora`
 # swaps files, so it is allowed wherever the server was started.
 _MODELS_DIR = Path(__file__).resolve().parents[2] / "models"
 

@@ -1,4 +1,4 @@
-"""The calibrate and temperature tools."""
+"""The jev_calibrate_threshold and jev_manage_temperature tools."""
 
 import json
 import math
@@ -12,7 +12,7 @@ from jev_mcp.provider import ChoiceQuestion, NoulQuestion, QuestionType, ScoreQu
 
 
 @mcp.tool(
-    name="calibrate",
+    name="jev_calibrate_threshold",
     description="Evaluation Sandbox: Pass a dataset of Golden Edge Cases to mathematically map out the optimal Logit Confidence Threshold for production automation.",
 )
 def jev_calibrate_threshold(
@@ -275,9 +275,9 @@ def jev_calibrate_threshold(
                 logger.error(f"Could not save the fitted temperature: {e}")
         final_table += f"\n\n### 🌡️ Fitted Temperature: {fitted_temperature}\n"
         if temperature_saved:
-            final_table += "Saved to the router config. It now applies to every question the smart engine scores; undo it with the `temperature` tool (`action='reset'`)."
+            final_table += "Saved to the router config. It now applies to every question the smart engine scores; undo it with the `jev_manage_temperature` tool (`action='reset'`)."
         else:
-            final_table += "Not saved. It was fitted on this dataset only and would change the scores of every question, so apply it deliberately: re-run with `save_to_config=True`, or use the `temperature` tool."
+            final_table += "Not saved. It was fitted on this dataset only and would change the scores of every question, so apply it deliberately: re-run with `save_to_config=True`, or use the `jev_manage_temperature` tool."
 
     return json.dumps(
         {
@@ -292,7 +292,7 @@ def jev_calibrate_threshold(
 
 
 @mcp.tool(
-    name="temperature",
+    name="jev_manage_temperature",
     description="View, set, or reset the global MLX calibration temperature for Jev. This temperature globally affects all Jev evaluations, handoffs, and prompts.",
 )
 def jev_manage_temperature(

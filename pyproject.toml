@@ -32,7 +32,7 @@ dependencies = [
 engines = [
     "mlx==0.32.2",
     "mlx-lm==0.31.3",
-    # llama.cpp's convert_hf_to_gguf.py imports both; `train` runs it as a subprocess in this
+    # llama.cpp's convert_hf_to_gguf.py imports both; `jev_train_lora` runs it as a subprocess in this
     # environment. 2.14.1 is the first torch release checked clean by pip-audit.
     "torch>=2.14.1",
     "sentencepiece",
@@ -54,6 +54,10 @@ dev = [
 [tool.mypy]
 # A `# type: ignore` that no longer suppresses anything hides the next real error on its line.
 warn_unused_ignores = true
+
+[tool.pytest.ini_options]
+# The eval tests import `tests.evals`, which needs the repo root on the path under a bare `pytest`.
+pythonpath = ["."]
 
 [tool.uv]
 # kev pins torch<2.9 and engines needs torch>=2.14.1, so they can never share a lock entry.
