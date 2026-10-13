@@ -3,7 +3,7 @@ import os
 import json
 import tempfile
 from datetime import datetime
-from typing import Any
+from typing import Any, TypedDict
 
 from jev_mcp import model_catalog
 
@@ -18,7 +18,21 @@ FALLBACK_BUCKETS = {
 }
 
 
-def load_router_config():
+class RouterConfig(TypedDict, total=False):
+    """The persisted shape of the router config file. total=False: keys appear
+    only once written (a fresh config carries just buckets and rules)."""
+
+    buckets: dict[str, str]
+    rules: list[dict[str, str]]
+    buckets_source: str  # "detected" | "user"
+    detected_client: str
+    models_updated_at: str
+    auto_update: bool
+    fitted_temperature: float
+    temperature_updated_at: str
+
+
+def load_router_config() -> RouterConfig:
     if not os.path.exists(ROUTER_CONFIG_PATH):
         return {
             "buckets": model_catalog.default_buckets(model_catalog.load_cached())
@@ -48,11 +62,11 @@ def write_json_atomic(path: str, data: Any) -> None:
         raise
 
 
-def save_router_config(config):
+def save_router_config(config: RouterConfig) -> None:
     write_json_atomic(ROUTER_CONFIG_PATH, config)
 
 
-def seed_defaults_for_client(client_name: str) -> dict[str, Any] | None:
+def seed_defaults_for_client(client_name: str) -> RouterConfig | None:
     """Seed router buckets from the connecting client when the user hasn't chosen them.
 
     Eligible only when no config file exists yet, or when the buckets were
@@ -67,7 +81,7 @@ def seed_defaults_for_client(client_name: str) -> dict[str, Any] | None:
         return None
     try:
         if not os.path.exists(ROUTER_CONFIG_PATH):
-            seeded = {
+            seeded: RouterConfig = {
                 "buckets": tiers,
                 "rules": [],
                 "buckets_source": "detected",
@@ -75,7 +89,7 @@ def seed_defaults_for_client(client_name: str) -> dict[str, Any] | None:
             }
         else:
             with open(ROUTER_CONFIG_PATH, "r") as f:
-                config = json.load(f)
+                config: RouterConfig = json.load(f)
             if config.get("buckets_source") != "detected":
                 return None
             seeded = {**config, "buckets": tiers, "detected_client": client_name}
@@ -86,7 +100,7 @@ def seed_defaults_for_client(client_name: str) -> dict[str, Any] | None:
     return seeded
 
 
-def pending_model_updates(config: dict[str, Any]) -> dict[str, dict[str, str]]:
+def pending_model_updates(config: RouterConfig) -> dict[str, dict[str, str]]:
     """Buckets whose model has a newer release in the same family, per the cached catalog."""
     return model_catalog.suggest_updates(
         config.get("buckets", {}), model_catalog.load_cached()
@@ -94,8 +108,8 @@ def pending_model_updates(config: dict[str, Any]) -> dict[str, dict[str, str]]:
 
 
 def apply_model_updates(
-    config: dict[str, Any], updates: dict[str, dict[str, str]]
-) -> dict[str, Any]:
+    config: RouterConfig, updates: dict[str, dict[str, str]]
+) -> RouterConfig:
     """A copy of config with each updated bucket moved to its newer model."""
     return {
         **config,
