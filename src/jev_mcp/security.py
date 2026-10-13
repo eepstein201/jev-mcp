@@ -29,7 +29,7 @@ def sanitize_payload(text: Any) -> str:
 
 import os
 import tempfile
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 
 # Per-user scratch space stays readable: on macOS the system temp root lives
@@ -119,8 +119,8 @@ def _within(resolved: str, root: str) -> bool:
     return resolved == root or resolved.startswith(root.rstrip("/") + "/")
 
 
-def _explicit_roots() -> list[str]:
-    raw = os.environ.get(ALLOWED_ROOTS_ENV, "")
+def _explicit_roots(env: Mapping[str, str] = os.environ) -> list[str]:
+    raw = env.get(ALLOWED_ROOTS_ENV, "")
     return _resolve_roots(r for r in raw.split(os.pathsep) if r.strip())
 
 
@@ -171,6 +171,17 @@ def _classify(requested_path: str) -> str | None:
     if not any(_within(resolved, root) for root in _default_roots()):
         return "outside_roots"
     return None
+
+
+def allowed_roots_report(env: Mapping[str, str] = os.environ) -> dict[str, Any]:
+    """The path-security setup, as `jev-mcp doctor` reports it: the working
+    directory, whether it was ignored for being the home directory or above it,
+    and every root that is_safe_path would allow."""
+    return {
+        "working_directory": os.getcwd(),
+        "working_directory_ignored": _cwd_is_too_broad(),
+        "roots": sorted(set(_default_roots() + _explicit_roots(env))),
+    }
 
 
 def is_safe_path(requested_path: str) -> bool:

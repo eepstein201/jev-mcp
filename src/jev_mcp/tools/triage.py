@@ -6,6 +6,7 @@ import sys
 from typing import List, Optional
 from urllib.parse import urlparse
 
+from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from jev_mcp.app import logger, mcp
@@ -19,9 +20,16 @@ def _error(message: str) -> str:
 
 @mcp.tool(
     name="jev_triage_email",
+    title="Triage an email",
     description=(
         "Evaluates an email using MLX and returns the recommended triage action.\n"
         "If 'status' == 'needs_config', you must ask the user what labels they want to track and call jev_configure_triage_labels."
+    ),
+    annotations=ToolAnnotations(
+        read_only_hint=True,
+        destructive_hint=False,
+        idempotent_hint=True,
+        open_world_hint=False,
     ),
 )
 def tool_triage_email_content(
@@ -39,7 +47,14 @@ def tool_triage_email_content(
 
 @mcp.tool(
     name="jev_configure_triage_labels",
+    title="Set a mailbox's triage labels",
     description="Configures dynamic labels for a specific mailbox or context ID.",
+    annotations=ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
 )
 def tool_configure_triage_labels(
     context_id: str = Field(description="The mailbox or context identifier."),
@@ -54,7 +69,14 @@ def tool_configure_triage_labels(
 
 @mcp.tool(
     name="jev_setup_gas_workflow",
+    title="Deploy the Gmail triage script",
     description="Automated Setup Flow for Google Apps Script. webhook_url is required. The webhook key is never passed here: the deployed script reads it from the Script Property JEV_MCP_API_KEY, which the user sets once in Project Settings (see next_step in the result).",
+    annotations=ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+        open_world_hint=True,
+    ),
 )
 def tool_setup_gas_workflow(
     webhook_url: Optional[str] = Field(

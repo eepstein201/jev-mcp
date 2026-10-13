@@ -26,6 +26,7 @@ from typing import Any, Callable, Dict, List, Optional
 from mcp.server.mcpserver import MCPServer
 from jev_mcp import model_catalog, router_config
 from jev_mcp.router_config import (
+    RouterConfig,
     apply_model_updates,
     load_router_config,
     pending_model_updates,
@@ -193,7 +194,7 @@ SKIP_MODEL_SYNC_ENV = "JEV_SKIP_MODEL_SYNC"
 
 
 def model_update_notice(
-    config: Dict[str, Any], updates: Dict[str, Dict[str, str]]
+    config: RouterConfig, updates: Dict[str, Dict[str, str]]
 ) -> str | None:
     """What to tell the user about newer models, and the questions to put to them."""
     if not updates:

@@ -3,6 +3,7 @@
 import json
 from typing import Any, Dict, Literal, Optional
 
+from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from jev_mcp import app, router_config
@@ -21,7 +22,14 @@ def _saved(message: str) -> str:
 
 @mcp.tool(
     name="jev_manage_router_config",
+    title="View or change model routing",
     description="Interactive configuration manager for Jev's Model Router. Use this to view, add, or remove custom bucket models and exception rules. view_all also reports newer models available for each bucket; apply_updates switches to them; set_auto_update (enabled=true/false) records whether Jev should do that automatically at start-up.",
+    annotations=ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=True,
+        idempotent_hint=False,
+        open_world_hint=False,
+    ),
 )
 @json_errors
 def jev_manage_router_config(
@@ -133,7 +141,14 @@ def jev_manage_router_config(
 
 @mcp.tool(
     name="jev_determine_best_model",
+    title="Recommend a model for a task",
     description="Complexity Index Router: Analyzes a task description using the Hybrid local engine and custom rules to determine the mathematically optimal LLM model to use.",
+    annotations=ToolAnnotations(
+        read_only_hint=True,
+        destructive_hint=False,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
 )
 @json_errors
 def jev_determine_best_model(
@@ -222,7 +237,14 @@ def jev_determine_best_model(
 
 @mcp.tool(
     name="jev_agent_handoff",
+    title="Choose an agent to hand a task to",
     description="Uses multi-class logit routing to mathematically determine which specialized agent should take over the current task based on their full descriptions.",
+    annotations=ToolAnnotations(
+        read_only_hint=True,
+        destructive_hint=False,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
 )
 @json_errors
 def jev_agent_handoff(task_description: str, available_agents: Dict[str, str]) -> str:

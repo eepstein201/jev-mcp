@@ -8,6 +8,7 @@ import subprocess
 import sys
 from typing import Literal, Optional
 
+from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from jev_mcp.app import logger, mcp
@@ -15,7 +16,14 @@ from jev_mcp.app import logger, mcp
 
 @mcp.tool(
     name="jev_train_lora",
+    title="Fine-tune or restore a local model",
     description="Trains a local MLX LoRA adapter on your Apple Silicon GPU. Options: fuse=True (default) merges the adapter into a Q4_K_M .gguf file (llama.cpp's converter is fetched automatically for the installed llama-server commit), and if target_gguf_path is provided, replaces that model (keeping the original as <target>.bak) and restarts the launchd agent serving it. fuse=False keeps the standalone MLX adapter. iters sets the number of training iterations (default 500). action='restore' with target_gguf_path puts the .bak back and restarts that agent.",
+    annotations=ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=True,
+        idempotent_hint=False,
+        open_world_hint=True,
+    ),
 )
 def jev_train_lora(
     dataset_path: str = "",

@@ -150,3 +150,121 @@ def test_evaluate_keeps_the_callers_keys_when_the_autofixer_renames_them():
         )
 
     assert list(res["data"]) == ["q1"]
+
+
+# ---- Characterization tests: the entire parsed JSON of each evaluate path, ----
+# ---- captured from a real run (real linter, mocked provider) before the     ----
+# ---- function split. They must not change.                                  ----
+
+
+def _answers_by_key(data):
+    """Provider that answers the real questions from `data` and never flags the
+    linter's own q_N probes as generative."""
+
+    def _evaluate(state, questions):
+        return {
+            q.key: data.get(
+                q.key, {"noul": 0.1, "probabilities": {"true": 0.1, "false": 0.9}}
+            )
+            for q in questions
+        }
+
+    return _evaluate
+
+
+def test_evaluate_clean_batch_entire_result():
+    from jev_mcp.provider import ChoiceQuestion
+
+    questions = [
+        ChoiceQuestion(
+            key="risk",
+            prompt="What is the deploy risk?",
+            options=["Deploy", "Rollback", "Unknown"],
+        )
+    ]
+    data = {
+        "risk": {
+            "choice": "Unknown",
+            "probabilities": {"Deploy": 0.1, "Rollback": 0.2, "Unknown": 0.7},
+        }
+    }
+
+    with patch("jev_mcp.app.provider", _provider_mock(_answers_by_key(data))):
+        out = json.loads(server.jev_evaluate_batch(state={"a": 1}, questions=questions))
+
+    assert out == {
+        "model": "test-model",
+        "data": {
+            "risk": {
+                "choice": "Unknown",
+                "probabilities": {"Deploy": 0.1, "Rollback": 0.2, "Unknown": 0.7},
+            }
+        },
+        "status": "SUCCESS",
+    }
+
+
+def test_evaluate_batch_rejected_by_the_linter_entire_result():
+    questions = [NoulQuestion(key="q1", prompt=GENERATIVE)]
+
+    with (
+        patch("jev_mcp.app.provider", _provider_mock(_answer_everything)),
+        patch(
+            "jev_mcp.app.call_fast_autofixer",
+            side_effect=RuntimeError("autofixer offline"),
+        ),
+    ):
+        out = json.loads(server.jev_evaluate_batch(state={"a": 1}, questions=questions))
+
+    assert out == {
+        "status": "REJECTED_BY_LINTER",
+        "reason": "Questions contained critical anti-patterns.",
+        "original_findings": [
+            {
+                "question_key": "q1",
+                "severity": "ERROR",
+                "code": "GENERATIVE_INTENT_DETECTED",
+                "message": "Question 'Write a summary of the text' asks for generative prose or extraction.",
+                "suggestion": "Fast decision models cannot generate text. Reframe your question as a boolean (noul), multiple choice (choice), or Likert scale (score).",
+            },
+            {
+                "question_key": "q1",
+                "severity": "WARNING",
+                "code": "MISSING_FALLBACK_OPTION",
+                "message": "No fallback option ('Other', 'None of the above', or 'Insufficient') was detected.",
+                "suggestion": "Always include a fallback option like 'Insufficient evidence to determine' so the closed-world softmax isn't forced to hallucinate when the answer isn't in the state.",
+            },
+        ],
+    }
+
+
+def test_evaluate_state_over_the_token_limit_entire_result():
+    provider = _provider_mock(_answer_everything)
+    provider.check_token_limit.side_effect = [5000, 10]
+
+    with (
+        patch("jev_mcp.app.provider", provider),
+        patch("jev_mcp.app._chat_completion", return_value="The user clicked yes."),
+    ):
+        out = json.loads(
+            server.jev_evaluate_batch(
+                state={"a": 1}, questions=[NoulQuestion(key="q1", prompt="Is it on?")]
+            )
+        )
+
+    assert out == {
+        "model": "test-model",
+        "data": {"q1": {"noul": 0.1, "probabilities": {"true": 0.1, "false": 0.9}}},
+        "status": "SUCCESS_WITH_WARNINGS",
+        "warnings": [
+            {
+                "question_key": "q1",
+                "severity": "WARNING",
+                "code": "MISSING_FALLBACK_OPTION",
+                "message": "No fallback option ('Other', 'None of the above', or 'Insufficient') was detected.",
+                "suggestion": "Always include a fallback option like 'Insufficient evidence to determine' so the closed-world softmax isn't forced to hallucinate when the answer isn't in the state.",
+            }
+        ],
+        "was_compressed": True,
+        "qfe_state": {"qfe_extracted_context": "The user clicked yes."},
+    }
