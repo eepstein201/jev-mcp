@@ -4,6 +4,7 @@ import json
 import os
 from typing import Any, Dict, List, Optional
 
+from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from jev_mcp import app
@@ -17,7 +18,14 @@ MAX_READ_CHARS = 1_048_576
 
 @mcp.tool(
     name="jev_read_file",
+    title="Read a file, filtered for relevance",
     description="File Context Filter: Reads a file locally and uses the Dual-Engine logit cascade to mathematically evaluate if the file is relevant to the current task. Prevents context bloat by blocking irrelevant files or filtering them down to only the relevant chunks.",
+    annotations=ToolAnnotations(
+        read_only_hint=True,
+        destructive_hint=False,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
 )
 @json_errors
 def jev_read_file(
@@ -148,7 +156,14 @@ def jev_read_file(
 
 @mcp.tool(
     name="jev_compact_context",
+    title="Compact context to what is relevant",
     description="Context Compressor: Slices massive state contexts into chunks and uses Confidence-Gated Logits to keep only the verbatim chunks strictly relevant to the user's goal. Eliminates hallucination risk of generative summarization.",
+    annotations=ToolAnnotations(
+        read_only_hint=True,
+        destructive_hint=False,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
 )
 def jev_compact_context(
     state: Dict[str, Any] = Field(
@@ -262,7 +277,14 @@ def jev_compact_context(
 
 @mcp.tool(
     name="jev_scan_repo",
+    title="Scan a repository for relevant code",
     description="Repository Scanner: Walks a codebase, uses Tree-sitter to break code into semantic blocks (functions/classes), and mathematically filters them using the Dual-Engine cascade to find only the code relevant to the task.",
+    annotations=ToolAnnotations(
+        read_only_hint=True,
+        destructive_hint=False,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
 )
 @json_errors
 def jev_scan_repo(

@@ -3,6 +3,7 @@
 import json
 from typing import Annotated, Any, Dict, List, Optional
 
+from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from jev_mcp import app
@@ -12,7 +13,14 @@ from jev_mcp.provider import ChoiceQuestion, NoulQuestion, QuestionType, ScoreQu
 
 @mcp.tool(
     name="jev_optimize_prompt",
+    title="Find a clearer wording for a question",
     description="Automated Prompt Engineer: Generates semantic variations of a prompt and scores them. With `dataset` (rows of state + expected) it returns the phrasing with the highest measured accuracy. With only a single `state` it can only return the most confident phrasing, which is not the same as the most accurate.",
+    annotations=ToolAnnotations(
+        read_only_hint=True,
+        destructive_hint=False,
+        idempotent_hint=False,
+        open_world_hint=False,
+    ),
 )
 def jev_optimize_prompt(
     question: Annotated[

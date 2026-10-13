@@ -128,6 +128,14 @@ def test_stdio_handshake_and_tool_registry():
             f"missing={EXPECTED_TOOLS - names} extra={names - EXPECTED_TOOLS}"
         )
 
+        # The real SDK serializes the decorator's title and ToolAnnotations hints.
+        by_name = {t["name"]: t for t in tools["result"]["tools"]}
+        assert by_name["jev_read_file"]["annotations"]["readOnlyHint"] is True
+        assert by_name["jev_train_lora"]["annotations"]["destructiveHint"] is True
+        assert all(t.get("title") for t in tools["result"]["tools"]), (
+            "every tool must carry a non-empty title"
+        )
+
         send({"jsonrpc": "2.0", "id": 3, "method": "prompts/list", "params": {}})
         prompts = read_rpc()
         prompt_names = {p["name"] for p in prompts["result"]["prompts"]}

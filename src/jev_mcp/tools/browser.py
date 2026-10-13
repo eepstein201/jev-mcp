@@ -2,6 +2,7 @@
 
 import json
 
+from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from jev_mcp.app import logger, mcp
@@ -9,7 +10,14 @@ from jev_mcp.app import logger, mcp
 
 @mcp.tool(
     name="jev_run_browser_agent",
+    title="Drive a browser toward a goal",
     description="Ultrafast Browser Agent: Automates complex web interactions (clicks, text entry, navigation) to achieve a given goal in a browser.",
+    annotations=ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=True,
+        idempotent_hint=False,
+        open_world_hint=True,
+    ),
 )
 def jev_run_browser_agent(
     url: str = Field(description="The starting URL for the browser agent."),

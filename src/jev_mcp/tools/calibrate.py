@@ -4,6 +4,7 @@ import json
 import math
 from typing import Any, Dict, List, Literal, Optional
 
+from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from jev_mcp import app
@@ -13,7 +14,14 @@ from jev_mcp.provider import ChoiceQuestion, NoulQuestion, QuestionType, ScoreQu
 
 @mcp.tool(
     name="jev_calibrate_threshold",
+    title="Calibrate a decision threshold",
     description="Evaluation Sandbox: Pass a dataset of Golden Edge Cases to mathematically map out the optimal Logit Confidence Threshold for production automation.",
+    annotations=ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+        open_world_hint=False,
+    ),
 )
 def jev_calibrate_threshold(
     dataset: List[Dict[str, Any]] = Field(
@@ -293,7 +301,14 @@ def jev_calibrate_threshold(
 
 @mcp.tool(
     name="jev_manage_temperature",
+    title="Read or set the scoring temperature",
     description="View, set, or reset the global MLX calibration temperature for Jev. This temperature globally affects all Jev evaluations, handoffs, and prompts.",
+    annotations=ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
 )
 def jev_manage_temperature(
     action: Literal["view", "set", "reset"], value: Optional[float] = None
