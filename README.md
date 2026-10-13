@@ -813,7 +813,24 @@ All you need to do is add the following JSON block to your client's specific con
 *   **Antigravity CLI & IDE:** Add it to your global config at `~/.gemini/config/mcp_config.json`.
 *   **Claude Desktop:** Add it to your config at `~/Library/Application Support/Claude/claude_desktop_config.json`.
 *   **Claude Code CLI:** Simply run the terminal command: `claude mcp add jev -- jev-mcp`
-*   **Opencode / Custom Frameworks:** Insert the block into your standard workspace `.mcp` or `mcp_servers.json` configuration file, depending on your runner's specific documentation.
+*   **OpenCode:** The installer writes this for you (`./jev_mac_manager.sh install`, when the file already exists). OpenCode's global config at `~/.config/opencode/opencode.json` uses its own shape, not the block above: the server goes under `mcp.servers`, with `command` as one array.
+
+    ```json
+    {
+      "$schema": "https://opencode.ai/config.json",
+      "mcp": {
+        "servers": {
+          "jev-mcp": {
+            "type": "local",
+            "command": ["/abs/path/to/jev-mcp/.venv/bin/python", "-m", "jev_mcp.server"]
+          }
+        }
+      }
+    }
+    ```
+
+    To write or remove it yourself: `.venv/bin/python -m jev_mcp.client_config link-opencode` (or `unlink-opencode`). Your other servers and settings are kept, and a file that is not valid JSON is left untouched.
+*   **Custom Frameworks:** Insert the block into your standard workspace `.mcp` or `mcp_servers.json` configuration file, depending on your runner's specific documentation.
 
 Once saved, restart your client. It will automatically perform an MCP handshake, discover all of Jev's tools (like `evaluate`), and inject them directly into your LLM's context!
 
