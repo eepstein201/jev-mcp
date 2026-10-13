@@ -55,6 +55,10 @@ dev = [
 # A `# type: ignore` that no longer suppresses anything hides the next real error on its line.
 warn_unused_ignores = true
 
+[[tool.mypy.overrides]]
+module = "jev_mcp.router_config"
+disallow_untyped_defs = true
+
 [tool.pytest.ini_options]
 # The eval tests import `tests.evals`, which needs the repo root on the path under a bare `pytest`.
 pythonpath = ["."]
