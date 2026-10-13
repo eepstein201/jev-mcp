@@ -1,4 +1,4 @@
-"""The read-file, compact, and scan-repo tools."""
+"""The jev_read_file, jev_compact_context, and jev_scan_repo tools."""
 
 import json
 import os
@@ -16,7 +16,7 @@ MAX_READ_CHARS = 1_048_576
 
 
 @mcp.tool(
-    name="read-file",
+    name="jev_read_file",
     description="File Context Filter: Reads a file locally and uses the Dual-Engine logit cascade to mathematically evaluate if the file is relevant to the current task. Prevents context bloat by blocking irrelevant files or filtering them down to only the relevant chunks.",
 )
 @json_errors
@@ -147,7 +147,7 @@ def jev_read_file(
 
 
 @mcp.tool(
-    name="compact",
+    name="jev_compact_context",
     description="Context Compressor: Slices massive state contexts into chunks and uses Confidence-Gated Logits to keep only the verbatim chunks strictly relevant to the user's goal. Eliminates hallucination risk of generative summarization.",
 )
 def jev_compact_context(
@@ -261,7 +261,7 @@ def jev_compact_context(
 
 
 @mcp.tool(
-    name="scan-repo",
+    name="jev_scan_repo",
     description="Repository Scanner: Walks a codebase, uses Tree-sitter to break code into semantic blocks (functions/classes), and mathematically filters them using the Dual-Engine cascade to find only the code relevant to the task.",
 )
 @json_errors
@@ -400,6 +400,6 @@ def jev_scan_repo(
 
     msg = f"Surgically scanned {len(target_files)} files. Extracted {len(kept_chunks)} highly relevant chunks. Dropped {dropped} noisy chunks."
     if was_truncated:
-        msg += " WARNING: Output was truncated to protect the context window. Refine task_description or use read-file."
+        msg += " WARNING: Output was truncated to protect the context window. Refine task_description or use jev_read_file."
 
     return json.dumps({"status": "SUCCESS", "message": msg, "content": safe_content})

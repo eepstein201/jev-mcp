@@ -1,4 +1,4 @@
-"""The manage-router, model-router, and handoff tools."""
+"""The jev_manage_router_config, jev_determine_best_model, and jev_agent_handoff tools."""
 
 import json
 from typing import Any, Dict, Literal, Optional
@@ -20,7 +20,7 @@ def _saved(message: str) -> str:
 
 
 @mcp.tool(
-    name="manage-router",
+    name="jev_manage_router_config",
     description="Interactive configuration manager for Jev's Model Router. Use this to view, add, or remove custom bucket models and exception rules. view_all also reports newer models available for each bucket; apply_updates switches to them; set_auto_update (enabled=true/false) records whether Jev should do that automatically at start-up.",
 )
 @json_errors
@@ -132,7 +132,7 @@ def jev_manage_router_config(
 
 
 @mcp.tool(
-    name="model-router",
+    name="jev_determine_best_model",
     description="Complexity Index Router: Analyzes a task description using the Hybrid local engine and custom rules to determine the mathematically optimal LLM model to use.",
 )
 @json_errors
@@ -221,7 +221,7 @@ def jev_determine_best_model(
 
 
 @mcp.tool(
-    name="handoff",
+    name="jev_agent_handoff",
     description="Uses multi-class logit routing to mathematically determine which specialized agent should take over the current task based on their full descriptions.",
 )
 @json_errors

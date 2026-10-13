@@ -46,7 +46,7 @@ class DaemonProvider(JevProvider):
     # Shared across instances (the cache key includes daemon pid + model + prompt),
     # so the empty-payload prior survives RoutingProvider being rebuilt per tool
     # call. Dict reads/writes are GIL-atomic; a rare duplicate prior fetch under
-    # the scan-repo thread pool is harmless.
+    # the jev_scan_repo thread pool is harmless.
     _prior_cache: dict[str, dict[str, float]] = {}
 
     def __init__(self, base_url: str | None = None) -> None:
@@ -280,7 +280,7 @@ class DaemonProvider(JevProvider):
         self, state: Any, questions: List[Any]
     ) -> dict[str, dict[str, Any]]:
         results = {}
-        # Re-read on every batch: the temperature tool and calibrate can change it
+        # Re-read on every batch: jev_manage_temperature and jev_calibrate_threshold can change it
         # while this provider (built once at server start) is still in use.
         self.fitted_temperature = _saved_temperature()
 

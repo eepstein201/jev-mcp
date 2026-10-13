@@ -18,10 +18,10 @@ def _error(message: str) -> str:
 
 
 @mcp.tool(
-    name="triage_email_content",
+    name="jev_triage_email",
     description=(
         "Evaluates an email using MLX and returns the recommended triage action.\n"
-        "If 'status' == 'needs_config', you must ask the user what labels they want to track and call configure_triage_labels."
+        "If 'status' == 'needs_config', you must ask the user what labels they want to track and call jev_configure_triage_labels."
     ),
 )
 def tool_triage_email_content(
@@ -38,7 +38,7 @@ def tool_triage_email_content(
 
 
 @mcp.tool(
-    name="configure_triage_labels",
+    name="jev_configure_triage_labels",
     description="Configures dynamic labels for a specific mailbox or context ID.",
 )
 def tool_configure_triage_labels(
@@ -53,7 +53,7 @@ def tool_configure_triage_labels(
 
 
 @mcp.tool(
-    name="setup_gas_workflow",
+    name="jev_setup_gas_workflow",
     description="Automated Setup Flow for Google Apps Script. webhook_url is required. The webhook key is never passed here: the deployed script reads it from the Script Property JEV_MCP_API_KEY, which the user sets once in Project Settings (see next_step in the result).",
 )
 def tool_setup_gas_workflow(

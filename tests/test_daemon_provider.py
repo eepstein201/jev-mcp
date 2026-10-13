@@ -418,7 +418,7 @@ FLAT_NOUL_PRIOR = {"true": math.log(0.5), "false": math.log(0.5)}
 def test_score_question_is_reported_by_label_like_the_fast_tier(
     mock_get_logprobs, mock_pid
 ):
-    # The model answers with an index; callers (model-router) read the label.
+    # The model answers with an index; callers (jev_determine_best_model) read the label.
     answer = {
         "0": math.log(0.05),
         "1": math.log(0.05),

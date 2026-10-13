@@ -1,4 +1,4 @@
-"""The run-browser-agent tool."""
+"""The jev_run_browser_agent tool."""
 
 import json
 
@@ -8,7 +8,7 @@ from jev_mcp.app import logger, mcp
 
 
 @mcp.tool(
-    name="run-browser-agent",
+    name="jev_run_browser_agent",
     description="Ultrafast Browser Agent: Automates complex web interactions (clicks, text entry, navigation) to achieve a given goal in a browser.",
 )
 def jev_run_browser_agent(

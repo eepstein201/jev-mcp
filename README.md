@@ -3,7 +3,7 @@
 Jev MCP is a high-performance, mathematically rigorous FastMCP server designed for macOS Apple Silicon. It replaces slow, error-prone generative API calls by wrapping two local AI models in a unified **Dual-Engine Architecture**.
 
 Instead of asking a cloud LLM to blindly generate text for routing or classification, Jev runs a hybrid local pipeline:
-1. **The Fast Engine (Kev 0.8B):** Instantly intercepts simple boolean, multiple-choice, and multi-agent routing logic. By utilizing a native pointer-head to extract raw mathematical probability distributions (logit extraction) without generating text, it subtracts statistical bias and yields calibrated confidence scores in roughly 40 ms per warm request (see [Performance Benchmarks](#-performance-benchmarks)) that you can threshold (use `calibrate`) to trade automation rate against precision.
+1. **The Fast Engine (Kev 0.8B):** Instantly intercepts simple boolean, multiple-choice, and multi-agent routing logic. By utilizing a native pointer-head to extract raw mathematical probability distributions (logit extraction) without generating text, it subtracts statistical bias and yields calibrated confidence scores in roughly 40 ms per warm request (see [Performance Benchmarks](#-performance-benchmarks)) that you can threshold (use `jev_calibrate_threshold`) to trade automation rate against precision.
 2. **The Smart Engine (Qwen2.5 7B):** When tasks require deep inferential reasoning, synthetic edge-case generation, or massive context compression, Jev dynamically escalates the request to a powerful 7B reasoning model running on Apple's `mlx_lm` C++ backend.
 
 By combining the strict mathematical safety of Kev with the reasoning depth of Qwen, Jev provides your downstream MCP clients (like Claude Desktop or Antigravity) with the ultimate local safety gate and dynamic task router.
@@ -168,7 +168,7 @@ Once installed, Jev exposes the following specialized tools to your MCP client (
 
 #### ⚡ Generate Data
 *   **Command:** `/jev-mcp:generate-data`
-*   **Underlying Tool:** `generate-data`
+*   **Underlying Tool:** `jev_generate_synthetic_dataset`
 *   **Natural Language Triggers:** *"Can you generate a synthetic dataset?"*, *"Help me create edge cases for..."*
 *   **What it does:** Automatically generates a Golden Edge-Case Dataset to test your classification prompts. It uses "Smart Auto-Tiering". If you have the `7B` model active, it generates the dataset locally for free. If the dual engine is heavily loaded, it gracefully falls back and engineers a prompt for your frontier model (like GPT-4o or Claude 3.5 Sonnet) to generate the data.
 *   **Arguments:**
@@ -199,10 +199,10 @@ Once installed, Jev exposes the following specialized tools to your MCP client (
 
 #### ⚡ Calibrate Threshold
 *   **Command:** `/jev-mcp:calibrate`
-*   **Underlying Tool:** `calibrate`
+*   **Underlying Tool:** `jev_calibrate_threshold`
 *   **Natural Language Triggers:** *"Can you calibrate my dataset?"*, *"Help me fit the threshold for..."*
 *   **What it does:** The core feature of Jev. It takes your dataset and evaluates every single case against the local daemon by extracting direct `get_logprobs` mathematical arrays. It subtracts statistical bias and returns a beautiful Markdown Confusion Matrix, showing exactly what Probability Threshold (`>0.95`) you need to achieve 100% Precision.
-*   **Which engine it calibrates:** `calibrate` scores through the same hybrid router as `evaluate` (Kev first, escalating to Qwen when Kev's confidence is below 0.85 or the state exceeds 4,000 tokens), so the report describes the cascade you run in production rather than a single engine. A threshold that automates decisions without ever catching a positive is marked `❌ Unusable`.
+*   **Which engine it calibrates:** `jev_calibrate_threshold` scores through the same hybrid router as `jev_evaluate_batch` (Kev first, escalating to Qwen when Kev's confidence is below 0.85 or the state exceeds 4,000 tokens), so the report describes the cascade you run in production rather than a single engine. A threshold that automates decisions without ever catching a positive is marked `❌ Unusable`.
 *   **Scope of the report:** one `question` per call, though any dataset row may carry its own `"question"` string to override the prompt for that row. When Platt scaling is applied and every class has at least 5 rows, the calibrated scores are 5-fold cross-validated (each row is scored by a model fitted without it); with fewer rows the model is fitted and scored on the same rows, and the report says so.
 *   **Arguments:**
     *   `dataset` *(array of objects)*: Array of dicts representing the edge cases: `[{"state": {...}, "expected": True/False/String}]`.
@@ -226,8 +226,8 @@ Once installed, Jev exposes the following specialized tools to your MCP client (
 ##### 🚨 Dealing with Overconfidence: Automated Platt Scaling
 Occasionally, larger RLHF-tuned models (like 7B) exhibit "Mode Collapse" or "Logit Sharpening." Because they are trained to be highly decisive assistants, they may assign >99% epistemic certainty to the argmax token, causing all standard thresholds to fail.
 
-`calibrate` features native **Automated Platt Scaling (Logistic Calibration)**. 
-By default (`apply_platt_scaling="auto"`), Jev actively monitors for extreme overconfidence. If triggered, it automatically extracts the raw log-odds (`log(P_A) - log(P_B)`) and uses `scikit-learn` to fit a Logistic Regression model against your expected dataset outcomes—mathematically squishing the >99% confidence scores back down to their true fractional uncertainty. The calibrated probabilities are used for the returned report only. The report also states the fitted temperature; `calibrate` writes it to your config only when you pass `save_to_config=True`.
+`jev_calibrate_threshold` features native **Automated Platt Scaling (Logistic Calibration)**. 
+By default (`apply_platt_scaling="auto"`), Jev actively monitors for extreme overconfidence. If triggered, it automatically extracts the raw log-odds (`log(P_A) - log(P_B)`) and uses `scikit-learn` to fit a Logistic Regression model against your expected dataset outcomes—mathematically squishing the >99% confidence scores back down to their true fractional uncertainty. The calibrated probabilities are used for the returned report only. The report also states the fitted temperature; `jev_calibrate_threshold` writes it to your config only when you pass `save_to_config=True`.
 
 *Note: The global calibration temperature for the **Qwen 7B Smart Engine** (`fitted_temperature` in `~/.jev/router_config.json`) is a separate setting that you view, set, or reset with the `/jev-mcp:temperature` command. Furthermore, if you want to permanently bake this calibrated statistical distribution directly into the model's weights, use the `/jev-mcp:train` command to instantly fine-tune a native LoRA adapter for the 7B model on the dataset you just used to calibrate.*
 
@@ -255,7 +255,7 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
 
 #### ⚡ Manage Temperature
 *   **Command:** `/jev-mcp:temperature`
-*   **Underlying Tool:** `temperature`
+*   **Underlying Tool:** `jev_manage_temperature`
 *   **Natural Language Triggers:** *"Change the global calibration temperature,"*, *"What is the current temperature?"*
 *   **What it does:** View, set, or reset the global calibration temperature for the **Qwen 7B Smart Engine**. (The Kev Fast Engine uses a native pointer-head and does not require temperature scaling).
 *   **Arguments:**
@@ -264,7 +264,7 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
 
 #### ⚡ Train LoRA
 *   **Command:** `/jev-mcp:train`
-*   **Underlying Tool:** `train`
+*   **Underlying Tool:** `jev_train_lora`
 *   **Natural Language Triggers:** *"Train a custom adapter on this data,"*, *"Fine-tune a local model..."*
 *   **What it does:** Starts a detached `mlx_lm.lora` run (`iters` iterations, default 500) on your Apple Silicon GPU and returns the process id, adapter directory (`~/.jev/adapters/<run_id>`), and log path. With `fuse=True` it then:
     1.  runs `mlx_lm fuse --dequantize` to write a full-precision copy of the base model with the adapter merged in (about 14 GB for a 7B model),
@@ -272,12 +272,12 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
     3.  quantizes to `Q4_K_M` with `llama-quantize` and leaves `fused-Q4_K_M.gguf` in the adapter directory.
 
     If `target_gguf_path` is set, the existing model is kept as `<target>.bak` (only the first time, so the backup is always the original), the new file takes its place, and the one launchd agent whose plist serves that file is restarted with `launchctl kickstart -k`. The other engine is not touched. Any failed step stops the run before the served model is changed.
-*   **Converter (automatic):** Homebrew's `llama.cpp` does not ship the converter, so each `fuse=True` run checks it first. `train` reads the commit from `llama-server --version` and compares it with the marker in `~/.jev/llama.cpp-src/.jev-llama-commit`. If the converter is missing or was fetched for a different commit (for example after `brew upgrade llama.cpp`), it downloads `convert_hf_to_gguf.py`, `conversion/` and `gguf-py/` from exactly that commit on GitHub and replaces the directory. This takes about 5 seconds and runs code from the llama.cpp repository on your machine.
+*   **Converter (automatic):** Homebrew's `llama.cpp` does not ship the converter, so each `fuse=True` run checks it first. `jev_train_lora` reads the commit from `llama-server --version` and compares it with the marker in `~/.jev/llama.cpp-src/.jev-llama-commit`. If the converter is missing or was fetched for a different commit (for example after `brew upgrade llama.cpp`), it downloads `convert_hf_to_gguf.py`, `conversion/` and `gguf-py/` from exactly that commit on GitHub and replaces the directory. This takes about 5 seconds and runs code from the llama.cpp repository on your machine.
     *   The result reports the commit in use as `converter_commit`.
-    *   If the download fails and an older converter is present, the run continues with it and logs a warning. If none is present, `train` returns `NOT_AVAILABLE`.
-    *   To manage the converter yourself, set `JEV_LLAMA_CPP_SRC` to your own directory; `train` then never downloads into it.
+    *   If the download fails and an older converter is present, the run continues with it and logs a warning. If none is present, `jev_train_lora` returns `NOT_AVAILABLE`.
+    *   To manage the converter yourself, set `JEV_LLAMA_CPP_SRC` to your own directory; `jev_train_lora` then never downloads into it.
     *   The converter runs in the project environment and needs `torch` (`>=2.14.1`, the first release `pip-audit` reports clean) and `sentencepiece` from the `engines` extra, and `transformers` through `mlx-lm`.
-*   **Restore:** `train` with `action="restore"` and `target_gguf_path` moves `<target>.bak` back over the fine-tuned model and restarts that agent.
+*   **Restore:** `jev_train_lora` with `action="restore"` and `target_gguf_path` moves `<target>.bak` back over the fine-tuned model and restarts that agent.
 *   **Measured on 2026-10-10 (Qwen2.5-7B, M2 Pro 16 GB, `mlx_lm` 0.31.3, llama.cpp `d81235049`):**
     *   The route works end to end. 120 iterations on 56 rows took about 3.5 minutes at 6.3 GB peak memory; fuse, convert and quantize took about 5 minutes more.
     *   The adapter did not improve the classifier. On 24 held-out rows from three unseen question groups, scored five times each, the stock model got 115/120 and the fine-tuned model 110/120; both ranked every row correctly (ROC AUC 1.0). The sample is small and the fused model was quantized from Q8_0, not from 16-bit floats, so treat this as "no evidence of benefit", not as proof of harm.
@@ -297,7 +297,7 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
 
 #### ⚡ Evaluate Batch
 *   **Command:** `/jev-mcp:evaluate`
-*   **Underlying Tool:** `evaluate`
+*   **Underlying Tool:** `jev_evaluate_batch`
 *   **Natural Language Triggers:** *"Can you evaluate my codebase?"*, *"Run the batch evaluation..."*
 *   **What it does:** The production evaluation endpoint. It takes a massive block of text (the "state") and evaluates a batch of questions against it in a single pass.
 *   **Arguments:**
@@ -336,7 +336,7 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
 
 #### ⚡ Optimize Prompt
 *   **Command:** `/jev-mcp:optimize-prompt`
-*   **Underlying Tool:** `optimize-prompt`
+*   **Underlying Tool:** `jev_optimize_prompt`
 *   **Natural Language Triggers:** *"Optimize this prompt,"*, *"Help me fix my false positives..."*
 *   **What it does:** Generates 5 variations of your prompt and scores them alongside the original.
     *   **With `dataset` (recommended):** every phrasing is scored on every labelled row and the one with the highest accuracy wins. Ties go to the phrasing that gave the correct answers more probability, and the original is kept unless a variation is strictly better. The result lists every phrasing's accuracy.
@@ -361,7 +361,7 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
 
 #### ⚡ Explain Decision
 *   **Command:** `/jev-mcp:explain-decision`
-*   **Underlying Tool:** `explain-decision`
+*   **Underlying Tool:** `jev_explain_decision`
 *   **Natural Language Triggers:** *"Why did Jev score this true?"*, *"Explain the decision for..."*
 *   **What it does:** Since Jev uses pure math to classify, it doesn't generate a text rationale by default. If a user needs an explanation for an audit log, this tool extracts the exact verbatim sentence from the context state that triggered the classification.
 *   **Arguments:**
@@ -375,7 +375,7 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
 
 #### ⚡ Model Router
 *   **Command:** `/jev-mcp:model-router`
-*   **Underlying Tool:** `model-router`
+*   **Underlying Tool:** `jev_determine_best_model`
 *   **Natural Language Triggers:** *"What model should I use for this?"*, *"Calculate the complexity index..."*
 *   **What it does:** Complexity Index Router. Analyzes a task description using the Kev Logit Engine and custom configuration rules to mathematically determine the optimal upstream LLM model (e.g., Sonnet vs Haiku).
 *   **Arguments:**
@@ -384,7 +384,7 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
 
 #### ⚡ Agent Handoff
 *   **Command:** `/jev-mcp:handoff`
-*   **Underlying Tool:** `handoff`
+*   **Underlying Tool:** `jev_agent_handoff`
 *   **Natural Language Triggers:** *"Which agent should handle this?"*, *"Route this task to the best specialist..."*
 *   **What it does:** Uses multi-class logit routing to mathematically determine which specialized agent should take over the current task based on their full descriptions.
 *   **Arguments:**
@@ -393,13 +393,13 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
 
 #### ⚡ Router Configuration
 *   **Command:** `/jev-mcp:manage-router`
-*   **Underlying Tool:** `manage-router`
+*   **Underlying Tool:** `jev_manage_router_config`
 *   **Natural Language Triggers:** *"Show me my router rules,"*, *"Route tasks mentioning SQL to Opus..."*
 *   **What it does:** View, add, or remove custom rule overrides for the Multi-Class Logit Router, and keep the bucket models current.
 *   **Keeping models current:**
     *   **At start-up** the server fetches the public model catalog at `models.dev/api.json` in the background (at most once a day) and caches a reduced copy in `~/.jev/model_catalog.json`. It is a plain download of a public file; nothing about you or your prompts is sent. Set `JEV_SKIP_MODEL_SYNC=1` to turn it off.
     *   **Your models always win.** A bucket is only ever moved to a newer model in the *same family* (for example `claude-sonnet-5` to `claude-sonnet-5-5`), never to a different tier. Previews, voice models and dated snapshots are not suggested. Models the catalog does not recognise are left alone.
-    *   **Alerts.** When a newer model exists, `view_all` lists it under `available_model_updates`, and `model-router` mentions it once per session. The notice tells your agent to ask you whether to switch (`apply_updates`).
+    *   **Alerts.** When a newer model exists, `view_all` lists it under `available_model_updates`, and `jev_determine_best_model` mentions it once per session. The notice tells your agent to ask you whether to switch (`apply_updates`).
     *   **Automatic updates are opt-in.** The first notice also asks whether Jev should do this automatically from now on; the answer is saved with `set_auto_update`. If you say yes, buckets are updated at each start-up. If you say no, you keep getting alerts and nothing changes without you.
     *   **New installs** get the newest model of each Anthropic tier, cheapest first, from the catalog (or a built-in set when offline).
     *   Covers Anthropic, OpenAI and Google models. The Anthropic results were checked by hand; OpenAI and Google suggestions come from the same rule and were only spot-checked.
@@ -414,7 +414,7 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
 
 #### ⚡ Read File (Gated Context)
 *   **Command:** `/jev-mcp:read-file`
-*   **Underlying Tool:** `read-file`
+*   **Underlying Tool:** `jev_read_file`
 *   **Natural Language Triggers:** *"Read this file,"*, *"Check if this file has the database logic..."*
 *   **What it does:** Uses the Dual-Engine logit cascade to mathematically evaluate if a file is actually relevant to your task *before* loading it into your context window. If filtering by chunk, it uses **Tree-sitter AST parsing** to semantically extract intact functions/classes (preventing arbitrary string-split errors), and then returns only the verbatim logic blocks you need, eliminating context bloat and hallucination. **(Note: It uses a 0.50 final acceptance threshold to prevent false negatives on edge cases after escalation).**
 *   **Path Security:** Every request is validated with `is_safe_path` before any content is read. Only paths under the server's working directory (unless that is your home directory or above it), `~/.jev`, the repo's `models/` directory, the system temp directory, or a root listed in `JEV_ALLOWED_ROOTS` (see the environment table) are allowed, and credential locations (e.g. `~/.ssh`, `~/.aws`, `.env`) stay blocked inside all of them.
@@ -427,7 +427,7 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
 
 #### ⚡ Scan Repository (AST Multi-File RAG)
 *   **Command:** `/jev-mcp:scan-repo`
-*   **Underlying Tool:** `scan-repo`
+*   **Underlying Tool:** `jev_scan_repo`
 *   **Natural Language Triggers:** *"Scan the repo for...", "Find the auth logic across all files..."*
 *   **What it does:** Performs Repository-Scale Context Filtering. Uses a Coarse-to-Fine Surgical Architecture: It maps the directory and leverages the Smart Engine to logically isolate target files. It then uses Tree-sitter to parse the code into syntax-aware semantic chunks (functions/classes) and runs them through the Dual-Engine cascade. It returns a surgically precise block of code containing only the logic relevant to your task, entirely eliminating file-bloat and arbitrary chunk-splitting errors.
 *   **Path Security:** The scanned directory is validated with `is_safe_path` up front. A directory outside the allowed roots (working directory, `~/.jev`, the temp directory, `JEV_ALLOWED_ROOTS`), or one that resolves to a sensitive system or credential location, is blocked before any file is walked.
@@ -437,7 +437,7 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
 
 #### ⚡ Compact Context
 *   **Command:** `/jev-mcp:compact`
-*   **Underlying Tool:** `compact`
+*   **Underlying Tool:** `jev_compact_context`
 *   **Natural Language Triggers:** *"Compress my context,"*, *"Slice my state down to only the relevant parts..."*
 *   **What it does:** Context Compressor. Slices massive state contexts into chunks and uses Confidence-Gated Logits to keep only the verbatim chunks strictly relevant to the user's goal. Eliminates hallucination risk of generative summarization.
 *   **Arguments:**
@@ -449,9 +449,9 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
 
 
 #### ⚡ Triage Email
-*   **Tools:** `triage_email_content` and `configure_triage_labels` (tool-only; there are no slash-command prompts for these).
-*   **What it does:** Classifies an incoming email into one of the labels you configured for a mailbox. `triage_email_content(context_id, subject, sender, body)` asks the local engines whether the email requires action, whether it is important, and which label fits, then returns a decision plus a suggested routing. Bodies over 2000 characters are first compacted with `compact` (relevance threshold 0.3); if compaction fails or keeps nothing, the original body is used.
-*   **First use:** if no labels exist for the `context_id`, the tool returns `{"status": "needs_config", ...}`. Call `configure_triage_labels(context_id, labels)` to save them (stored in `~/.jev-mcp/triage_configs.json`).
+*   **Tools:** `jev_triage_email` and `jev_configure_triage_labels` (tool-only; there are no slash-command prompts for these).
+*   **What it does:** Classifies an incoming email into one of the labels you configured for a mailbox. `jev_triage_email(context_id, subject, sender, body)` asks the local engines whether the email requires action, whether it is important, and which label fits, then returns a decision plus a suggested routing. Bodies over 2000 characters are first compacted with `jev_compact_context` (relevance threshold 0.3); if compaction fails or keeps nothing, the original body is used.
+*   **First use:** if no labels exist for the `context_id`, the tool returns `{"status": "needs_config", ...}`. Call `jev_configure_triage_labels(context_id, labels)` to save them (stored in `~/.jev-mcp/triage_configs.json`).
 *   **Routing rules** (`core.decide_routing`, defaults `action_threshold=0.8`, `important_threshold=0.8`; override with `JEV_TRIAGE_ACTION_THRESHOLD` / `JEV_TRIAGE_IMPORTANT_THRESHOLD`, each a number from 0 to 1):
     *   `requires_action` score above `0.8` → `Action`, routed to `escalate_to_slack`.
     *   `requires_action` score between `0.3` and `0.8`, `is_important` score above `0.8`, or bucket confidence below `0.6` → `Review`, routed to `hitl_slack_block`. The importance rule is what stops an important email that needs no action (an FYI from your boss, a critical alert) from being filed away silently; the Review card has a "Mark Important" button for it. It applies only when the email is not already an `Action`.
@@ -463,16 +463,40 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
 *   **Webhook:** `jev_mcp.email_triage.api:app` is a FastAPI app exposing `POST /api/v1/triage/email` (body: `context_id`, `subject`, `sender`, `body`, `id`). It returns the triage result plus a Slack Block Kit `slack_payload` for escalations and human-in-the-loop reviews, and answers `400` when the mailbox has no labels yet.
 *   **Launcher:** `jev-mcp serve-webhook [--host 127.0.0.1] [--port 8090]`. It binds to localhost unless you pass `--host`, and refuses to start when no credential is configured. It serves plain HTTP, so put it behind a TLS-terminating proxy or tunnel before exposing it.
 *   **Authentication:** every request needs `Authorization: Bearer <token>`. The token is accepted if it equals `JEV_MCP_API_KEY`, or if it is a valid JWT. JWTs are verified against the identity provider's published keys (`JEV_MCP_JWKS_URL`, RS256/ES256) or, when that is unset, a shared secret (`JEV_MCP_JWT_SECRET`, HS256; at least 32 bytes, a shorter one rejects every JWT). A JWT must carry an unexpired `exp`. With `JEV_MCP_JWKS_URL`, `JEV_MCP_JWT_AUDIENCE` is required and every JWT is rejected until it is set, because an identity provider signs tokens for other apps too; with a shared secret it is enforced when set, as is `JEV_MCP_JWT_ISSUER`. Fields are length-limited (body 1,000,000 characters); a longer one returns `422`. A request body over 8 MiB, declared or streamed, returns `413` before authentication is checked. Any failure returns `401` and the reason is written to the server log only.
-*   **Google Apps Script:** `setup_gas_workflow(webhook_url)` (also available as `jev-mcp setup-gas --webhook-url ...`) deploys `examples/gas_triage.js` to your Google account with your webhook URL filled in. The `jev-mcp setup-gas` command prompts for the URL if you don't pass it. The MCP tool never prompts: it requires `webhook_url`. **The webhook key is never uploaded or typed into setup.** The script reads it at runtime from the Script Property `JEV_MCP_API_KEY`, so it is not in the script source or its version history. After setup, open the script, go to Project Settings, Script Properties, and add `JEV_MCP_API_KEY` with the same value as the server's `JEV_MCP_API_KEY`. Until it is set the script sends no `Authorization` header and the webhook answers `401`.
+*   **Google Apps Script:** `jev_setup_gas_workflow(webhook_url)` (also available as `jev-mcp setup-gas --webhook-url ...`) deploys `examples/gas_triage.js` to your Google account with your webhook URL filled in. The `jev-mcp setup-gas` command prompts for the URL if you don't pass it. The MCP tool never prompts: it requires `webhook_url`. **The webhook key is never uploaded or typed into setup.** The script reads it at runtime from the Script Property `JEV_MCP_API_KEY`, so it is not in the script source or its version history. After setup, open the script, go to Project Settings, Script Properties, and add `JEV_MCP_API_KEY` with the same value as the server's `JEV_MCP_API_KEY`. Until it is set the script sends no `Authorization` header and the webhook answers `401`.
 
 #### ⚡ Run Browser Agent
-*   **Tool:** `run-browser-agent(url, goal, max_steps=20)`.
+*   **Tool:** `jev_run_browser_agent(url, goal, max_steps=20)`.
 *   **What it does:** Runs the `jev-ultrafast` browser agent in a background tab of your Chrome, starting at `url`, until the goal is `done`, the agent is `blocked`, or `max_steps` actions have run (`step_limit`). Each step the local engines choose one operation and one target from the elements actually observed on the page (`ultrafast_adapter.local_choose`); text for a field is written by the smart engine. Nothing is sent to a hosted API.
 *   **Returns:** `status`, `result`, `final_url`, `elapsed_ms`, and `steps` (the action, element label, and any typed text for each step).
 *   **Requirements and limits:** the `jev-ultrafast` submodule (`git submodule update --init`; found next to the package, or at `JEV_ULTRAFAST_PATH`), Chrome reachable through `browser-harness`, and both daemons running. Only `http://` and `https://` URLs are opened. An answer that is not one of the offered choices stops the run without acting. Page content is untrusted input to the models, so do not point the agent at a site where a wrong click or typed value would be costly.
 
+### Renamed tools
+
+**Breaking change (2026-10-12):** every tool is now named `jev_<verb>_<noun>`. The old names are gone and have no aliases, so update any client allow-list, hook or script that names a tool (for example `mcp__jev-mcp__compact` becomes `mcp__jev-mcp__jev_compact_context`). The slash commands (`/jev-mcp:read-file` and the rest) keep their names.
+
+| Old | New |
+|---|---|
+| `read-file` | `jev_read_file` |
+| `compact` | `jev_compact_context` |
+| `scan-repo` | `jev_scan_repo` |
+| `evaluate` | `jev_evaluate_batch` |
+| `explain-decision` | `jev_explain_decision` |
+| `generate-data` | `jev_generate_synthetic_dataset` |
+| `calibrate` | `jev_calibrate_threshold` |
+| `temperature` | `jev_manage_temperature` |
+| `manage-router` | `jev_manage_router_config` |
+| `model-router` | `jev_determine_best_model` |
+| `handoff` | `jev_agent_handoff` |
+| `optimize-prompt` | `jev_optimize_prompt` |
+| `train` | `jev_train_lora` |
+| `run-browser-agent` | `jev_run_browser_agent` |
+| `triage_email_content` | `jev_triage_email` |
+| `configure_triage_labels` | `jev_configure_triage_labels` |
+| `setup_gas_workflow` | `jev_setup_gas_workflow` |
+
 ### 3. First-Class Response Types (Question Schemas)
-Jev MCP strongly enforces structured response types to guarantee deterministic mathematics. When defining questions for `evaluate`, you must use one of the following three first-class schemas:
+Jev MCP strongly enforces structured response types to guarantee deterministic mathematics. When defining questions for `jev_evaluate_batch`, you must use one of the following three first-class schemas:
 
 #### 1. Noul (`noul`)
 The standard boolean classification. Noul (a portmanteau of "No/Null/True/False") is used for binary claims. By default, Jev evaluates the mathematical probability of `True` versus `False`.
@@ -542,7 +566,7 @@ Jev MCP fundamentally changes the speed and reliability of local AI decision-mak
 - Dataset caveats: the 80 non-legacy rows were written for this benchmark in a single pass by an LLM and may be easier than real traffic (frontier models score 100%); treat the figures as a regression and smoke benchmark, and extend `golden_dataset.json` with real, hard cases before drawing conclusions.
 - The "Standard Text Prompting" and "Cloud APIs" rows above are illustrative ranges that this repository does not measure.
 
-**Calibration on the same 88 rows** (run with the `calibrate` threshold logic pointed at each engine; in-sample unless noted)
+**Calibration on the same 88 rows** (run with the `jev_calibrate_threshold` threshold logic pointed at each engine; in-sample unless noted)
 
 | Engine | Threshold | Automation | Precision | Recall | False positives |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -716,7 +740,7 @@ The easiest way to interact with Jev MCP locally. It wraps the core bash script.
 *   **`make eval`**: Benchmarks both engines on `tests/golden_dataset.json` (warm-up pass, then a timed pass; daemons must be running).
 *   **`make eval-browser`**: Runs each of the 8 browser-agent cases in `tests/evals/` 4 times and prints a pass rate per case. It drives a real browser against pages served on `127.0.0.1:8791`; daemons must be running. It measures and always exits 0.
 *   **`make eval-triage`**: Triages every email in a labelled JSONL dataset and prints the agreement with its expected routing, then each disagreement with its two scores. The default dataset is the 30 synthetic emails in `tests/evals/triage_synthetic.jsonl`; `DATASET=<path>` uses another. Daemons must be running.
-*   **`make train`**: Informational only; training is triggered through the `train` MCP tool.
+*   **`make train`**: Informational only; training is triggered through the `jev_train_lora` MCP tool.
 
 ### 2. The Core Engine Manager (`jev_mac_manager.sh`)
 The underlying bash script that handles hardware memory, virtual environments, and macOS `launchd` plist generation.
@@ -786,8 +810,8 @@ Ports come from `JEV_FAST_PORT` (default `8080`) and `JEV_SMART_PORT` (default `
 | `JEV_MCP_JWT_AUDIENCE` / `JEV_MCP_JWT_ISSUER` | none | `email_triage/auth.py` | When set, a webhook JWT must carry this `aud` / `iss`. The audience is required with `JEV_MCP_JWKS_URL`. |
 | `JEV_TRIAGE_ACTION_THRESHOLD` | `0.8` | `email_triage/core.py` | `requires_action` score above which an email is an `Action` (escalated). A number from 0 to 1; anything else is ignored with a logged warning. |
 | `JEV_TRIAGE_IMPORTANT_THRESHOLD` | `0.8` | `email_triage/core.py` | `is_important` score above which an email that is not an `Action` goes to `Review` instead of being archived. Same format. Raise it if Review fills with mail you would have filed; lower it if important mail is being archived. |
-| `JEV_ALLOWED_ROOTS` | none | `security.py` | Extra directories `read-file`, `scan-repo` and `train` may touch, separated by `:`. The server's working directory, `~/.jev` and the temp directory are always allowed; credential locations stay blocked inside every root; `/` is ignored. The working directory is **not** a root when it is your home directory or above it, because a server started there would expose all of home: start the server in a project, or list your projects here. The repo's `models/` directory is always allowed, so `train` targets work wherever the server starts. |
-| `JEV_ULTRAFAST_PATH` | `<repo>/jev-ultrafast` | `browser_agent.py` | Location of the `jev-ultrafast` checkout used by `run-browser-agent`. |
+| `JEV_ALLOWED_ROOTS` | none | `security.py` | Extra directories `jev_read_file`, `jev_scan_repo` and `jev_train_lora` may touch, separated by `:`. The server's working directory, `~/.jev` and the temp directory are always allowed; credential locations stay blocked inside every root; `/` is ignored. The working directory is **not** a root when it is your home directory or above it, because a server started there would expose all of home: start the server in a project, or list your projects here. The repo's `models/` directory is always allowed, so `jev_train_lora` targets work wherever the server starts. |
+| `JEV_ULTRAFAST_PATH` | `<repo>/jev-ultrafast` | `browser_agent.py` | Location of the `jev-ultrafast` checkout used by `jev_run_browser_agent`. |
 
 ---
 
@@ -835,7 +859,7 @@ All you need to do is add the following JSON block to your client's specific con
     To write or remove it yourself: `.venv/bin/python -m jev_mcp.client_config link-opencode` (or `unlink-opencode`). Your other servers and settings are kept, and a file that is not valid JSON is left untouched.
 *   **Custom Frameworks:** Insert the block into your standard workspace `.mcp` or `mcp_servers.json` configuration file, depending on your runner's specific documentation.
 
-Once saved, restart your client. It will automatically perform an MCP handshake, discover all of Jev's tools (like `evaluate`), and inject them directly into your LLM's context!
+Once saved, restart your client. It will automatically perform an MCP handshake, discover all of Jev's tools (like `jev_evaluate_batch`), and inject them directly into your LLM's context!
 
 ## 🤖 For LLMs and Autonomous Agents
 
@@ -844,33 +868,33 @@ If you are an AI agent reading this README, welcome! You have been granted acces
 
 ### 1. The Tools at Your Disposal
 You have access to the following FastMCP tools via the `jev-mcp` server:
-- **`generate-data`**: Uses Smart Auto-Tiering. If the local 7B model is active, it securely generates datasets locally. Otherwise, it returns an engineered prompt for YOU (the frontier model) to synthesize the data.
-- **`calibrate`**: Passes datasets to the background llama-server daemon to extract mathematically proven logit scores via DCPMI. Returns a Markdown Confusion Matrix.
-- **`optimize-prompt`**: Features a recursive internal linter utilizing constrained decoding. Automatically fixes prompts that fail calibration.
-- **`evaluate`** & **`explain-decision`**: For manual testing and extracting post-hoc rationales.
-- **`scan-repo`**, **`read-file`**, & **`compact`**: Protected by Context Armor. Use these to dynamically evaluate massive codebases or summarize state.
+- **`jev_generate_synthetic_dataset`**: Uses Smart Auto-Tiering. If the local 7B model is active, it securely generates datasets locally. Otherwise, it returns an engineered prompt for YOU (the frontier model) to synthesize the data.
+- **`jev_calibrate_threshold`**: Passes datasets to the background llama-server daemon to extract mathematically proven logit scores via DCPMI. Returns a Markdown Confusion Matrix.
+- **`jev_optimize_prompt`**: Features a recursive internal linter utilizing constrained decoding. Automatically fixes prompts that fail calibration.
+- **`jev_evaluate_batch`** & **`jev_explain_decision`**: For manual testing and extracting post-hoc rationales.
+- **`jev_scan_repo`**, **`jev_read_file`**, & **`jev_compact_context`**: Protected by Context Armor. Use these to dynamically evaluate massive codebases or summarize state.
 
 ### 2. Context Armor & Data Handling
-If you call `scan-repo` or `read-file` and receive a message containing `[TRUNCATED TO PROTECT CONTEXT WINDOW]`, **DO NOT** attempt to call the exact same tool again. The output was intentionally truncated to prevent your client from crashing. Instead, react by:
+If you call `jev_scan_repo` or `jev_read_file` and receive a message containing `[TRUNCATED TO PROTECT CONTEXT WINDOW]`, **DO NOT** attempt to call the exact same tool again. The output was intentionally truncated to prevent your client from crashing. Instead, react by:
 1. Narrowing your `task_description` to be more specific.
-2. Using `read-file` with `filter_by_chunk=true` to isolate only highly relevant functions rather than scanning entire architectures.
+2. Using `jev_read_file` with `filter_by_chunk=true` to isolate only highly relevant functions rather than scanning entire architectures.
 
 ### 3. Standard Operating Procedure (SOP)
 When the user asks you to evaluate a rule or prompt for Jev, execute this loop:
-1. **Generate**: Call `generate-data`. 
-2. **Calibrate**: Feed the dataset into `calibrate`. Analyze the Confusion Matrix.
-3. **Optimize**: If False Positives exist below a reasonable threshold, call `optimize-prompt` to rewrite the prompt constraints. Repeat until perfect.
+1. **Generate**: Call `jev_generate_synthetic_dataset`. 
+2. **Calibrate**: Feed the dataset into `jev_calibrate_threshold`. Analyze the Confusion Matrix.
+3. **Optimize**: If False Positives exist below a reasonable threshold, call `jev_optimize_prompt` to rewrite the prompt constraints. Repeat until perfect.
 
 
 ### 4. The Confidence Gate Pattern
-When writing code for the user, proactively suggest using `evaluate` to generate a mathematical confidence score *before* the primary LLM executes a high-risk action (like deleting files, sending emails, or triggering payments). Use Jev as the final, deterministic safety check.
+When writing code for the user, proactively suggest using `jev_evaluate_batch` to generate a mathematical confidence score *before* the primary LLM executes a high-risk action (like deleting files, sending emails, or triggering payments). Use Jev as the final, deterministic safety check.
 </agent_instructions>
 
-### 5. Dynamic Agentic Model Routing (`model-router`)
+### 5. Dynamic Agentic Model Routing (`jev_determine_best_model`)
 If your client (like Claude Code CLI, Antigravity CLI, or OpenCode) supports changing models mid-flight, Jev provides an interactive MCP tool that mathematically recommends the optimal model based on the complexity of the current task.
 
 - **Context-Aware Routing**: It analyzes `estimated_tokens`. If a task touches a massive context (e.g., >100k tokens), it actively warns the client to ensure large-context flags are set and recommends 1M+ token models to prevent context collapse.
 - **Evidence-Based Hybrid Evaluation**: Jev evaluates prompt complexity using a dynamic cascade. It doesn't blindly trust the fast Kev engine; if the fast model shows <85% confidence on complexity heuristics, it seamlessly escalates the evaluation to the 7B model.
-- **Interactive Configuration (`manage-router`)**: Because most CLIs don't natively expose their internal model lists to external scripts, Jev maintains a persistent `~/.jev/router_config.json`. You can interact with this config entirely via your LLM. Simply type in chat: *"Route tasks touching > 10 files to Opus,"* and the LLM will use this tool to persist the exception rule natively in Jev!
+- **Interactive Configuration (`jev_manage_router_config`)**: Because most CLIs don't natively expose their internal model lists to external scripts, Jev maintains a persistent `~/.jev/router_config.json`. You can interact with this config entirely via your LLM. Simply type in chat: *"Route tasks touching > 10 files to Opus,"* and the LLM will use this tool to persist the exception rule natively in Jev!
 
 

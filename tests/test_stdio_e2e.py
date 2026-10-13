@@ -18,24 +18,24 @@ import time
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 EXPECTED_TOOLS = {
-    "evaluate",
-    "optimize-prompt",
-    "calibrate",
-    "explain-decision",
-    "generate-data",
-    "manage-router",
-    "model-router",
-    "handoff",
-    "train",
-    "temperature",
-    "read-file",
-    "compact",
-    "scan-repo",
+    "jev_evaluate_batch",
+    "jev_optimize_prompt",
+    "jev_calibrate_threshold",
+    "jev_explain_decision",
+    "jev_generate_synthetic_dataset",
+    "jev_manage_router_config",
+    "jev_determine_best_model",
+    "jev_agent_handoff",
+    "jev_train_lora",
+    "jev_manage_temperature",
+    "jev_read_file",
+    "jev_compact_context",
+    "jev_scan_repo",
     # Registered since the tool modules moved ahead of the __main__ guard.
-    "run-browser-agent",
-    "triage_email_content",
-    "configure_triage_labels",
-    "setup_gas_workflow",
+    "jev_run_browser_agent",
+    "jev_triage_email",
+    "jev_configure_triage_labels",
+    "jev_setup_gas_workflow",
 }
 
 
