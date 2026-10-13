@@ -123,19 +123,17 @@ def link_mcp(path, root_key):
         'env': {'PYTHONPATH': abs_dir + '/src'}
     }
     
-    if 'opencode' in path.lower():
-        data[root_key]['jev-mcp']['type'] = 'local'
-        data[root_key]['jev-mcp']['enabled'] = True
-        
     with open(path, 'w') as f:
         json.dump(data, f, indent=2)
     print(f'Successfully patched {path}')
 
 link_mcp('~/.gemini/config/mcp_config.json', 'mcpServers')
-link_mcp('~/.config/opencode/opencode.json', 'mcp')
 link_mcp('~/Library/Application Support/Claude/claude_desktop_config.json', 'mcpServers')
 link_mcp('~/.claude.json', 'mcpServers')
 "
+    # OpenCode has its own shape (mcp.servers); a config that cannot be read is left untouched.
+    "$PWD/.venv/bin/python" -m jev_mcp.client_config link-opencode --python "$PWD/.venv/bin/python" \
+        || log_warn "OpenCode config was not updated."
 }
 
 setup_launchd_plist() {
@@ -496,6 +494,12 @@ case "$COMMAND" in
         rm -f "$PLIST_FAST_PATH"
         rm -f "$PLIST_SMART_PATH"
         
+        # Remove Opencode Configuration (needs the virtual environment, so it runs before its removal)
+        log_info "Removing Opencode integration..."
+        if [ -x .venv/bin/python ]; then
+            .venv/bin/python -m jev_mcp.client_config unlink-opencode \
+                || log_warn "OpenCode config was not updated."
+        fi
 
         log_info "Removing virtual environment..."
         rm -rf .venv
@@ -503,20 +507,6 @@ case "$COMMAND" in
         log_info "Removing local model adapters and training artifacts (~/.jev)..."
         rm -rf ~/.jev
         
-        # Remove Opencode Configuration
-        log_info "Removing Opencode integration..."
-        python3 -c '
-import json, os
-config_path = os.path.expanduser("~/.config/opencode/opencode.json")
-try:
-    if os.path.exists(config_path):
-        with open(config_path, "r") as f: config = json.load(f)
-        if "mcp" in config and "jev" in config["mcp"]:
-            del config["mcp"]["jev-mcp"]
-            with open(config_path, "w") as f: json.dump(config, f, indent=2)
-except Exception: pass
-' 2>/dev/null || true
-
         log_info "Cleaning up logs..."
         rm -rf "$LOG_DIR" || true
         

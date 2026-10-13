@@ -56,7 +56,23 @@ class DecisionPreflightLinter:
             "unclear",
             "none of the above",
             "not applicable",
+            "not sure",
+            "unsure",
+            "can't tell",
+            "cannot tell",
+            "cannot determine",
+            "don't know",
+            "uncertain",
         }
+        self.fallback_pattern = re.compile(
+            r"\b(?:"
+            + "|".join(
+                re.escape(term)
+                for term in sorted(self.fallback_terms, key=len, reverse=True)
+            )
+            + r")\b",
+            re.IGNORECASE,
+        )
         self.subjective_adjectives = re.compile(
             r"^(bad|poor|fair|okay|good|great|excellent|terrible|awesome|acceptable)$",
             re.IGNORECASE,
@@ -138,11 +154,8 @@ class DecisionPreflightLinter:
 
         # 6. Missing Fallback Option
         has_fallback = any(
-            any(
-                term in opt.get("id", "").lower()
-                or term in opt.get("description", "").lower()
-                for term in self.fallback_terms
-            )
+            self.fallback_pattern.search(opt.get("id", ""))
+            or self.fallback_pattern.search(opt.get("description", ""))
             for opt in options
         )
         if not has_fallback and len(options) < MAX_OPTIONS:
