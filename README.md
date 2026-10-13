@@ -496,6 +496,30 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
 | `configure_triage_labels` | `jev_configure_triage_labels` |
 | `setup_gas_workflow` | `jev_setup_gas_workflow` |
 
+### Tool titles and behaviour hints
+
+Every tool carries a human-readable `title` and MCP `annotations` (behaviour hints) in `tools/list`, so a client can gate what it runs without calling anything. **Read-only** means the code path saves no config, writes no file and launches no process. **Destructive** means it can discard something that existed (routing rules, a mailbox's labels, a served model file, whatever a website does in response to a click). **Idempotent** means repeating the call reaches the same state. **Open-world** means it reaches beyond this machine (model downloads, a live website, Google's API).
+
+| Tool | Title | Read-only | Destructive | Idempotent | Open-world |
+|---|---|---|---|---|---|
+| `jev_read_file` | Read a file, filtered for relevance | yes | no | yes | no |
+| `jev_scan_repo` | Scan a repository for relevant code | yes | no | yes | no |
+| `jev_compact_context` | Compact context to what is relevant | yes | no | yes | no |
+| `jev_evaluate_batch` | Score questions against a state | yes | no | yes | no |
+| `jev_explain_decision` | Explain a scored decision | yes | no | yes | no |
+| `jev_generate_synthetic_dataset` | Generate a labelled test dataset | no | no | no | no |
+| `jev_optimize_prompt` | Find a clearer wording for a question | yes | no | no | no |
+| `jev_determine_best_model` | Recommend a model for a task | yes | no | yes | no |
+| `jev_agent_handoff` | Choose an agent to hand a task to | yes | no | yes | no |
+| `jev_triage_email` | Triage an email | yes | no | yes | no |
+| `jev_calibrate_threshold` | Calibrate a decision threshold | no | no | no | no |
+| `jev_manage_temperature` | Read or set the scoring temperature | no | no | yes | no |
+| `jev_manage_router_config` | View or change model routing | no | yes | no | no |
+| `jev_configure_triage_labels` | Set a mailbox's triage labels | no | yes | yes | no |
+| `jev_train_lora` | Fine-tune or restore a local model | no | yes | no | yes |
+| `jev_run_browser_agent` | Drive a browser toward a goal | no | yes | no | yes |
+| `jev_setup_gas_workflow` | Deploy the Gmail triage script | no | no | no | yes |
+
 ### 3. First-Class Response Types (Question Schemas)
 Jev MCP strongly enforces structured response types to guarantee deterministic mathematics. When defining questions for `jev_evaluate_batch`, you must use one of the following three first-class schemas:
 
