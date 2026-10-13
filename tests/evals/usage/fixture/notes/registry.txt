@@ -1,0 +1,6 @@
+Model registry (maintained by the platform team)
+
+model: fixture-small   owner: Ines     context_window: 8k
+model: fixture-medium  owner: Marcus   context_window: 32k
+model: fixture-large   owner: Priya    context_window: 128k
+model: fixture-xl      owner: Tomasz   context_window: 200k

@@ -1,4 +1,4 @@
-.PHONY: install test lint clean format format-check audit check update start stop hybrid train eval eval-browser eval-triage
+.PHONY: install test lint clean format format-check audit check update start stop hybrid train eval eval-browser eval-triage eval-usage
 
 install:
 	@echo "Installing Jev MCP Environment..."
@@ -52,6 +52,23 @@ DATASET ?= tests/evals/triage_synthetic.jsonl
 eval-triage:
 	@echo "Triaging every email in $(DATASET) and reporting agreement with its expected routing (daemons must be running)..."
 	bash -c "source .venv/bin/activate && python -m tests.evals.triage_eval --dataset $(DATASET)"
+
+# The runner is the mcp-builder skill's scripts/evaluation.py. It needs `anthropic` and an `mcp` 1.x client,
+# so it runs from its own venv (see tests/evals/usage/README.md), not the project's.
+USAGE_EVAL_RUNNER ?=
+USAGE_EVAL_PYTHON ?= $(HOME)/.jev/usage-eval-venv/bin/python
+USAGE_EVAL_MODEL ?= claude-sonnet-5-5
+USAGE_EVAL_HOME = /tmp/jev-usage-eval-home
+
+eval-usage:
+	@test -n "$(USAGE_EVAL_RUNNER)" || { echo "Set USAGE_EVAL_RUNNER to the mcp-builder skill's scripts/evaluation.py"; exit 1; }
+	@test -n "$$ANTHROPIC_API_KEY" || { echo "Set ANTHROPIC_API_KEY: the runner calls the Anthropic API"; exit 1; }
+	@echo "Asking $(USAGE_EVAL_MODEL) the 10 usage questions against a seeded home (daemons must be running; calls the Anthropic API)..."
+	.venv/bin/python tests/evals/usage/seed_home.py
+	$(USAGE_EVAL_PYTHON) tests/evals/usage/run_eval.py $(USAGE_EVAL_RUNNER) -t stdio -m $(USAGE_EVAL_MODEL) \
+		-c $(CURDIR)/.venv/bin/jev-mcp \
+		-e HOME=$(USAGE_EVAL_HOME) JEV_ALLOWED_ROOTS=$(USAGE_EVAL_HOME)/fixture PYTHONPATH=$(CURDIR)/src \
+		tests/evals/usage/evaluation.xml
 
 clean:
 	@echo "Completely uninstalling Jev MCP artifacts..."
