@@ -30,6 +30,22 @@ GOOD_PROBE = {
 }
 
 
+def _healthy_model(url):
+    """The model a healthy engine on this port serves: its tier's model in the active
+    profile, which is what `make start` launches. With the repo profile table present
+    and no active marker that resolves to the default profile, so a fixture daemon
+    serving anything else would be (correctly) reported as a mismatch. Without a
+    profile any file does - nothing is expected then."""
+    from jev_mcp import engine_profiles
+
+    profile = engine_profiles.active_profile()
+    if profile is None:
+        return "/models/Served-Q4.gguf"
+    port = url.rsplit(":", 1)[1].split("/", 1)[0]
+    spec = profile.smart if port == "8081" else profile.fast
+    return f"/models/{spec.filename}"
+
+
 @pytest.fixture
 def urlopen_ok():
     """The engines answer /health, /props and a scoring probe at the HTTP boundary."""
@@ -37,7 +53,7 @@ def urlopen_ok():
     def _urlopen(request, timeout=None):
         url = request.full_url
         if url.endswith("/props"):
-            body = {"model_path": "/models/Served-Q4.gguf"}
+            body = {"model_path": _healthy_model(url)}
         elif url.endswith("/health"):
             body = {"status": "ok"}
         elif url.endswith("/v1/systemone"):

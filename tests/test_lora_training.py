@@ -257,8 +257,11 @@ def test_train_with_fuse_refuses_to_start_without_the_converter(mock_popen, home
 
 @patch("subprocess.Popen")
 def test_train_with_fuse_writes_the_dequantize_convert_quantize_script(
-    mock_popen, home, converter
+    mock_popen, home, converter, monkeypatch
 ):
+    # The target must be the active profile's smart model (the repo table makes the
+    # default profile active), so name this target as that model.
+    _use_profile(monkeypatch)
     mock_popen.return_value = MagicMock(pid=7)
     target = home / "qwen.gguf"
     target.write_text("original")
