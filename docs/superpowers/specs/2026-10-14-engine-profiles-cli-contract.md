@@ -196,9 +196,11 @@ If every check passes, it writes the marker atomically and prints
    then `shasum -a 256` and compare the result with `<tier>_sha256`. On a match, run
    `mv` to the final path. On any failure, run `rm -f` on the `.part` file and exit 1;
    no `.gguf` is left behind.
-4. Run `check_llama_cpp`. Stop all three agents and remove the single-daemon plist
-   (as today). Run the `plist` subcommand for each tier, using the current
-   labels, logs and ports, then start both agents.
+4. Run `check_llama_cpp`. Run the `plist` subcommand for each tier, using the
+   current labels, logs and ports, **before** stopping anything: launchd reads a
+   plist only at bootstrap, so a failed `plist` leaves the running daemons
+   untouched (amended after the P1-b review). Then stop all three agents, remove
+   the single-daemon plist (as today) and start both agents.
 5. Run `activate <profile> --fast-port $JEV_FAST_PORT --smart-port $JEV_SMART_PORT`.
    A non-zero exit makes `make start` exit non-zero.
 
