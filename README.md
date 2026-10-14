@@ -256,7 +256,7 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
 #### ⚡ Manage Temperature
 *   **Command:** `/jev-mcp:temperature`
 *   **Underlying Tool:** `jev_manage_temperature`
-*   **Natural Language Triggers:** *"Change the global calibration temperature,"*, *"What is the current temperature?"*
+*   **Natural Language Triggers:** *"Change the calibration temperature,"*, *"What is the current temperature?"*
 *   **What it does:** View, set, or reset the calibration temperature of the model the **Smart Engine** is running (each model keeps its own). (The Kev Fast Engine uses a native pointer-head and does not require temperature scaling).
 *   **Arguments:**
     *   `action` *(string)*: Must be `"view"`, `"set"`, or `"reset"`.

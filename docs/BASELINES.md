@@ -38,7 +38,10 @@ System-wide counters (whole machine, not per-engine; before → after the warm r
 | GPU "In use system memory" (ioreg) | 383,205,376 B (365.5 MiB) | 9,235,922,944 B (8808.1 MiB) | +8,852,717,568 B |
 | pageouts / swapouts (vm_stat) | 969,704 / 3,780,969 | 970,051 / 4,025,589 | +347 / +244,620 |
 
-The warm 12k-token prompt eval moved ~8.3 GiB into wired + GPU-attached system memory and
+The idle column already carries ~7.65 GiB of swap in use from load before this lane ran —
+the deltas, not the absolutes, are the baseline signal.
+
+The warm 12k-token prompt eval moved ~8.2 GiB into wired + GPU-attached system memory and
 drove ~244k swapouts on this 16 GiB host. Startup buffer sizes (model/KV/compute MiB) were
 absent: this llama-server build or verbosity prints no such lines in the daemon logs.
 
