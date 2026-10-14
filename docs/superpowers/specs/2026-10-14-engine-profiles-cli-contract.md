@@ -197,10 +197,12 @@ If every check passes, it writes the marker atomically and prints
    `mv` to the final path. On any failure, run `rm -f` on the `.part` file and exit 1;
    no `.gguf` is left behind.
 4. Run `check_llama_cpp`. Run the `plist` subcommand for each tier, using the
-   current labels, logs and ports, **before** stopping anything: launchd reads a
-   plist only at bootstrap, so a failed `plist` leaves the running daemons
-   untouched (amended after the P1-b review). Then stop all three agents, remove
-   the single-daemon plist (as today) and start both agents.
+   current labels, logs and ports, with `--out <live plist path>.new`, **before**
+   stopping anything. A failed `plist` removes any `.new` files and leaves the
+   running daemons and live plists untouched. Then stop all three agents; `stop`
+   still reads the OLD live plists, so the old ports are the ones freed. Remove
+   the single-daemon plist (as today), `mv` each `.new` onto its live path, and
+   start both agents. (Amended twice after the P1-b reviews.)
 5. Run `activate <profile> --fast-port $JEV_FAST_PORT --smart-port $JEV_SMART_PORT`.
    A non-zero exit makes `make start` exit non-zero.
 
