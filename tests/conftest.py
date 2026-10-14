@@ -87,6 +87,18 @@ def isolated_jev_files(tmp_path, monkeypatch):
     )
 
 
+SMART_MODEL_ID = "/models/Qwen2.5-7B-Instruct-Q4_K_M.gguf"
+
+
+@pytest.fixture
+def smart_model(monkeypatch):
+    """The smart engine has answered, so it reports its model (as it does after a first evaluation)."""
+    from jev_mcp import app
+
+    monkeypatch.setattr(app.provider.smart_provider, "current_model_id", SMART_MODEL_ID)
+    return SMART_MODEL_ID
+
+
 # Tests that genuinely need real HTTP (they talk to a server they start themselves).
 REAL_HTTP_MODULES = {
     "test_browser_agent_e2e",

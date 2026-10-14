@@ -223,7 +223,7 @@ def jev_determine_best_model(
             "reasoning": f"Task complexity scored {score}/4. Routed to {recommended_model}.",
             "probabilities": probs,
         }
-        notice = app.get_temp_notice()
+        notice = app.get_temp_notice(provider.smart_provider)
         if notice:
             res_dict["_system_notice"] = notice
         model_notice = app.get_model_notice()
@@ -270,7 +270,7 @@ def jev_agent_handoff(task_description: str, available_agents: Dict[str, str]) -
         "recommended_agent": best_agent,
         "probabilities": probs,
     }
-    notice = app.get_temp_notice()
+    notice = app.get_temp_notice(provider.smart_provider)
     if notice:
         res_dict["_system_notice"] = notice
 
