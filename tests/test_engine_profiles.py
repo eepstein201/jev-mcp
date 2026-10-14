@@ -1,6 +1,7 @@
 """Tests for jev_mcp.engine_profiles: validation, resolver, plist generator and CLI."""
 
 import dataclasses
+import http.client
 import io
 import json
 import os
@@ -426,6 +427,29 @@ def test_invalid_toml_is_a_profile_error(tmp_path):
         ep.load_profiles(write_config(tmp_path, "[models\n"))
 
 
+def test_deeply_nested_toml_is_a_profile_error(tmp_path):
+    depth = 200_000
+    with pytest.raises(ep.ProfileError, match="TOML") as info:
+        ep.load_profiles(write_config(tmp_path, "a = " + "[" * depth + "]" * depth))
+    assert "\n" not in str(info.value)
+
+
+def test_any_decode_failure_is_a_profile_error(tmp_path, monkeypatch):
+    def broken(_handle):
+        raise RecursionError("maximum recursion depth exceeded")
+
+    monkeypatch.setattr(ep.tomllib, "load", broken)
+    with pytest.raises(ep.ProfileError, match="TOML"):
+        ep.load_profiles(write_config(tmp_path))
+
+
+def test_non_utf8_toml_is_a_profile_error(tmp_path):
+    path = tmp_path / "profiles.toml"
+    path.write_bytes(b"\xff\xfe = 1\n")
+    with pytest.raises(ep.ProfileError, match="TOML"):
+        ep.load_profiles(str(path))
+
+
 def test_missing_config_file_is_a_profile_error(tmp_path):
     with pytest.raises(ep.ProfileError, match="cannot read"):
         ep.load_profiles(str(tmp_path / "nope.toml"))
@@ -608,6 +632,33 @@ def test_plist_works_with_the_managers_awk_port_reader(tmp_path):
 
 
 @pytest.mark.parametrize(
+    "field, value",
+    [
+        ("name", "--x y"),
+        ("name", "Upper"),
+        ("name", "a\nb"),
+        ("tier", "medium"),
+        ("reasoning", "bogus"),
+        ("style", "fancy"),
+        ("repo", "../.."),
+        ("repo", "noslash"),
+        ("revision", "main"),
+        ("filename", "../x.gguf"),
+        ("sha256", "z" * 64),
+        ("parallel", 0),
+        ("parallel", True),
+        ("parallel", 99),
+        ("ctx_per_slot", 1),
+        ("ctx_per_slot", "16384"),
+    ],
+)
+def test_plist_revalidates_a_hand_built_spec(field, value):
+    hostile = dataclasses.replace(MODEL, **{field: value})
+    with pytest.raises(ep.ProfileError):
+        ep.launchd_plist(hostile, **PLIST_KW)
+
+
+@pytest.mark.parametrize(
     "override",
     [
         {"port": 0},
@@ -728,6 +779,13 @@ def test_resolve_unknown_or_hostile_profile_is_exit_2(tmp_path, capsys, name):
     assert err.startswith("error:") and err.count("\n") == 1
 
 
+def test_resolve_deeply_nested_toml_is_exit_2_with_one_line(tmp_path, capsys):
+    depth = 200_000
+    config = write_config(tmp_path, "a = " + "[" * depth + "]" * depth)
+    code, out, err = run_main(capsys, "resolve", "default", "--config", config)
+    assert (code, out) == (2, "") and err.count("\n") == 1 and "Traceback" not in err
+
+
 def test_resolve_bad_toml_is_exit_2(tmp_path, capsys):
     code, out, err = run_main(
         capsys, "resolve", "default", "--config", write_config(tmp_path, "[x")
@@ -746,6 +804,56 @@ def test_resolve_rejects_control_characters_in_paths(tmp_path, capsys):
         str(tmp_path / "bad\nmodels"),
     )
     assert (code, out) == (2, "") and err.count("\n") == 1
+
+
+@pytest.mark.parametrize("char", ["\x85", "\x80", "\x9f", "\x7f", "\x00"])
+def test_control_characters_incl_c1_are_rejected_in_paths(tmp_path, capsys, char):
+    code, out, err = run_main(
+        capsys,
+        "resolve",
+        "default",
+        "--config",
+        write_config(tmp_path),
+        "--models-dir",
+        str(tmp_path / f"bad{char}models"),
+    )
+    assert (code, out) == (2, "") and err.count("\n") == 1
+
+
+def test_plist_rejects_c1_control_characters_in_paths():
+    with pytest.raises(ep.ProfileError, match="control"):
+        ep.launchd_plist(MODEL, **{**PLIST_KW, "workdir": "/work\x85dir"})
+
+
+def test_non_control_unicode_in_paths_is_accepted(tmp_path, capsys):
+    code, out, _ = run_main(
+        capsys,
+        "resolve",
+        "default",
+        "--config",
+        write_config(tmp_path),
+        "--models-dir",
+        str(tmp_path / "modèles"),
+    )
+    assert code == 0 and "modèles" in out
+
+
+@pytest.mark.parametrize("command", ["resolve", "plist", "activate"])
+def test_empty_models_dir_is_exit_2(tmp_path, capsys, daemons, command):
+    if command == "resolve":
+        argv = ["resolve", "default", "--config", write_config(tmp_path)]
+    elif command == "plist":
+        argv = plist_argv(tmp_path, write_config(tmp_path))
+    else:
+        argv = activate_argv(tmp_path, tmp_path / "m")
+    if "--models-dir" in argv:
+        argv[argv.index("--models-dir") + 1] = ""
+    else:
+        argv += ["--models-dir", ""]
+    code, out, err = run_main(capsys, *argv)
+    assert (code, out) == (2, "") and "models-dir" in err and err.count("\n") == 1
+    assert daemons.requests == []
+    assert not (tmp_path / "out.plist").exists() and not (tmp_path / "m").exists()
 
 
 def test_resolve_the_real_table_with_default_paths(capsys):
@@ -908,8 +1016,8 @@ class FakeResponse:
         self.status = status
         self._body = body if isinstance(body, bytes) else json.dumps(body).encode()
 
-    def read(self) -> bytes:
-        return self._body
+    def read(self, size: int = -1) -> bytes:
+        return self._body if size < 0 else self._body[:size]
 
     def __enter__(self):
         return self
@@ -1213,6 +1321,59 @@ def test_activate_matches_a_served_path_through_a_symlinked_models_dir(
             200, props_for(profile.smart, tmp_path / "models", model_path=served_smart)
         )
     ]
+    code, *_ = run_main(capsys, *activate_argv(tmp_path, tmp_path / "active_profile"))
+    assert code == 0
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        http.client.IncompleteRead(b"par"),
+        http.client.BadStatusLine("garbage"),
+        http.client.RemoteDisconnected("closed"),
+    ],
+)
+def test_activate_retries_http_client_errors(tmp_path, capsys, daemons, failure):
+    profile = healthy(daemons, tmp_path)
+    good = FakeResponse(200, props_for(profile.fast, tmp_path / "models"))
+    daemons.script[8080] = [failure, good]
+    code, *_ = run_main(capsys, *activate_argv(tmp_path, tmp_path / "active_profile"))
+    assert code == 0 and daemons.clock.sleeps == [1]  # type: ignore[attr-defined]
+
+
+def test_activate_persistent_http_client_error_is_one_line_exit_1(
+    tmp_path, capsys, daemons
+):
+    healthy(daemons, tmp_path)
+    daemons.script[8081] = [http.client.IncompleteRead(b"x")]
+    marker = tmp_path / "active_profile"
+    code, out, err = run_main(
+        capsys, *activate_argv(tmp_path, marker, "--timeout", "3")
+    )
+    assert (code, out) == (1, "") and err.count("\n") == 1 and "smart" in err
+    assert "Traceback" not in err and not marker.exists()
+
+
+def test_activate_oversized_props_body_counts_as_a_failed_read(
+    tmp_path, capsys, daemons
+):
+    healthy(daemons, tmp_path)
+    huge = b" " * (ep._MAX_PROPS_BYTES + 1)
+    daemons.script[8080] = [FakeResponse(200, huge)]
+    marker = tmp_path / "active_profile"
+    code, out, err = run_main(
+        capsys, *activate_argv(tmp_path, marker, "--timeout", "2")
+    )
+    assert (code, out) == (1, "") and err.count("\n") == 1 and "larger than" in err
+    assert not marker.exists()
+
+
+def test_activate_props_body_at_the_cap_is_still_parsed(tmp_path, capsys, daemons):
+    profile = healthy(daemons, tmp_path)
+    body = json.dumps(props_for(profile.fast, tmp_path / "models")).encode()
+    padded = body[:-1] + b" " * (ep._MAX_PROPS_BYTES - len(body)) + b"}"
+    assert len(padded) == ep._MAX_PROPS_BYTES
+    daemons.script[8080] = [FakeResponse(200, padded)]
     code, *_ = run_main(capsys, *activate_argv(tmp_path, tmp_path / "active_profile"))
     assert code == 0
 

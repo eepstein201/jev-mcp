@@ -9,6 +9,7 @@ filename is matched with `fullmatch`, and unknown keys are rejected at every lev
 
 import argparse
 import contextlib
+import http.client
 import json
 import logging
 import math
@@ -41,7 +42,7 @@ _FILENAME_RE = re.compile(r"[\w.-]+\.gguf", re.ASCII)
 _REVISION_RE = re.compile(r"[0-9a-f]{40}")
 _SHA256_RE = re.compile(r"[0-9a-f]{64}")
 _LABEL_RE = re.compile(r"[A-Za-z0-9._-]+")
-_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
+_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f-\x9f]")  # C0, DEL and C1
 
 _TIERS = ("fast", "smart")
 _REASONING = ("auto", "off", "on")
@@ -63,6 +64,7 @@ _PARALLEL_RANGE = (1, 16)
 _CTX_PER_SLOT_RANGE = (512, 131072)
 _MAX_PORT = 65535
 _MAX_MARKER_BYTES = 256
+_MAX_PROPS_BYTES = 1 << 20
 _MAX_SLEEP_IDLE_SECONDS = 7 * 24 * 3600
 _LOG_VERBOSITY = (
     "3"  # puts the model, KV and compute buffer lines in the daemon startup log
@@ -102,6 +104,7 @@ class ModelSpec:
             raise ProfileError(
                 f"models.{self.name}.repo: expected 'owner/name', got {_show(self.repo)}"
             )
+        _check_no_control(models_dir, "models dir")
         root = os.path.realpath(models_dir)
         candidate = os.path.join(os.path.abspath(models_dir), repo_name, self.filename)
         resolved = os.path.realpath(candidate)
@@ -210,24 +213,28 @@ def _check_repo(value: object, where: str) -> str:
     return repo
 
 
+def _validate_model(model: ModelSpec) -> ModelSpec:
+    """Check every field of a spec (parsed or hand-built); returns it unchanged."""
+    where = f"models.{_check_name(model.name, 'models')}"
+    _check_enum(model.tier, _TIERS, f"{where}.tier")
+    _check_repo(model.repo, f"{where}.repo")
+    _check_match(model.revision, _REVISION_RE, f"{where}.revision")
+    _check_match(model.filename, _FILENAME_RE, f"{where}.filename")
+    _check_match(model.sha256, _SHA256_RE, f"{where}.sha256")
+    _check_int(model.parallel, _PARALLEL_RANGE, f"{where}.parallel")
+    _check_int(model.ctx_per_slot, _CTX_PER_SLOT_RANGE, f"{where}.ctx_per_slot")
+    _check_enum(model.reasoning, _REASONING, f"{where}.reasoning")
+    _check_enum(model.style, _STYLES, f"{where}.style")
+    return model
+
+
 def _parse_model(name: object, raw: object) -> ModelSpec:
     model_name = _check_name(name, "models")
     where = f"models.{model_name}"
     table = _check_table(raw, where)
     _check_keys(table, where, _MODEL_KEYS)
-    return ModelSpec(
-        name=model_name,
-        tier=_check_enum(table["tier"], _TIERS, f"{where}.tier"),
-        repo=_check_repo(table["repo"], f"{where}.repo"),
-        revision=_check_match(table["revision"], _REVISION_RE, f"{where}.revision"),
-        filename=_check_match(table["filename"], _FILENAME_RE, f"{where}.filename"),
-        sha256=_check_match(table["sha256"], _SHA256_RE, f"{where}.sha256"),
-        parallel=_check_int(table["parallel"], _PARALLEL_RANGE, f"{where}.parallel"),
-        ctx_per_slot=_check_int(
-            table["ctx_per_slot"], _CTX_PER_SLOT_RANGE, f"{where}.ctx_per_slot"
-        ),
-        reasoning=_check_enum(table["reasoning"], _REASONING, f"{where}.reasoning"),
-        style=_check_enum(table["style"], _STYLES, f"{where}.style"),
+    return _validate_model(
+        ModelSpec(name=model_name, **{key: table[key] for key in _MODEL_KEYS})
     )
 
 
@@ -277,8 +284,11 @@ def load_profiles(path: str = DEFAULT_CONFIG_PATH) -> ProfileTable:
             data = tomllib.load(handle)
     except OSError as exc:
         raise ProfileError(f"cannot read {path!r}: {exc.strerror or exc}") from exc
-    except (tomllib.TOMLDecodeError, UnicodeDecodeError) as exc:
-        raise ProfileError(f"invalid TOML in {path!r}: {exc}") from exc
+    except (
+        ValueError,
+        RecursionError,
+    ) as exc:  # TOMLDecodeError, bad UTF-8, absurd nesting
+        raise ProfileError(f"invalid TOML in {path!r}: {_oneline(exc)}") from exc
     _check_keys(data, "", ("models", "profiles"))
     raw_models = _check_table(data["models"], "models")
     models = {name: _parse_model(name, raw) for name, raw in raw_models.items()}
@@ -342,6 +352,7 @@ def launchd_plist(
     workdir: str,
     sleep_idle_seconds: int | None = None,
 ) -> bytes:
+    _validate_model(model)
     _check_port(port, "port")
     _check_match(label, _LABEL_RE, "label")
     log_path = _check_abs_path(log_path, "log path")
@@ -440,6 +451,8 @@ def _oneline(value: object) -> str:
 
 def _select_profile(args: argparse.Namespace, name: str) -> tuple[Profile, str]:
     config = DEFAULT_CONFIG_PATH if args.config is None else args.config
+    if args.models_dir == "":
+        raise ProfileError("--models-dir: must not be empty")
     models_dir = os.path.abspath(
         DEFAULT_MODELS_DIR if args.models_dir is None else args.models_dir
     )
@@ -523,16 +536,20 @@ def _poll_props(tier: str, port: int, timeout: float) -> dict[str, Any]:
             with urllib.request.urlopen(
                 url, timeout=_PROPS_REQUEST_TIMEOUT_S
             ) as response:
-                if response.status == 200:
-                    return _parse_props(tier, port, response.read())
-                reason = f"HTTP {response.status}"
+                if response.status != 200:
+                    reason = f"HTTP {response.status}"
+                else:
+                    body = response.read(_MAX_PROPS_BYTES + 1)
+                    if len(body) <= _MAX_PROPS_BYTES:
+                        return _parse_props(tier, port, body)
+                    reason = f"response larger than {_MAX_PROPS_BYTES} bytes"
         except urllib.error.HTTPError as exc:
             if exc.code != 503:
                 raise _RuntimeFailure(
                     [f"{tier} /props on port {port}: HTTP {exc.code}"]
                 ) from exc
             reason = "model still loading (HTTP 503)"
-        except OSError as exc:
+        except (OSError, http.client.HTTPException) as exc:
             reason = f"unreachable ({_oneline(exc)})"
         if _monotonic() >= deadline:
             raise _RuntimeFailure(
