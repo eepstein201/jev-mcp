@@ -108,13 +108,14 @@ def test_jev_optimize_prompt_unknown_type_and_json_cleaning(
     assert json.loads(res_str).get("error") == "No variations evaluated."
 
 
-def test_calibrate_threshold_score_question_and_else_branch():
+def test_calibrate_threshold_score_question_and_else_branch(smart_model):
     q = ScoreQuestion(key="sq", prompt="score?", labels=["1", "2"])
     states = [{"state": i, "expected": "1"} for i in range(11)]
 
     with patch("jev_mcp.app.provider") as mock_provider:
         results = [{"sq": {"probabilities": {"2": 1.0}}}] + [{"sq": {}}] * 10
-        mock_provider.evaluate_dataset.return_value = results
+        mock_provider.smart_provider.evaluate_dataset.return_value = results
+        mock_provider.smart_provider.current_model_id = smart_model
 
         res_str = server.jev_calibrate_threshold(dataset=states, question=q)
     assert "Safe" in res_str or "Unusable" in res_str
@@ -251,12 +252,12 @@ def test_coverage_472(mock_urlopen):
     assert "Optimizer Generator Failed" in res
 
 
-def test_coverage_633():
+def test_coverage_633(smart_model):
     # Threshold table across a mixed automation distribution (FP + TPs + abstains).
     q = ScoreQuestion(key="sq", prompt="score?", labels=["1", "2"])
     states = [{"state": i, "expected": "1"} for i in range(100)]
     states[0]["expected"] = "2"
-    with patch.object(server.provider, "evaluate_dataset") as mock_eval:
+    with patch.object(server.provider.smart_provider, "evaluate_dataset") as mock_eval:
         results = [{"probabilities": {"1": 0.9}}]  # the false positive
         results += [{"probabilities": {"1": 0.9}} for _ in range(4)]  # true positives
         results += [{"probabilities": {"1": 0.1}} for _ in range(95)]  # abstains

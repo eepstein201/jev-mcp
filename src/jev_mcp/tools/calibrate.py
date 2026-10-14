@@ -7,9 +7,14 @@ from typing import Any, Dict, List, Literal, Optional
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
-from jev_mcp import app
+from jev_mcp import app, router_config
 from jev_mcp.app import PLATT_CV_FOLDS, logger, mcp
 from jev_mcp.provider import ChoiceQuestion, NoulQuestion, QuestionType, ScoreQuestion
+
+NO_MODEL_REPORTED = (
+    "The smart engine did not report a model, so the temperature cannot be tied to one. "
+    "Start the daemons with `make start` and run an evaluation first."
+)
 
 
 def _rebuild_question(question: QuestionType) -> QuestionType:
@@ -187,8 +192,10 @@ def _apply_calibrated_probabilities(results, valid_indices, calibrated_probs, cl
         results[idx]["probabilities"][keys[1]] = calibrated_probs[j][idx_0]
 
 
-def _fit_platt_scaling(results, dataset, q_obj):
+def _fit_platt_scaling(results, dataset, q_obj, current_temperature):
     """Fit Platt scaling against the raw log-odds of the dataset and rescore the rows.
+
+    current_temperature is the one the scores were produced under.
 
     Returns (applied, cross_validated, fitted_temperature, table); the table is
     None when the rows did not qualify for a fit.
@@ -218,9 +225,6 @@ def _fit_platt_scaling(results, dataset, q_obj):
         # produced under the current temperature, so dividing it by the slope composes them.
         slope = float(clf.fit(X_arr, y_arr).coef_[0][0])
         if slope > 0:
-            current_temperature = float(
-                app.load_router_config().get("fitted_temperature", 1.0)
-            )
             fitted_temperature = round(current_temperature / slope, 3)
 
         # Update the results inline
@@ -235,7 +239,13 @@ def _fit_platt_scaling(results, dataset, q_obj):
 
 
 def _maybe_apply_platt(
-    results, dataset, q_obj, apply_platt_scaling, auto_rate_99, final_table
+    results,
+    dataset,
+    q_obj,
+    apply_platt_scaling,
+    auto_rate_99,
+    final_table,
+    current_temperature,
 ):
     """Run Platt scaling when asked (or, on auto, when the model is overconfident).
 
@@ -254,7 +264,7 @@ def _maybe_apply_platt(
                 platt_cross_validated,
                 fitted_temperature,
                 platt_table,
-            ) = _fit_platt_scaling(results, dataset, q_obj)
+            ) = _fit_platt_scaling(results, dataset, q_obj, current_temperature)
         except ImportError:
             logger.warning(
                 "scikit-learn is required for Platt Scaling. Skipping calibration."
@@ -286,30 +296,27 @@ def _platt_notes(platt_applied, platt_cross_validated, auto_rate_99):
     return notes
 
 
-def _temperature_section(fitted_temperature, save_to_config):
+def _temperature_section(fitted_temperature, save_to_config, model_id, model_size):
     """The fitted-temperature report section, persisting the temperature first when asked."""
     temperature_saved = False
     section = ""
     if fitted_temperature is not None:
         if save_to_config is True:
-            from datetime import datetime
-
             try:
                 app.save_router_config(
-                    {
-                        **app.load_router_config(),
-                        "fitted_temperature": fitted_temperature,
-                        "temperature_updated_at": datetime.now().strftime(
-                            "%Y-%m-%d %H:%M:%S"
-                        ),
-                    }
+                    router_config.with_temperature(
+                        app.load_router_config(),
+                        model_id,
+                        fitted_temperature,
+                        model_size,
+                    )
                 )
                 temperature_saved = True
             except Exception as e:
                 logger.error(f"Could not save the fitted temperature: {e}")
         section += f"\n\n### 🌡️ Fitted Temperature: {fitted_temperature}\n"
         if temperature_saved:
-            section += "Saved to the router config. It now applies to every question the smart engine scores; undo it with the `jev_manage_temperature` tool (`action='reset'`)."
+            section += f"Saved to the router config for `{router_config.model_key(model_id)}`. It now applies to every question that model scores on the smart engine; undo it with the `jev_manage_temperature` tool (`action='reset'`)."
         else:
             section += "Not saved. It was fitted on this dataset only and would change the scores of every question, so apply it deliberately: re-run with `save_to_config=True`, or use the `jev_manage_temperature` tool."
     return temperature_saved, section
@@ -337,14 +344,27 @@ def jev_calibrate_threshold(
     ),
     save_to_config: bool = Field(
         default=False,
-        description="Save the fitted temperature to ~/.jev/router_config.json. It is global: it changes the scores of every question, not only this one.",
+        description="Save the fitted temperature to ~/.jev/router_config.json for the smart model that scored the dataset. It changes the scores of every question that model scores, not only this one.",
     ),
 ) -> str:
     logger.info(f"Starting Threshold Calibration for {len(dataset)} rows...")
 
     try:
         q_obj = _rebuild_question(question)
-        results = app.provider.evaluate_dataset(dataset, q_obj)
+        # The smart engine alone: through the router, the fast engine's scores would
+        # contaminate a temperature that is stored for the smart model.
+        results = app.provider.smart_provider.evaluate_dataset(dataset, q_obj)
+        model_id, model_size = app.reported_smart_model()
+        if not model_id:
+            return json.dumps(
+                {
+                    "status": "ERROR",
+                    "message": f"Calibration Failed: {NO_MODEL_REPORTED}",
+                }
+            )
+        current_temperature = router_config.get_temperature(
+            app.load_router_config(), model_id, model_size
+        )
     except Exception as e:
         return json.dumps(
             {"status": "ERROR", "message": f"Calibration Failed: {str(e)}"}
@@ -355,18 +375,26 @@ def jev_calibrate_threshold(
 
     platt_applied, platt_cross_validated, fitted_temperature, final_table = (
         _maybe_apply_platt(
-            results, dataset, q_obj, apply_platt_scaling, auto_rate_99, initial_table
+            results,
+            dataset,
+            q_obj,
+            apply_platt_scaling,
+            auto_rate_99,
+            initial_table,
+            current_temperature,
         )
     )
     final_table += _platt_notes(platt_applied, platt_cross_validated, auto_rate_99)
     temperature_saved, temperature_section = _temperature_section(
-        fitted_temperature, save_to_config
+        fitted_temperature, save_to_config, model_id, model_size
     )
     final_table += temperature_section
 
     return json.dumps(
         {
             "status": "CALIBRATION_COMPLETE",
+            "model": router_config.model_key(model_id),
+            "calibrated": _is_calibrated(model_id, model_size),
             "dataset_size": len(dataset),
             "fitted_temperature": fitted_temperature,
             "temperature_saved": temperature_saved,
@@ -376,10 +404,49 @@ def jev_calibrate_threshold(
     )
 
 
+def _is_calibrated(model_id: str, model_size: int | None) -> bool:
+    """Whether the router config now holds a temperature for this model (read back after any save)."""
+    try:
+        return router_config.is_calibrated(
+            app.load_router_config(), model_id, model_size
+        )
+    except Exception as e:
+        logger.warning(f"Could not read the router config: {e}")
+        return False
+
+
+def _temperature_result(
+    config, model_id: str, model_size: int | None, message: str | None = None
+) -> str:
+    entry = router_config.temperature_entry(config, model_id, model_size)
+    result = {
+        "status": "SUCCESS",
+        "model": router_config.model_key(model_id),
+        "calibrated": router_config.is_calibrated(config, model_id, model_size),
+        "current_temperature": router_config.get_temperature(
+            config, model_id, model_size
+        ),
+        "updated_at": (
+            entry["updated_at"]
+            if entry
+            else config.get("temperature_updated_at", "Never")
+        ),
+    }
+    return json.dumps({**result, "message": message} if message else result, indent=2)
+
+
+def _save_temperature(config, model_id, model_size, value, message_template) -> str:
+    updated = router_config.with_temperature(config, model_id, value, model_size)
+    app.save_router_config(updated)
+    return _temperature_result(
+        updated, model_id, model_size, message_template.format(value)
+    )
+
+
 @mcp.tool(
     name="jev_manage_temperature",
     title="Read or set the scoring temperature",
-    description="View, set, or reset the global MLX calibration temperature for Jev. This temperature globally affects all Jev evaluations, handoffs, and prompts.",
+    description="View, set, or reset the calibration temperature of the smart model the engine is currently running. Each smart model keeps its own temperature, which affects that model's evaluations, handoffs, and prompts only.",
     annotations=ToolAnnotations(
         read_only_hint=False,
         destructive_hint=False,
@@ -391,40 +458,11 @@ def jev_manage_temperature(
     action: Literal["view", "set", "reset"], value: Optional[float] = None
 ) -> str:
     """
-    Manages the global fitted_temperature in router_config.json.
+    Manages the calibration temperature of the smart model in router_config.json.
     """
     try:
-        from datetime import datetime
-
-        config = app.load_router_config()
-
-        if action == "view":
-            temp = config.get("fitted_temperature", 1.0)
-            updated_at = config.get("temperature_updated_at", "Never")
-            return json.dumps(
-                {
-                    "status": "SUCCESS",
-                    "current_temperature": temp,
-                    "updated_at": updated_at,
-                },
-                indent=2,
-            )
-
-        elif action == "reset":
-            config["fitted_temperature"] = 1.0
-            config["temperature_updated_at"] = datetime.now().strftime(
-                "%Y-%m-%d %H:%M:%S"
-            )
-            app.save_router_config(config)
-            return json.dumps(
-                {
-                    "status": "SUCCESS",
-                    "message": "Temperature successfully reset to default (1.0).",
-                },
-                indent=2,
-            )
-
-        elif action == "set":
+        new_value: float | None = None
+        if action == "set":
             if value is None:
                 return json.dumps(
                     {
@@ -440,18 +478,51 @@ def jev_manage_temperature(
                         "message": "Temperature must be a positive, finite number.",
                     }
                 )
-            config["fitted_temperature"] = round(float(value), 3)
-            config["temperature_updated_at"] = datetime.now().strftime(
-                "%Y-%m-%d %H:%M:%S"
+            new_value = round(float(value), 3)
+
+        config = app.load_router_config()
+        model_id, model_size = app.reported_smart_model()
+
+        if not model_id:
+            if action == "view":
+                return json.dumps(
+                    {
+                        "status": "SUCCESS",
+                        "model": None,
+                        "calibrated": False,
+                        "current_temperature": router_config.DEFAULT_TEMPERATURE,
+                        "updated_at": "Never",
+                        # Nothing can be resolved without a model, so show what is stored.
+                        "stored_temperatures": {
+                            key: entry["temperature"]
+                            for key, entry in config.get("temperatures", {}).items()
+                        },
+                        "legacy_fitted_temperature": config.get("fitted_temperature"),
+                        "message": NO_MODEL_REPORTED,
+                    },
+                    indent=2,
+                )
+            return json.dumps({"status": "ERROR", "message": NO_MODEL_REPORTED})
+
+        if action == "view":
+            return _temperature_result(config, model_id, model_size)
+        if action == "reset":
+            return _save_temperature(
+                config,
+                model_id,
+                model_size,
+                router_config.DEFAULT_TEMPERATURE,
+                "Temperature successfully reset to default ({}).",
             )
-            app.save_router_config(config)
-            return json.dumps(
-                {
-                    "status": "SUCCESS",
-                    "message": f"Temperature successfully set to {round(float(value), 3)}.",
-                },
-                indent=2,
+        if new_value is not None:
+            return _save_temperature(
+                config,
+                model_id,
+                model_size,
+                new_value,
+                "Temperature successfully set to {}.",
             )
+        return json.dumps({"status": "ERROR", "message": f"Unknown action: {action}"})
 
     except Exception as e:
         return json.dumps({"status": "ERROR", "message": str(e)})

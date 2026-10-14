@@ -458,8 +458,8 @@ def test_jev_optimize_prompt_eval_fail(mock_evaluate_batch, mock_urlopen):
     assert "Optimizer Evaluation Failed" in res
 
 
-@patch.object(server.provider, "evaluate_dataset")
-def test_jev_calibrate_threshold_noul(mock_eval_dataset):
+@patch.object(server.provider.smart_provider, "evaluate_dataset")
+def test_jev_calibrate_threshold_noul(mock_eval_dataset, smart_model):
     mock_eval_dataset.return_value = [
         {"noul": 0.9},  # tp at >0.5
         {"noul": 0.8},  # fp
@@ -479,8 +479,8 @@ def test_jev_calibrate_threshold_noul(mock_eval_dataset):
     assert "Markdown" or "markdown" in res["markdown_report"].lower()
 
 
-@patch.object(server.provider, "evaluate_dataset")
-def test_jev_calibrate_threshold_choice(mock_eval_dataset):
+@patch.object(server.provider.smart_provider, "evaluate_dataset")
+def test_jev_calibrate_threshold_choice(mock_eval_dataset, smart_model):
     mock_eval_dataset.return_value = [
         {"probabilities": {"a": 0.9, "b": 0.1}},  # tp
         {"probabilities": {"a": 0.8, "b": 0.2}},  # fp
@@ -499,8 +499,8 @@ def test_jev_calibrate_threshold_choice(mock_eval_dataset):
     assert res["status"] == "CALIBRATION_COMPLETE"
 
 
-@patch.object(server.provider, "evaluate_dataset")
-def test_jev_calibrate_threshold_fail(mock_eval_dataset):
+@patch.object(server.provider.smart_provider, "evaluate_dataset")
+def test_jev_calibrate_threshold_fail(mock_eval_dataset, smart_model):
     mock_eval_dataset.side_effect = Exception("Calibration error")
     dataset = [{"expected": True}]
     q = NoulQuestion(key="q1", prompt="?")
@@ -598,8 +598,8 @@ def test_jev_generate_synthetic_dataset_no_local(mock_check_output):
     assert "one of the choice options" in res
 
 
-@patch.object(server.provider, "evaluate_dataset")
-def test_jev_calibrate_threshold_platt_auto_triggered(mock_eval_dataset):
+@patch.object(server.provider.smart_provider, "evaluate_dataset")
+def test_jev_calibrate_threshold_platt_auto_triggered(mock_eval_dataset, smart_model):
     # Simulate overconfident model: 10 items, all >0.99 logprobs
     # 7 heads, 3 tails expected
     mock_eval_dataset.return_value = [
@@ -620,8 +620,8 @@ def test_jev_calibrate_threshold_platt_auto_triggered(mock_eval_dataset):
     assert "| > 0.99 | 0.0% |" in res["markdown_report"]
 
 
-@patch.object(server.provider, "evaluate_dataset")
-def test_jev_calibrate_threshold_platt_always(mock_eval_dataset):
+@patch.object(server.provider.smart_provider, "evaluate_dataset")
+def test_jev_calibrate_threshold_platt_always(mock_eval_dataset, smart_model):
     # Not inherently overconfident (only 2 items)
     mock_eval_dataset.return_value = [
         {"probabilities": {"a": 0.6, "b": 0.4}},
@@ -637,8 +637,8 @@ def test_jev_calibrate_threshold_platt_always(mock_eval_dataset):
     assert "Platt Scaling Applied" in res["markdown_report"]
 
 
-@patch.object(server.provider, "evaluate_dataset")
-def test_jev_calibrate_threshold_platt_never(mock_eval_dataset):
+@patch.object(server.provider.smart_provider, "evaluate_dataset")
+def test_jev_calibrate_threshold_platt_never(mock_eval_dataset, smart_model):
     # Overconfident
     mock_eval_dataset.return_value = [
         {"probabilities": {"a": 0.999, "b": 0.001}} for _ in range(10)
@@ -659,8 +659,8 @@ def test_jev_calibrate_threshold_platt_never(mock_eval_dataset):
     assert "Platt Scaling Applied" not in res["markdown_report"]
 
 
-@patch.object(server.provider, "evaluate_dataset")
-def test_jev_calibrate_threshold_platt_missing_sklearn(mock_eval_dataset):
+@patch.object(server.provider.smart_provider, "evaluate_dataset")
+def test_jev_calibrate_threshold_platt_missing_sklearn(mock_eval_dataset, smart_model):
     # Overconfident
     mock_eval_dataset.return_value = [
         {"probabilities": {"a": 0.999, "b": 0.001}} for _ in range(10)
@@ -908,7 +908,8 @@ def test_jev_manage_router_config(mock_save, mock_load):
 
 @patch("jev_mcp.app.load_router_config")
 @patch("jev_mcp.app.save_router_config")
-def test_jev_manage_temperature(mock_save, mock_load):
+def test_jev_manage_temperature(mock_save, mock_load, smart_model):
+    # The legacy global applies to the running qwen2.5-7b.
     mock_load.return_value = {
         "fitted_temperature": 1.5,
         "temperature_updated_at": "Today",
@@ -918,17 +919,20 @@ def test_jev_manage_temperature(mock_save, mock_load):
     res_str = server.jev_manage_temperature("view")
     res = json.loads(res_str)
     assert res["current_temperature"] == 1.5
+    assert res["model"] == "qwen2.5-7b-instruct-q4_k_m.gguf"
+    assert res["calibrated"] is True
 
     # Set
     server.jev_manage_temperature("set", 1.8)
     saved_cfg = mock_save.call_args[0][0]
-    assert saved_cfg["fitted_temperature"] == 1.8
+    key = "qwen2.5-7b-instruct-q4_k_m.gguf"
+    assert saved_cfg["temperatures"][key]["temperature"] == 1.8
     assert "temperature_updated_at" in saved_cfg
 
     # Reset
     server.jev_manage_temperature("reset")
     saved_cfg_reset = mock_save.call_args[0][0]
-    assert saved_cfg_reset["fitted_temperature"] == 1.0
+    assert saved_cfg_reset["temperatures"][key]["temperature"] == 1.0
 
 
 @patch("jev_mcp.app.load_router_config")
@@ -947,6 +951,7 @@ def test_system_notice_injection(mock_provider_class, mock_load):
 
     mock_provider = MagicMock()
     mock_provider_class.return_value = mock_provider
+    mock_provider.smart_provider.current_model_id = "/models/Qwen2.5-7B-Instruct.gguf"
     mock_provider.evaluate_batch.return_value = {
         "complexity": {"score": "1", "probabilities": {}}
     }

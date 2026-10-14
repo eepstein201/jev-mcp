@@ -7,6 +7,9 @@ from jev_mcp import server
 from jev_mcp.provider import NoulQuestion
 from jev_mcp.routing_provider import RoutingProvider
 
+# Calibration needs the smart engine to have reported a model.
+pytestmark = pytest.mark.usefixtures("smart_model")
+
 
 def test_module_level_provider_is_the_hybrid_router():
     # jev_evaluate_batch, jev_optimize_prompt, jev_calibrate_threshold and jev_compact_context all score through this object.
@@ -157,7 +160,9 @@ def _overconfident_results(n_pos, n_neg):
 
 def _calibrate_always(dataset, results):
     question = NoulQuestion(key="k", prompt="p?")
-    with patch.object(server.provider, "evaluate_dataset", return_value=results):
+    with patch.object(
+        server.provider.smart_provider, "evaluate_dataset", return_value=results
+    ):
         return json.loads(
             server.jev_calibrate_threshold(
                 dataset=dataset, question=question, apply_platt_scaling="always"
@@ -193,7 +198,9 @@ def _calibrate_json(tmp_path, monkeypatch, existing_config=None, **kwargs):
     monkeypatch.setattr(router_config, "ROUTER_CONFIG_PATH", str(config_path))
     dataset, results = _overconfident_results(n_pos=10, n_neg=10)
     kwargs.setdefault("apply_platt_scaling", "always")
-    with patch.object(server.provider, "evaluate_dataset", return_value=results):
+    with patch.object(
+        server.provider.smart_provider, "evaluate_dataset", return_value=results
+    ):
         out = json.loads(
             server.jev_calibrate_threshold(
                 dataset=dataset, question=NoulQuestion(key="k", prompt="p?"), **kwargs
@@ -232,8 +239,9 @@ def test_calibrate_saves_the_fitted_temperature_when_asked_and_keeps_other_setti
 
     saved = json.loads(config_path.read_text())
     assert out["temperature_saved"] is True
-    assert saved["fitted_temperature"] == out["fitted_temperature"]
-    assert saved["temperature_updated_at"]
+    entry = saved["temperatures"][out["model"]]
+    assert entry["temperature"] == out["fitted_temperature"]
+    assert entry["updated_at"] == saved["temperature_updated_at"]
     assert saved["buckets"] == existing["buckets"]
     assert saved["rules"] == existing["rules"]
 
@@ -271,7 +279,9 @@ def test_calibrate_marks_threshold_unusable_when_no_positive_is_ever_predicted()
     results = [{"probabilities": {"true": 0.0, "false": 0.0}} for _ in dataset]
 
     # Act
-    with patch.object(server.provider, "evaluate_dataset", return_value=results):
+    with patch.object(
+        server.provider.smart_provider, "evaluate_dataset", return_value=results
+    ):
         report = json.loads(
             server.jev_calibrate_threshold(
                 dataset=dataset, question=question, apply_platt_scaling="never"

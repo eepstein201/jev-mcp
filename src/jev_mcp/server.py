@@ -43,10 +43,10 @@ from jev_mcp.tools.triage import (
 
 @mcp.prompt(
     name="calibrate",
-    description="Calibrate the logit threshold for a dataset and automatically fit/save the global MLX temperature.",
+    description="Calibrate the logit threshold for a dataset and automatically fit/save the temperature of the smart model.",
 )
 def calibrate_prompt() -> str:
-    return "I want to calibrate Jev. Ask me for the dataset. Then run `jev_calibrate_threshold` with `save_to_config=True`. When it completes, you MUST explicitly notify me that 'The global Jev MLX temperature was dynamically calibrated and saved to your router config, altering default behavior.' If I declined auto-saving, let me know we will fallback to manual Platt scaling."
+    return "I want to calibrate Jev. Ask me for the dataset. Then run `jev_calibrate_threshold` with `save_to_config=True`. When it completes, you MUST explicitly notify me that 'The Jev temperature for the smart model was dynamically calibrated and saved to your router config, altering default behavior for that model.' If I declined auto-saving, let me know we will fallback to manual Platt scaling."
 
 
 @mcp.prompt(
@@ -115,10 +115,10 @@ def optimize_prompt() -> str:
 
 @mcp.prompt(
     name="temperature",
-    description="View or change Jev's global MLX calibration temperature (which affects all evaluations).",
+    description="View or change the calibration temperature of the smart model Jev is running (which affects that model's evaluations).",
 )
 def temperature_prompt() -> str:
-    return "I want to manage Jev's global calibration temperature. First, use `jev_manage_temperature` to view the current temperature. Then ask me if I want to keep it, manually set a new value, or reset it to the default 1.0."
+    return "I want to manage the calibration temperature of the smart model Jev is running. First, use `jev_manage_temperature` to view the current temperature. Then ask me if I want to keep it, manually set a new value, or reset it to the default 1.0."
 
 
 @mcp.prompt(
