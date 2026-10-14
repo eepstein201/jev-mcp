@@ -259,11 +259,34 @@ def start_model_sync() -> None:
     threading.Thread(target=_sync_models, name="jev-model-sync", daemon=True).start()
 
 
+def _discover_model_once(smart: Any) -> str:
+    """The model id a direct probe of the smart engine returned, or "" when none did.
+
+    A provider that has not scored anything yet has never heard a model id from its
+    engine; asking the daemon itself (GET /props, no inference) fills that gap."""
+    discover = getattr(smart, "discover_model", None)
+    if not callable(discover):
+        return ""
+    try:
+        discovered = discover()
+    except Exception:
+        return ""
+    if isinstance(discovered, str) and discovered.strip() not in UNREPORTED_MODEL_IDS:
+        return discovered
+    return ""
+
+
 def reported_smart_model(smart: Any = None) -> tuple[str, int | None]:
-    """The model id the smart engine last reported ("" when it has not) and its size when known."""
+    """The model id the smart engine last reported ("" when it has not) and its size when known.
+
+    When the engine has not reported a model (a fresh process, before any evaluation),
+    it is probed once via GET /props before giving up, so the temperature tools work
+    without a prior evaluation."""
     smart = smart if smart is not None else provider.smart_provider
     model_id = getattr(smart, "current_model_id", "")
     if not isinstance(model_id, str) or model_id.strip() in UNREPORTED_MODEL_IDS:
+        model_id = _discover_model_once(smart)
+    if not model_id:
         return "", None
     size = getattr(smart, "model_size", None)
     is_size = isinstance(size, int) and not isinstance(size, bool)

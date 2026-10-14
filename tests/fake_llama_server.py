@@ -305,7 +305,8 @@ class FakeLlamaServer:
 
         Options: model, first_token_probs, noul_true, choice_probs, score_probs, confidence,
         model_path, total_slots, n_ctx, tier ("smart" or "fast": which recorded engine
-        the defaults come from), model_a, model_b, n (swap_after), seconds (slow).
+        the defaults come from), model_a, model_b, n (swap_after), seconds (slow),
+        props (a value served verbatim as the /props body, for malformed shapes).
         `model` and `model_path` are the same setting for /props and every answer.
         """
         if name not in SCENARIOS:
@@ -351,7 +352,7 @@ class FakeLlamaServer:
         if method == "GET" and path == "/health":
             return (503, LOADING_BODY) if loading else (200, {"status": "ok"})
         if method == "GET" and path == "/props":
-            return 200, self._props(options)
+            return (503, LOADING_BODY) if loading else (200, self._props(options))
         if method == "POST" and path in (CHAT_PATH, SYSTEMONE_PATH):
             if loading:
                 return 503, LOADING_BODY
@@ -370,7 +371,9 @@ class FakeLlamaServer:
         tier = options.get("tier", default_tier)
         return str(self._recorded["props"][tier]["model_path"])
 
-    def _props(self, options: Mapping[str, Any]) -> dict[str, Any]:
+    def _props(self, options: Mapping[str, Any]) -> Any:
+        if "props" in options:
+            return copy.deepcopy(options["props"])
         recorded = self._recorded["props"][options.get("tier", "smart")]
         return {
             "model_path": self._model(options, "smart"),
