@@ -40,25 +40,37 @@ class KevProvider(JevProvider):
 
     @_parse_answer.register
     def _(self, q: NoulQuestion, ans: dict) -> dict:
+        # A missing or non-numeric score is no answer: a default of 0.0 would read as a
+        # confident "false".
+        noul = ans.get("noul")
+        if isinstance(noul, bool) or not isinstance(noul, (int, float)):
+            logger.warning(f"Kev answer for {q.key!r} has no numeric 'noul'; ignoring.")
+            return {}
         return {
-            "noul": ans.get("noul", 0.0),
-            "probabilities": {
-                "true": ans.get("noul", 0.0),
-                "false": 1.0 - ans.get("noul", 0.0),
-            },
+            "noul": noul,
+            "probabilities": {"true": noul, "false": 1.0 - noul},
         }
 
     @_parse_answer.register
     def _(self, q: ChoiceQuestion, ans: dict) -> dict:
+        choice = ans.get("choice")
+        if not isinstance(choice, str) or not choice:
+            logger.warning(f"Kev answer for {q.key!r} has no 'choice'; ignoring.")
+            return {}
         return {
-            "choice": ans.get("choice", ""),
+            "choice": choice,
             "confidence": ans.get("confidence", 1.0),
             "probabilities": ans.get("probabilities", {}),
         }
 
     @_parse_answer.register
     def _(self, q: ScoreQuestion, ans: dict) -> dict:
-        raw_probs = ans.get("probabilities", {})
+        raw_probs = ans.get("probabilities")
+        if not isinstance(raw_probs, dict) or not raw_probs:
+            logger.warning(
+                f"Kev answer for {q.key!r} has no 'probabilities'; ignoring."
+            )
+            return {}
         mapped_probs = {}
         best_label = q.labels[0] if q.labels else "0"
         best_prob = -1
@@ -109,6 +121,9 @@ class KevProvider(JevProvider):
                 continue
 
             ans = res["answers"][q.key]
+            if not isinstance(ans, dict):
+                logger.warning(f"Kev answer for {q.key!r} is not an object; ignoring.")
+                continue
 
             parsed = self._parse_answer(q, ans)
             if parsed:

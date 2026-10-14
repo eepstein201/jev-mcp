@@ -9,7 +9,14 @@ from pydantic import Field
 
 from jev_mcp import app
 from jev_mcp.app import logger, mcp
-from jev_mcp.provider import ChoiceQuestion, NoulQuestion, QuestionType, ScoreQuestion
+from jev_mcp.provider import (
+    ChoiceQuestion,
+    NoulQuestion,
+    QuestionType,
+    ScoreQuestion,
+    escalation_failures,
+    mark_degraded,
+)
 
 
 def _error(message: str) -> str:
@@ -266,6 +273,10 @@ def _score_and_assemble(
         if was_compressed:
             response["was_compressed"] = True
             response["qfe_state"] = state
+
+        # A question the smart engine was asked but did not answer is reported with its
+        # fast answer; the batch must not read as a plain success.
+        response = mark_degraded(response, escalation_failures(results))
 
         return json.dumps(response, indent=2)
     except Exception as e:

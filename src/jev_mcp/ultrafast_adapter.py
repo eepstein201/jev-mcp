@@ -1,7 +1,10 @@
+import logging
 import re
 from typing import Dict, Any, List, Mapping
 from jev_mcp.routing_provider import RoutingProvider
-from jev_mcp.provider import ChoiceQuestion, QuestionType
+from jev_mcp.provider import ChoiceQuestion, QuestionType, escalation_failures
+
+logger = logging.getLogger(__name__)
 
 # "The page shows MISSION_COMPLETE only when…" → MISSION_COMPLETE. A single
 # all-caps token only, so ordinary prose after "shows" never matches.
@@ -221,6 +224,13 @@ def local_choose(
             results[f"{op.lower()}_target"] = {**refined, "probabilities": expanded}
 
     # Map back to the TypeSafe "answers" dict format
+    failed_escalations = escalation_failures(results)
+    if failed_escalations:
+        logger.warning(
+            f"Smart engine did not answer {', '.join(failed_escalations)}; "
+            f"using the fast answers."
+        )
+
     answers = {}
     for key, ans in results.items():
         answers[key] = {
@@ -229,4 +239,11 @@ def local_choose(
             "probabilities": ans.get("probabilities", {}),
         }
 
-    return {"model": "jev-mcp-local", "usage": {"total_tokens": 0}, "answers": answers}
+    response: Dict[str, Any] = {
+        "model": "jev-mcp-local",
+        "usage": {"total_tokens": 0},
+        "answers": answers,
+    }
+    if failed_escalations:
+        response["escalation_failed"] = failed_escalations
+    return response

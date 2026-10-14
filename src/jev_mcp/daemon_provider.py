@@ -1,36 +1,42 @@
 from functools import singledispatchmethod
 from jev_mcp.provider import post_json
 import json
+import os
 import random
 import string
 import math
 import subprocess
+import urllib.request
 from typing import Any, List, Optional, Tuple
 import logging
 from jev_mcp.provider import JevProvider, NoulQuestion, ChoiceQuestion, ScoreQuestion
+from jev_mcp.router_config import (
+    DEFAULT_TEMPERATURE,
+    UNREPORTED_MODEL_IDS,
+    get_temperature,
+    load_router_config,
+)
 from jev_mcp.security import sanitize_payload
 
 logger = logging.getLogger(__name__)
 
 SMALL_MODEL_MARKER = "0.5b"
-DEFAULT_TEMPERATURE = 1.0
+UNKNOWN_MODEL = "unknown_model"
+# Below this much probability on the target tokens the reply is not an answer (the
+# model started with something else, such as a think tag).
+MIN_TARGET_MASS = 0.05
 # A choice is read from the log-probability of a single letter token, A to Z.
 MAX_CHOICE_LABELS = 26
+# A model probe must answer faster than an inference would; anything slower is a dead daemon.
+PROPS_TIMEOUT_SECONDS = 5.0
 
 
-def _saved_temperature() -> float:
-    """The calibration temperature in the router config, or the default when it cannot be read."""
+def _model_size(model_id: str) -> int | None:
+    """The file size of the served model when its id is an existing path."""
     try:
-        from jev_mcp.router_config import load_router_config
-
-        return float(
-            load_router_config().get("fitted_temperature", DEFAULT_TEMPERATURE)
-        )
-    except Exception as e:
-        logger.warning(
-            f"Could not read the fitted temperature; using {DEFAULT_TEMPERATURE}: {e}"
-        )
-        return DEFAULT_TEMPERATURE
+        return os.stat(model_id).st_size
+    except (OSError, ValueError):
+        return None
 
 
 class DaemonProvider(JevProvider):
@@ -63,9 +69,63 @@ class DaemonProvider(JevProvider):
         port = os.getenv("JEV_DAEMON_PORT", "") or os.getenv("JEV_SMART_PORT", "8081")
         self.base_url = base_url or f"http://127.0.0.1:{port}/v1/chat/completions"
         self.max_tokens = 8192
-        self.current_model_id = "unknown_model"
+        self.current_model_id = UNKNOWN_MODEL
+        self.model_size: int | None = None
 
-        self.fitted_temperature = _saved_temperature()
+        # The model is not known yet (no reply, no probe), so no stored temperature
+        # can apply; _saved_temperature resolves it per batch once the id is known.
+        self.fitted_temperature = DEFAULT_TEMPERATURE
+
+    def _saved_temperature(self) -> float:
+        """The router-config temperature for the model being scored, or the default.
+
+        The legacy global never applies while the model is unknown: it was fitted on
+        one model alone. Any config read or shape error also falls back to the default."""
+        if self.current_model_id == UNKNOWN_MODEL:
+            return DEFAULT_TEMPERATURE
+        try:
+            return get_temperature(
+                load_router_config(), self.current_model_id, self.model_size
+            )
+        except Exception as e:
+            logger.warning(
+                f"Could not read the temperature for {self.current_model_id}; "
+                f"using {DEFAULT_TEMPERATURE}: {e}"
+            )
+            return DEFAULT_TEMPERATURE
+
+    def discover_model(self) -> str | None:
+        """The model the daemon serves, asked directly (GET /props) without inference.
+
+        llama-server reports the full path of its GGUF as `model_path`. The id (and
+        its file size, when the id is an existing path) is recorded on the provider
+        and returned; None comes back when the daemon named no usable model, and no
+        failure ever raises."""
+        from urllib.parse import urlsplit
+
+        try:
+            parts = urlsplit(self.base_url)
+            request = urllib.request.Request(
+                f"{parts.scheme}://{parts.netloc}/props", method="GET"
+            )
+            with urllib.request.urlopen(
+                request, timeout=PROPS_TIMEOUT_SECONDS
+            ) as response:
+                props = json.loads(response.read().decode())
+            if not isinstance(props, dict):
+                return None
+            reported = props.get("model_path")
+            if not isinstance(reported, str):
+                return None
+            model_id = reported.strip()
+            if model_id in UNREPORTED_MODEL_IDS:
+                return None
+            self.current_model_id = model_id
+            self.model_size = _model_size(model_id)
+            return model_id
+        except Exception as e:
+            logger.info(f"Could not discover the served model at {self.base_url}: {e}")
+            return None
 
     def _get_daemon_pid(self) -> str:
         try:
@@ -104,7 +164,7 @@ class DaemonProvider(JevProvider):
         try:
             res = post_json(self.base_url, payload, timeout=60)
 
-            model_id = res.get("model", "unknown_model")
+            model_id = res.get("model", UNKNOWN_MODEL)
 
             choices = res.get("choices", [])
             if not choices:
@@ -152,13 +212,14 @@ class DaemonProvider(JevProvider):
             logger.error(
                 f"Daemon API call failed: {e}\nPLEASE ENSURE THE DAEMON IS RUNNING! Run: ./jev_mac_manager.sh hybrid"
             )
-            return {}, "unknown_model"
+            return {}, UNKNOWN_MODEL
 
     def _normalize_logprobs(
         self,
         logprobs: dict[str, float],
         expected_keys: List[str],
         prior_logprobs: dict[str, float],
+        question_key: str = "",
     ) -> dict[str, float]:
         import math
 
@@ -170,10 +231,17 @@ class DaemonProvider(JevProvider):
         for k in expected_keys:
             prior_lps[k] = prior_logprobs.get(k.lower(), -9999.0)
 
-        # 1. Absolute Confidence Gate (Reject Gibberish)
+        # 1. Absolute Confidence Gate (Reject Gibberish). The reply put almost no mass on
+        # the targets, so there is no answer: an empty map, never an all-zero one that
+        # the router would take for a valid (and confident) result.
         p_act = {k: (math.exp(v) if v != -9999.0 else 0.0) for k, v in raw_lps.items()}
-        if sum(p_act.values()) < 0.05:
-            return {k: 0.0 for k in expected_keys}
+        target_mass = sum(p_act.values())
+        if target_mass < MIN_TARGET_MASS:
+            logger.warning(
+                f"Target mass {target_mass:.4f} is below {MIN_TARGET_MASS} for question "
+                f"{question_key!r} (model {self.current_model_id}); treating it as no answer."
+            )
+            return {}
 
         # 2. Laplace Smoothing for Top-11 Horizon (Alpha = 1/K)
         K = len(expected_keys)
@@ -196,12 +264,36 @@ class DaemonProvider(JevProvider):
 
         scaled_lps = {k: (lp / T) for k, lp in dcpmi_lps.items()}
 
+        # After the mass gate at step 1, at least one raw logprob is real, so the
+        # maximum here is always finite.
         max_lp = max(scaled_lps.values())
-        if max_lp == -9999.0 or max_lp == float("-inf"):
-            return {k: 0.0 for k in expected_keys}
 
         sum_exp = sum(math.exp(lp - max_lp) for lp in scaled_lps.values())
         return {k: math.exp(lp - max_lp) / sum_exp for k, lp in scaled_lps.items()}
+
+    @staticmethod
+    def _same_known_model(
+        question_key: str, answer_model: str, prior_model: str
+    ) -> bool:
+        """True when both responses name the same real model, so the prior may be cached.
+
+        The prior is a second request: a model swapped between the two, or a daemon
+        that reports no model, would store one model's prior under another's key.
+        """
+        known = (answer_model, prior_model)
+        if any(not m or m == UNKNOWN_MODEL for m in known):
+            logger.info(
+                f"Prior for {question_key!r} not cached: a response named no model "
+                f"({answer_model!r}, {prior_model!r})."
+            )
+            return False
+        if answer_model != prior_model:
+            logger.warning(
+                f"Prior for {question_key!r} not cached: the model changed from "
+                f"{answer_model!r} to {prior_model!r} between the two requests."
+            )
+            return False
+        return True
 
     @singledispatchmethod
     def _get_format(self, q: Any) -> tuple[str, list[str]]:
@@ -281,8 +373,9 @@ class DaemonProvider(JevProvider):
     ) -> dict[str, dict[str, Any]]:
         results = {}
         # Re-read on every batch: jev_manage_temperature and jev_calibrate_threshold can change it
-        # while this provider (built once at server start) is still in use.
-        self.fitted_temperature = _saved_temperature()
+        # while this provider (built once at server start) is still in use. While the model is
+        # still unknown this answers the default — the legacy global belongs to one model alone.
+        self.fitted_temperature = self._saved_temperature()
 
         MAX_STATE_CHARS = 16000
         state_str = json.dumps(state) if not isinstance(state, str) else state
@@ -349,8 +442,12 @@ class DaemonProvider(JevProvider):
 
             # 1. Fetch Active Logprobs
             lps, model_id = self.get_logprobs(user_prompt, expected_keys)
-            if model_id != "unknown_model":
+            if model_id != UNKNOWN_MODEL and model_id != self.current_model_id:
                 self.current_model_id = model_id
+                self.model_size = _model_size(model_id)
+                # The model is known now (first reply, or a swap): resolve this
+                # model's temperature before the scores below are normalized.
+                self.fitted_temperature = self._saved_temperature()
             if not lps:
                 # No answer (daemon down or a reply without logprobs). Leaving the question
                 # out keeps that distinct from a real answer of all-zero probabilities.
@@ -364,9 +461,13 @@ class DaemonProvider(JevProvider):
             cache_key = f"{daemon_pid}::{model_id}::{style}::{format_hint}"
             cached_prior = self._prior_cache.get(cache_key)
             if cached_prior is None:
-                prior_lps, _ = self.get_logprobs(empty_payload_prompt, expected_keys)
+                prior_lps, prior_model_id = self.get_logprobs(
+                    empty_payload_prompt, expected_keys
+                )
                 # A failed fetch is not cached, or its flat prior would skew every later score.
-                if prior_lps:
+                if prior_lps and self._same_known_model(
+                    q.key, model_id, prior_model_id
+                ):
                     if len(self._prior_cache) > 256:
                         # Bound process-lifetime growth (pid churn mints new key families).
                         self._prior_cache.clear()
@@ -375,7 +476,11 @@ class DaemonProvider(JevProvider):
                 prior_lps = cached_prior
 
             # 3. Math
-            probs = self._normalize_logprobs(lps, expected_keys, prior_lps)
+            probs = self._normalize_logprobs(lps, expected_keys, prior_lps, q.key)
+            if not probs:
+                # The reply was not an answer (_normalize_logprobs said why). Leaving the
+                # question out keeps it distinct from a real answer.
+                continue
 
             # 4. Results Formatter
             if isinstance(q, NoulQuestion):

@@ -8,7 +8,14 @@ from pydantic import Field
 
 from jev_mcp import app
 from jev_mcp.app import logger, mcp
-from jev_mcp.provider import ChoiceQuestion, NoulQuestion, QuestionType, ScoreQuestion
+from jev_mcp.provider import (
+    ChoiceQuestion,
+    NoulQuestion,
+    QuestionType,
+    ScoreQuestion,
+    escalation_failures,
+    mark_degraded,
+)
 
 
 @mcp.tool(
@@ -143,6 +150,12 @@ def jev_optimize_prompt(
             return json.dumps(
                 {"status": "ERROR", "message": f"Optimizer Evaluation Failed: {str(e)}"}
             )
+        # The same variation can fail on several rows; list each key once.
+        failed_escalations = list(
+            dict.fromkeys(
+                key for results in row_results for key in escalation_failures(results)
+            )
+        )
         per_variation = [
             [res.get(q.key, {}) for res in row_results] for q in test_questions
         ]
@@ -151,33 +164,29 @@ def jev_optimize_prompt(
         )
         best = prompt_selection.best_variation(stats)
         gain = (stats[best]["accuracy"] - stats[0]["accuracy"]) * 100
-        return json.dumps(
-            {
-                "selected_by": "accuracy",
-                "rows": len(dataset),
-                "original_prompt": q_dict["prompt"],
-                "original_accuracy": f"{stats[0]['accuracy'] * 100:.2f}%",
-                "optimized_prompt": variations[best],
-                "optimized_accuracy": f"{stats[best]['accuracy'] * 100:.2f}%",
-                "improvement_points": f"{gain:.2f}",
-                "recommendation": (
-                    "Keep the original: no variation scored better on this dataset."
-                    if best == 0
-                    else f"Adopt the optimized prompt: it scored better on these {len(dataset)} rows. Confirm on rows it was not selected on."
-                ),
-                "variations": [
-                    {
-                        "prompt": variations[i],
-                        "accuracy": f"{s['accuracy'] * 100:.2f}%",
-                        "mean_correct_probability": round(
-                            s["mean_correct_probability"], 4
-                        ),
-                    }
-                    for i, s in enumerate(stats)
-                ],
-            },
-            indent=2,
-        )
+        payload = {
+            "selected_by": "accuracy",
+            "rows": len(dataset),
+            "original_prompt": q_dict["prompt"],
+            "original_accuracy": f"{stats[0]['accuracy'] * 100:.2f}%",
+            "optimized_prompt": variations[best],
+            "optimized_accuracy": f"{stats[best]['accuracy'] * 100:.2f}%",
+            "improvement_points": f"{gain:.2f}",
+            "recommendation": (
+                "Keep the original: no variation scored better on this dataset."
+                if best == 0
+                else f"Adopt the optimized prompt: it scored better on these {len(dataset)} rows. Confirm on rows it was not selected on."
+            ),
+            "variations": [
+                {
+                    "prompt": variations[i],
+                    "accuracy": f"{s['accuracy'] * 100:.2f}%",
+                    "mean_correct_probability": round(s["mean_correct_probability"], 4),
+                }
+                for i, s in enumerate(stats)
+            ],
+        }
+        return json.dumps(mark_degraded(payload, failed_escalations), indent=2)
 
     try:
         results = app.provider.evaluate_batch(state, test_questions)
@@ -213,16 +222,14 @@ def jev_optimize_prompt(
 
     if not best_var:
         return json.dumps({"error": "No variations evaluated."})
-    return json.dumps(
-        {
-            "original_prompt": q_dict["prompt"],
-            "original_confidence": f"{original_conf * 100:.2f}%",
-            "optimized_prompt": best_var["optimized_prompt"],
-            "optimized_confidence": best_var["optimized_confidence"],
-            "improvement_points": f"{(best_conf - original_conf) * 100:.2f}",
-            "selected_by": "confidence",
-            "recommendation": "Selected by confidence on one state, which is not accuracy: a phrasing can be more confident and wrong. Pass `dataset` (rows of state + expected) to select by measured accuracy.",
-            "all_variations_tested": len(variations),
-        },
-        indent=2,
-    )
+    payload = {
+        "original_prompt": q_dict["prompt"],
+        "original_confidence": f"{original_conf * 100:.2f}%",
+        "optimized_prompt": best_var["optimized_prompt"],
+        "optimized_confidence": best_var["optimized_confidence"],
+        "improvement_points": f"{(best_conf - original_conf) * 100:.2f}",
+        "selected_by": "confidence",
+        "recommendation": "Selected by confidence on one state, which is not accuracy: a phrasing can be more confident and wrong. Pass `dataset` (rows of state + expected) to select by measured accuracy.",
+        "all_variations_tested": len(variations),
+    }
+    return json.dumps(mark_degraded(payload, escalation_failures(results)), indent=2)

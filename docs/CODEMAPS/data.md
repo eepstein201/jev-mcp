@@ -3,7 +3,7 @@
 
 | Path | Owner | Contents |
 |------|-------|----------|
-| ~/.jev/router_config.json | router_config.py | buckets b1-b4 → model names, rules[], fitted temperature, auto_update, buckets_source ("detected"/"user"), detected_client |
+| ~/.jev/router_config.json | router_config.py | buckets b1-b4 → model names, rules[], temperatures{} (per smart model; legacy global fitted_temperature applies to qwen2.5-7b only), auto_update, buckets_source ("detected"/"user"), detected_client |
 | ~/.jev/model_catalog.json | model_catalog.py | reduced models.dev catalog (id, family, release date, price), refreshed daily at start-up |
 | ~/.jev/jev.log | server logging | runtime log |
 | ~/.jev/adapters/{run_id} | jev_train_lora | LoRA adapters |

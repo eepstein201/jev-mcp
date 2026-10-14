@@ -9,7 +9,12 @@ from pydantic import Field
 
 from jev_mcp import app
 from jev_mcp.app import json_errors, logger, mcp
-from jev_mcp.provider import EngineUnavailableError, NoulQuestion
+from jev_mcp.provider import (
+    EngineUnavailableError,
+    NoulQuestion,
+    escalation_failures,
+    mark_degraded,
+)
 from jev_mcp.routing_provider import RoutingProvider
 
 # Each chunk of a file costs an engine call, so the size of the file bounds the work one read can cause.
@@ -84,6 +89,7 @@ def jev_read_file(
         provider = RoutingProvider()
         kept_chunks = []
         dropped = 0
+        failed_escalations: List[str] = []
 
         for i, chunk in enumerate(file_chunks):
             q = NoulQuestion(
@@ -91,6 +97,7 @@ def jev_read_file(
                 prompt=f"Does this specific code block contain logic or variables highly relevant to the task: '{task_description}'?",
             )
             res = provider.evaluate_batch(chunk, [q])
+            failed_escalations.extend(escalation_failures(res))
             true_prob = (
                 res.get(f"chunk_{i}", {}).get("probabilities", {}).get("true", 0.0)
             )
@@ -102,10 +109,14 @@ def jev_read_file(
 
         if not kept_chunks:
             return json.dumps(
-                {
-                    "status": "BLOCKED",
-                    "message": f"Jev evaluated {file_path} and found 0 relevant chunks for the task. The file has been blocked to save context window.",
-                }
+                mark_degraded(
+                    {
+                        "status": "BLOCKED",
+                        "message": f"Jev evaluated {file_path} and found 0 relevant chunks for the task. The file has been blocked to save context window.",
+                    },
+                    failed_escalations,
+                    keep_status=True,
+                )
             )
 
         raw_content = "\n\n".join(kept_chunks)
@@ -116,7 +127,10 @@ def jev_read_file(
             msg += " WARNING: Output was truncated to protect the context window."
 
         return json.dumps(
-            {"status": "SUCCESS", "message": msg, "content": safe_content}
+            mark_degraded(
+                {"status": "SUCCESS", "message": msg, "content": safe_content},
+                failed_escalations,
+            )
         )
 
     else:
@@ -143,14 +157,21 @@ def jev_read_file(
                 msg += " WARNING: Output was truncated to protect the context window. Use filter_by_chunk=True to extract only relevant parts."
 
             return json.dumps(
-                {"status": "SUCCESS", "message": msg, "content": safe_content}
+                mark_degraded(
+                    {"status": "SUCCESS", "message": msg, "content": safe_content},
+                    escalation_failures(res),
+                )
             )
         else:
             return json.dumps(
-                {
-                    "status": "BLOCKED",
-                    "message": f"Jev determined this file is irrelevant to the task ({round(true_prob * 100, 1)}% confident). Blocked to save context.",
-                }
+                mark_degraded(
+                    {
+                        "status": "BLOCKED",
+                        "message": f"Jev determined this file is irrelevant to the task ({round(true_prob * 100, 1)}% confident). Blocked to save context.",
+                    },
+                    escalation_failures(res),
+                    keep_status=True,
+                )
             )
 
 
@@ -400,10 +421,12 @@ def jev_scan_repo(
         )
         res = provider.evaluate_batch(chunk, [q])
         true_prob = res.get(f"chunk_{i}", {}).get("probabilities", {}).get("true", 0.0)
-        return (chunk, true_prob >= 0.50)
+        return (chunk, true_prob >= 0.50, escalation_failures(res))
 
+    failed_escalations: List[str] = []
     with ThreadPoolExecutor(max_workers=5) as executor:
-        for chunk, keep in executor.map(eval_chunk, enumerate(all_chunks)):
+        for chunk, keep, failed in executor.map(eval_chunk, enumerate(all_chunks)):
+            failed_escalations.extend(failed)
             if keep:
                 kept_chunks.append(chunk)
             else:
@@ -411,10 +434,14 @@ def jev_scan_repo(
 
     if not kept_chunks:
         return json.dumps(
-            {
-                "status": "BLOCKED",
-                "message": f"Scanned {len(target_files)} files and {len(all_chunks)} semantic chunks. Jev determined 0 chunks were relevant to the task. Blocked to save context window.",
-            }
+            mark_degraded(
+                {
+                    "status": "BLOCKED",
+                    "message": f"Scanned {len(target_files)} files and {len(all_chunks)} semantic chunks. Jev determined 0 chunks were relevant to the task. Blocked to save context window.",
+                },
+                failed_escalations,
+                keep_status=True,
+            )
         )
 
     raw_content = "\n\n".join(kept_chunks)
@@ -424,4 +451,9 @@ def jev_scan_repo(
     if was_truncated:
         msg += " WARNING: Output was truncated to protect the context window. Refine task_description or use jev_read_file."
 
-    return json.dumps({"status": "SUCCESS", "message": msg, "content": safe_content})
+    return json.dumps(
+        mark_degraded(
+            {"status": "SUCCESS", "message": msg, "content": safe_content},
+            failed_escalations,
+        )
+    )

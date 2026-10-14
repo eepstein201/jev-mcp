@@ -87,6 +87,18 @@ def isolated_jev_files(tmp_path, monkeypatch):
     )
 
 
+SMART_MODEL_ID = "/models/Qwen2.5-7B-Instruct-Q4_K_M.gguf"
+
+
+@pytest.fixture
+def smart_model(monkeypatch):
+    """The smart engine has answered, so it reports its model (as it does after a first evaluation)."""
+    from jev_mcp import app
+
+    monkeypatch.setattr(app.provider.smart_provider, "current_model_id", SMART_MODEL_ID)
+    return SMART_MODEL_ID
+
+
 # Tests that genuinely need real HTTP (they talk to a server they start themselves).
 REAL_HTTP_MODULES = {
     "test_browser_agent_e2e",
@@ -107,11 +119,27 @@ def no_real_daemon_http(request):
         yield
         return
     import urllib.error
+    import urllib.request
+    from urllib.parse import urlsplit
 
-    with patch(
-        "urllib.request.urlopen",
-        side_effect=urllib.error.URLError("no daemon in tests"),
-    ):
+    from tests.fake_llama_server import LOOPBACK_HOST, is_fake_llama_port
+
+    real_urlopen = urllib.request.urlopen
+
+    def _urlopen(url, *args, **kwargs):
+        # Traffic to a FakeLlamaServer started by the test passes; nothing else does.
+        try:
+            parts = urlsplit(url if isinstance(url, str) else url.full_url)
+            to_fake = parts.hostname == LOOPBACK_HOST and is_fake_llama_port(
+                parts.port or 0
+            )
+        except ValueError:  # a malformed port is just another unreachable daemon
+            to_fake = False
+        if to_fake:
+            return real_urlopen(url, *args, **kwargs)
+        raise urllib.error.URLError("no daemon in tests")
+
+    with patch("urllib.request.urlopen", side_effect=_urlopen):
         yield
 
 

@@ -202,14 +202,14 @@ Once installed, Jev exposes the following specialized tools to your MCP client (
 *   **Underlying Tool:** `jev_calibrate_threshold`
 *   **Natural Language Triggers:** *"Can you calibrate my dataset?"*, *"Help me fit the threshold for..."*
 *   **What it does:** The core feature of Jev. It takes your dataset and evaluates every single case against the local daemon by extracting direct `get_logprobs` mathematical arrays. It subtracts statistical bias and returns a beautiful Markdown Confusion Matrix, showing exactly what Probability Threshold (`>0.95`) you need to achieve 100% Precision.
-*   **Which engine it calibrates:** `jev_calibrate_threshold` scores through the same hybrid router as `jev_evaluate_batch` (Kev first, escalating to Qwen when Kev's confidence is below 0.85 or the state exceeds 4,000 tokens), so the report describes the cascade you run in production rather than a single engine. A threshold that automates decisions without ever catching a positive is marked `❌ Unusable`.
+*   **Which engine it calibrates:** `jev_calibrate_threshold` scores through the smart engine alone (never the Kev fast tier), because the temperature it fits is stored for the smart model that answered; the report names that model. A threshold that automates decisions without ever catching a positive is marked `❌ Unusable`.
 *   **Scope of the report:** one `question` per call, though any dataset row may carry its own `"question"` string to override the prompt for that row. When Platt scaling is applied and every class has at least 5 rows, the calibrated scores are 5-fold cross-validated (each row is scored by a model fitted without it); with fewer rows the model is fitted and scored on the same rows, and the report says so.
 *   **Arguments:**
     *   `dataset` *(array of objects)*: Array of dicts representing the edge cases: `[{"state": {...}, "expected": True/False/String}]`.
     *   `question` *(object)*: The question object schema to calibrate.
     *   `apply_platt_scaling` *(string, default: "auto")*: Whether to apply Platt Scaling Logistic Calibration (`"auto"`, `"always"`, or `"never"`).
-    *   `save_to_config` *(boolean, default: false)*: Save the fitted temperature to `~/.jev/router_config.json`. Off by default because the temperature is global: it changes the scores of every question the smart engine answers, not only the one you calibrated.
-*   **Returns:** `markdown_report`, plus `fitted_temperature` (the current temperature divided by the Platt slope; `null` when Platt scaling was not applied) and `temperature_saved`.
+    *   `save_to_config` *(boolean, default: false)*: Save the fitted temperature to `~/.jev/router_config.json`. Off by default because the temperature is stored for the smart model that scored the dataset: it changes the scores of every question that model answers, not only the one you calibrated.
+*   **Returns:** `markdown_report`, plus `fitted_temperature` (the model's current temperature divided by the Platt slope; `null` when Platt scaling was not applied), `temperature_saved`, `model` and `calibrated` (whether that model has a stored temperature). It returns an `ERROR` when the smart engine reports no model.
 *   **Example:** Pass it a synthetic JSON dataset. It will rapidly output your ROC AUC metrics and a calibration table.
 
     **Example Output (Calibration Markdown Table):**
@@ -229,7 +229,7 @@ Occasionally, larger RLHF-tuned models (like 7B) exhibit "Mode Collapse" or "Log
 `jev_calibrate_threshold` features native **Automated Platt Scaling (Logistic Calibration)**. 
 By default (`apply_platt_scaling="auto"`), Jev actively monitors for extreme overconfidence. If triggered, it automatically extracts the raw log-odds (`log(P_A) - log(P_B)`) and uses `scikit-learn` to fit a Logistic Regression model against your expected dataset outcomes—mathematically squishing the >99% confidence scores back down to their true fractional uncertainty. The calibrated probabilities are used for the returned report only. The report also states the fitted temperature; `jev_calibrate_threshold` writes it to your config only when you pass `save_to_config=True`.
 
-*Note: The global calibration temperature for the **Qwen 7B Smart Engine** (`fitted_temperature` in `~/.jev/router_config.json`) is a separate setting that you view, set, or reset with the `/jev-mcp:temperature` command. Furthermore, if you want to permanently bake this calibrated statistical distribution directly into the model's weights, use the `/jev-mcp:train` command to instantly fine-tune a native LoRA adapter for the 7B model on the dataset you just used to calibrate.*
+*Note: The calibration temperature of the **Smart Engine** (stored per model under `temperatures` in `~/.jev/router_config.json`; a legacy global `fitted_temperature` still applies to Qwen2.5-7B) is a separate setting that you view, set, or reset with the `/jev-mcp:temperature` command. Furthermore, if you want to permanently bake this calibrated statistical distribution directly into the model's weights, use the `/jev-mcp:train` command to instantly fine-tune a native LoRA adapter for the 7B model on the dataset you just used to calibrate.*
 
 **Real-World Example:**
 Imagine an unfair coin weighted to land Heads 75% of the time. When asked to predict 100 flips without context, the 7B model accurately deduces that Heads is the optimal guess, but erroneously assigns >99% confidence to *every single guess*.
@@ -256,8 +256,8 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
 #### ⚡ Manage Temperature
 *   **Command:** `/jev-mcp:temperature`
 *   **Underlying Tool:** `jev_manage_temperature`
-*   **Natural Language Triggers:** *"Change the global calibration temperature,"*, *"What is the current temperature?"*
-*   **What it does:** View, set, or reset the global calibration temperature for the **Qwen 7B Smart Engine**. (The Kev Fast Engine uses a native pointer-head and does not require temperature scaling).
+*   **Natural Language Triggers:** *"Change the calibration temperature,"*, *"What is the current temperature?"*
+*   **What it does:** View, set, or reset the calibration temperature of the model the **Smart Engine** is running (each model keeps its own). (The Kev Fast Engine uses a native pointer-head and does not require temperature scaling).
 *   **Arguments:**
     *   `action` *(string)*: Must be `"view"`, `"set"`, or `"reset"`.
     *   `value` *(float, optional)*: The temperature value to set (required if action is `"set"`).

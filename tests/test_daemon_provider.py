@@ -2,7 +2,8 @@ import pytest
 import json
 import math
 from unittest.mock import patch, MagicMock
-from jev_mcp.daemon_provider import DaemonProvider
+from jev_mcp import router_config
+from jev_mcp.daemon_provider import UNKNOWN_MODEL, DaemonProvider
 from jev_mcp.provider import NoulQuestion, ChoiceQuestion, ScoreQuestion
 
 
@@ -142,11 +143,10 @@ def test_normalize_logprobs(provider):
     assert sum(result.values()) == pytest.approx(1.0)
     assert result["true"] > result["false"]
 
-    # Low confidence rejection
+    # Low confidence rejection: no answer, not an all-zero map
     lps_low = {"true": math.log(0.01), "false": math.log(0.01)}
     result_low = provider._normalize_logprobs(lps_low, ["true", "false"], prior)
-    assert result_low["true"] == 0.0
-    assert result_low["false"] == 0.0
+    assert result_low == {}
 
 
 @patch.object(DaemonProvider, "_get_daemon_pid", return_value="1234")
@@ -325,13 +325,13 @@ def test_normalize_logprobs_dcpmi_math(provider):
     # We need p_act sum > 0.05 to pass Absolute Confidence Gate
     # Wait, if lps is -9999.0, p_act is 0.
     result = provider._normalize_logprobs(lps, ["true", "false"], prior)
-    assert result == {"true": 0.0, "false": 0.0}
+    assert result == {}
 
     # If p_act > 0.05 but some max_lp ends up -9999.0 (not really possible unless lps has only values where prior smoothed goes to inf, which isn't possible because smoothed prior is bounded).
 
     lps = {"true": math.log(0.01), "false": math.log(0.01)}  # sum is 0.02, < 0.05
     result = provider._normalize_logprobs(lps, ["true", "false"], prior)
-    assert result == {"true": 0.0, "false": 0.0}
+    assert result == {}
 
 
 def test_env_var():
@@ -471,27 +471,195 @@ def test_a_question_the_daemon_did_not_answer_has_no_result(
     assert results == {}
 
 
-@patch.object(DaemonProvider, "_get_daemon_pid", return_value="1234")
+@patch.object(DaemonProvider, "_get_daemon_pid", return_value="pid-saved-temp")
 @patch.object(DaemonProvider, "get_logprobs")
 def test_a_saved_temperature_applies_to_a_provider_built_before_it(
     mock_get_logprobs, mock_pid
 ):
-    from jev_mcp.router_config import save_router_config
-
+    # The legacy global was fitted on qwen2.5-7b, so it applies only when that model answers.
     answer = {"true": math.log(0.9), "false": math.log(0.1)}
     mock_get_logprobs.side_effect = [
-        (answer, "m-temp"),
-        (FLAT_NOUL_PRIOR, "m-temp"),
-        (answer, "m-temp"),
+        (answer, QWEN_PATH),
+        (FLAT_NOUL_PRIOR, QWEN_PATH),
+        (answer, QWEN_PATH),
     ]
     q = NoulQuestion(key="q", prompt="p")
     provider = DaemonProvider()
 
     before = provider.evaluate_batch("state", [q])["q"]["noul"]
-    save_router_config({"buckets": {}, "rules": [], "fitted_temperature": 3.0})
+    router_config.save_router_config(
+        {"buckets": {}, "rules": [], "fitted_temperature": 3.0}
+    )
     after = provider.evaluate_batch("state", [q])["q"]["noul"]
 
     assert 0.5 < after < before
+
+
+# --- per-model temperature wiring ----------------------------------------------------
+
+QWEN_PATH = "/models/Qwen2.5-7B-Instruct-Q4_K_M.gguf"
+LLAMA_PATH = "/models/Llama-3.1-8B-Instruct-Q4_K_M.gguf"
+# A 0.9/0.1 answer against a flat prior scores 0.9 at T=1 and ~0.6753 at T=3.
+TEMP3_NOUL = 0.6753
+
+
+def _noul_answer(true_prob: float) -> dict[str, float]:
+    return {"true": math.log(true_prob), "false": math.log(1.0 - true_prob)}
+
+
+def _wire_logprobs(mock_get_logprobs, model_ids: list[str]) -> None:
+    """Answers report each listed model in turn; the empty-payload prior is always flat.
+
+    The prior prompt carries no state (unlike the SEEN_STATE answers), and it reports
+    the model of the answer it follows so the prior cache accepts it."""
+    answer = _noul_answer(0.9)
+    reports = iter(model_ids)
+    last = {"model": model_ids[0]}
+
+    def fake(prompt, keys):
+        if "SEEN_STATE" in prompt:
+            last["model"] = next(reports, model_ids[-1])
+            return answer, last["model"]
+        return FLAT_NOUL_PRIOR, last["model"]
+
+    mock_get_logprobs.side_effect = fake
+
+
+@patch.object(DaemonProvider, "_get_daemon_pid", return_value="pid-temp-set")
+@patch.object(DaemonProvider, "get_logprobs")
+def test_a_temperature_set_for_the_running_model_scores_the_next_batch(
+    mock_get_logprobs, mock_pid, monkeypatch
+):
+    monkeypatch.setattr(DaemonProvider, "_prior_cache", {})
+    _wire_logprobs(mock_get_logprobs, [QWEN_PATH, QWEN_PATH, QWEN_PATH])
+    q = NoulQuestion(key="q", prompt="p")
+    provider = DaemonProvider()
+
+    before = provider.evaluate_batch("SEEN_STATE", [q])["q"]["noul"]
+    router_config.save_router_config(
+        router_config.with_temperature({"buckets": {}, "rules": []}, QWEN_PATH, 3.0)
+    )
+    after = provider.evaluate_batch("SEEN_STATE", [q])["q"]["noul"]
+
+    assert after == pytest.approx(TEMP3_NOUL, rel=1e-3)
+    assert 0.5 < after < before
+    # the accessor agrees with the value scoring used
+    assert (
+        router_config.get_temperature(router_config.load_router_config(), QWEN_PATH)
+        == 3.0
+    )
+
+
+@patch.object(DaemonProvider, "_get_daemon_pid", return_value="pid-temp-reset")
+@patch.object(DaemonProvider, "get_logprobs")
+def test_resetting_to_the_default_scores_the_next_batch_at_one(
+    mock_get_logprobs, mock_pid, monkeypatch
+):
+    monkeypatch.setattr(DaemonProvider, "_prior_cache", {})
+    _wire_logprobs(mock_get_logprobs, [QWEN_PATH] * 4)
+    q = NoulQuestion(key="q", prompt="p")
+    provider = DaemonProvider()
+
+    default = provider.evaluate_batch("SEEN_STATE", [q])["q"]["noul"]
+    router_config.save_router_config(
+        router_config.with_temperature({"buckets": {}, "rules": []}, QWEN_PATH, 3.0)
+    )
+    squashed = provider.evaluate_batch("SEEN_STATE", [q])["q"]["noul"]
+    router_config.save_router_config(
+        router_config.with_temperature(
+            router_config.load_router_config(), QWEN_PATH, 1.0
+        )
+    )
+    restored = provider.evaluate_batch("SEEN_STATE", [q])["q"]["noul"]
+
+    assert squashed == pytest.approx(TEMP3_NOUL, rel=1e-3)
+    assert restored == pytest.approx(default)
+
+
+@patch.object(DaemonProvider, "_get_daemon_pid", return_value="pid-temp-legacy")
+@patch.object(DaemonProvider, "get_logprobs")
+def test_the_legacy_global_scores_only_qwen_and_the_accessor_agrees(
+    mock_get_logprobs, mock_pid, monkeypatch
+):
+    monkeypatch.setattr(DaemonProvider, "_prior_cache", {})
+    router_config.save_router_config(
+        {"buckets": {}, "rules": [], "fitted_temperature": 3.0}
+    )
+    _wire_logprobs(mock_get_logprobs, [QWEN_PATH, LLAMA_PATH])
+    q = NoulQuestion(key="q", prompt="p")
+
+    qwen = DaemonProvider().evaluate_batch("SEEN_STATE", [q])["q"]["noul"]
+    llama = DaemonProvider().evaluate_batch("SEEN_STATE", [q])["q"]["noul"]
+
+    assert qwen == pytest.approx(TEMP3_NOUL, rel=1e-3)
+    assert llama == pytest.approx(0.9, rel=1e-6)
+    assert (
+        router_config.get_temperature(router_config.load_router_config(), LLAMA_PATH)
+        == router_config.DEFAULT_TEMPERATURE
+    )
+
+
+@patch.object(DaemonProvider, "_get_daemon_pid", return_value="pid-temp-unknown")
+@patch.object(DaemonProvider, "get_logprobs")
+def test_an_unknown_model_scores_at_the_default_not_the_legacy_global(
+    mock_get_logprobs, mock_pid, monkeypatch
+):
+    monkeypatch.setattr(DaemonProvider, "_prior_cache", {})
+    router_config.save_router_config(
+        {"buckets": {}, "rules": [], "fitted_temperature": 3.0}
+    )
+    mock_get_logprobs.side_effect = [
+        (_noul_answer(0.9), UNKNOWN_MODEL),
+        (FLAT_NOUL_PRIOR, UNKNOWN_MODEL),
+    ]
+    provider = DaemonProvider()
+
+    noul = provider.evaluate_batch("state", [NoulQuestion(key="q", prompt="p")])["q"][
+        "noul"
+    ]
+
+    assert noul == pytest.approx(0.9, rel=1e-6)
+    assert provider.current_model_id == UNKNOWN_MODEL
+
+
+@patch.object(DaemonProvider, "_get_daemon_pid", return_value="pid-temp-error")
+@patch.object(DaemonProvider, "get_logprobs")
+def test_a_config_read_error_scores_at_the_default_instead_of_raising(
+    mock_get_logprobs, mock_pid, monkeypatch
+):
+    monkeypatch.setattr(DaemonProvider, "_prior_cache", {})
+    _wire_logprobs(mock_get_logprobs, [QWEN_PATH])
+    provider = DaemonProvider()
+    provider.current_model_id = QWEN_PATH
+
+    with patch(
+        "jev_mcp.daemon_provider.load_router_config",
+        side_effect=OSError("unreadable"),
+    ):
+        noul = provider.evaluate_batch(
+            "SEEN_STATE", [NoulQuestion(key="q", prompt="p")]
+        )["q"]["noul"]
+
+    assert noul == pytest.approx(0.9, rel=1e-6)
+
+
+@patch.object(DaemonProvider, "_get_daemon_pid", return_value="pid-temp-size")
+@patch.object(DaemonProvider, "get_logprobs")
+def test_a_reported_model_that_is_an_existing_file_records_its_size(
+    mock_get_logprobs, mock_pid, monkeypatch, tmp_path
+):
+    # get_temperature keys entries by name but guards them by size, so the provider
+    # must report the size of the file the daemon actually named.
+    monkeypatch.setattr(DaemonProvider, "_prior_cache", {})
+    gguf = tmp_path / "Qwen2.5-7B-Instruct-Q4_K_M.gguf"
+    gguf.write_bytes(b"\x00" * 512)
+    _wire_logprobs(mock_get_logprobs, [str(gguf)])
+    provider = DaemonProvider()
+
+    provider.evaluate_batch("SEEN_STATE", [NoulQuestion(key="q", prompt="p")])
+
+    assert provider.current_model_id == str(gguf)
+    assert provider.model_size == 512
 
 
 # --- choice questions with more options than there are single-letter labels -------

@@ -26,6 +26,7 @@ from typing import Any, Callable, Dict, List, Optional
 from mcp.server.mcpserver import MCPServer
 from jev_mcp import model_catalog, router_config
 from jev_mcp.router_config import (
+    UNREPORTED_MODEL_IDS,
     RouterConfig,
     apply_model_updates,
     load_router_config,
@@ -258,18 +259,66 @@ def start_model_sync() -> None:
     threading.Thread(target=_sync_models, name="jev-model-sync", daemon=True).start()
 
 
-def get_temp_notice() -> str | None:
+def _discover_model_once(smart: Any) -> str:
+    """The model id a direct probe of the smart engine returned, or "" when none did.
+
+    A provider that has not scored anything yet has never heard a model id from its
+    engine; asking the daemon itself (GET /props, no inference) fills that gap."""
+    discover = getattr(smart, "discover_model", None)
+    if not callable(discover):
+        return ""
+    try:
+        discovered = discover()
+    except Exception:
+        return ""
+    if isinstance(discovered, str) and discovered.strip() not in UNREPORTED_MODEL_IDS:
+        return discovered
+    return ""
+
+
+def reported_smart_model(smart: Any = None) -> tuple[str, int | None]:
+    """The model id the smart engine last reported ("" when it has not) and its size when known.
+
+    When the engine has not reported a model (a fresh process, before any evaluation),
+    it is probed once via GET /props before giving up, so the temperature tools work
+    without a prior evaluation."""
+    smart = smart if smart is not None else provider.smart_provider
+    model_id = getattr(smart, "current_model_id", "")
+    if not isinstance(model_id, str) or model_id.strip() in UNREPORTED_MODEL_IDS:
+        model_id = _discover_model_once(smart)
+    if not model_id:
+        return "", None
+    size = getattr(smart, "model_size", None)
+    is_size = isinstance(size, int) and not isinstance(size, bool)
+    return model_id, size if is_size else None
+
+
+def get_temp_notice(smart: Any = None) -> str | None:
+    """A one-time notice that the smart model in use runs a custom calibrated temperature."""
     global _has_notified_temp
     if _has_notified_temp:
         return None
 
     try:
+        model_id, model_size = reported_smart_model(smart)
+        if not model_id:
+            # A provider built for one call has not asked its engine anything yet: the
+            # shared one reports the model the smart engine last ran.
+            model_id, model_size = reported_smart_model()
+        if not model_id:
+            return None
         config = load_router_config()
-        temp = config.get("fitted_temperature", 1.0)
-        if temp != 1.0:
+        temp = router_config.get_temperature(config, model_id, model_size)
+        if temp != router_config.DEFAULT_TEMPERATURE:
             _has_notified_temp = True
-            updated_at = config.get("temperature_updated_at", "an unknown time")
-            return f"NOTICE: Jev is running with a custom calibrated temperature of {temp} (set on {updated_at}). This globally affects ALL evaluations. You can ask me to reset it to default (1.0) at any time using the /jev-mcp:temperature command or the jev_manage_temperature tool."
+            entry = router_config.temperature_entry(config, model_id, model_size)
+            updated_at = (
+                entry["updated_at"]
+                if entry
+                else config.get("temperature_updated_at", "an unknown time")
+            )
+            model = router_config.model_key(model_id)
+            return f"NOTICE: Jev is running {model} with a custom calibrated temperature of {temp} (set on {updated_at}). This affects every evaluation that model scores; other smart models keep their own. You can ask me to reset it to default (1.0) at any time using the /jev-mcp:temperature command or the jev_manage_temperature tool."
     except Exception:
         pass
     return None
