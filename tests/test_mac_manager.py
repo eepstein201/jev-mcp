@@ -16,8 +16,11 @@ from pathlib import Path
 
 import pytest
 
+from tests.fake_llama_server import FakeLlamaServer
+
 REPO = Path(__file__).resolve().parent.parent
 MANAGER = REPO / "jev_mac_manager.sh"
+VENV_PYTHON = REPO / ".venv" / "bin" / "python"
 PLIST = """<?xml version="1.0" encoding="UTF-8"?>
 <plist version="1.0"><dict><key>ProgramArguments</key><array>
     <string>/opt/homebrew/bin/llama-server</string>
@@ -909,6 +912,93 @@ def test_stop_after_hybrid_kills_the_generated_agents_ports(hybrid):
     assert any("--port 8080" in k for k in kills) and any(
         "--port 8081" in k for k in kills
     )
+
+
+# --- end to end: the real profiles CLI against real (fake) daemons ------------------------
+#
+# The tests above shim launchctl/pkill/curl AND the resolver python. This one runs the
+# real pieces together: `python -m jev_mcp.engine_profiles` from this checkout's venv
+# (the manager prepends its own $PWD/src; PYTHONPATH adds ours so the real module is
+# imported), the real engine_profiles.toml, real marker writes and real /props polling
+# against a FakeLlamaServer pair answering for the default profile's models. Still
+# shimmed, because they must never be touched from a test: launchctl, pkill, sleep,
+# the llama-server binary the generated plists name, and curl (never reached: the
+# model files are placed, not downloaded).
+
+
+def test_hybrid_end_to_end_real_cli_and_fake_daemons(hybrid):
+    if not (VENV_PYTHON.exists() and os.access(VENV_PYTHON, os.X_OK)):
+        pytest.skip("this checkout has no .venv python to run the real CLI with")
+
+    # The manager resolves against its own working tree: give it the real table and
+    # the default profile's model files (already present, so no download happens).
+    shutil.copy(REPO / "engine_profiles.toml", hybrid.work / "engine_profiles.toml")
+    fast_path = hybrid.models / "Kev-0.8B-GGUF" / "Kev-0.8B-Q8_0.gguf"
+    smart_path = (
+        hybrid.models / "Qwen2.5-7B-Instruct-GGUF" / "Qwen2.5-7B-Instruct-Q4_K_M.gguf"
+    )
+    for path in (fast_path, smart_path):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("already downloaded")
+
+    # The recorded /props defaults already match the default profile's slots and
+    # context (fast 4x16384, smart 2x16384); only the model paths need pointing.
+    marker = Path(hybrid.env["HOME"]) / ".jev" / "active_profile"
+    real_cli = {
+        "JEV_PROFILES_PYTHON": str(VENV_PYTHON),
+        "PYTHONPATH": str(REPO / "src"),
+    }
+
+    with FakeLlamaServer() as fast_daemon, FakeLlamaServer() as smart_daemon:
+        fast_daemon.set_scenario("normal", tier="fast", model=str(fast_path))
+        smart_daemon.set_scenario("normal", tier="smart", model=str(smart_path))
+        ports = {
+            "JEV_FAST_PORT": fast_daemon.url.rsplit(":", 1)[-1],
+            "JEV_SMART_PORT": smart_daemon.url.rsplit(":", 1)[-1],
+        }
+
+        # Act (positive): a full hybrid start with no name resolves the marker-less
+        # default profile and activates it against both daemons.
+        started = hybrid.run("hybrid", **real_cli, **ports)
+
+        # Assert: the real resolve's output was parsed, both real plists were written
+        # (only the real CLI emits this ProgramArguments shape), and the real activate
+        # verified both tiers over HTTP and wrote the marker.
+        assert started.returncode == 0, started.stderr
+        assert "Profile: default" in started.stdout
+        assert "Hybrid Mode Active" in started.stdout
+        assert marker.read_text() == "default\n"
+        served = [
+            p
+            for p in fast_daemon.requests + smart_daemon.requests
+            if p[:2] == ("GET", "/props")
+        ]
+        assert len(served) >= 2  # both tiers were really polled
+        for tier, port, path, alias, total_ctx in (
+            ("fast", ports["JEV_FAST_PORT"], fast_path, "kev-0.8b", "65536"),
+            ("smart", ports["JEV_SMART_PORT"], smart_path, "qwen2.5-7b", "32768"),
+        ):
+            plist = plistlib.loads(
+                (hybrid.agents / f"com.jev.mlx_server_{tier}.plist").read_bytes()
+            )
+            assert plist["Label"] == f"com.jev.mlx_server_{tier}"
+            args = plist["ProgramArguments"]
+            assert args[args.index("-m") + 1] == str(path)
+            assert args[args.index("--port") + 1] == port
+            assert args[args.index("--alias") + 1] == alias
+            assert args[args.index("-c") + 1] == total_ctx
+
+        # Act (negative): the smart daemon now serves an unexpected model_path; the
+        # marker from the successful run must survive the failed activation untouched.
+        smart_daemon.set_scenario("wrong_model", tier="smart")
+        mismatch = hybrid.run("hybrid", "default", **real_cli, **ports)
+
+        # Assert: the real activate named the mismatch, exited non-zero, and the
+        # manager propagated it without rewriting the marker.
+        assert mismatch.returncode == 1
+        assert "did not become active" in mismatch.stdout + mismatch.stderr
+        assert "smart model_path" in mismatch.stderr
+        assert marker.read_text() == "default\n"
 
 
 # --- Makefile -----------------------------------------------------------------------------

@@ -7,9 +7,10 @@ import urllib.request
 
 import pytest
 
+from jev_mcp import engine_profiles
+from jev_mcp.engine_profiles import DEFAULT_GATE
 from tests import run_evals
 from tests.run_evals import (
-    ROUTING_CONFIDENCE_GATE,
     build_score_rows,
     gate_sweep,
     parse_gate_range,
@@ -69,8 +70,118 @@ def test_the_production_gate_escalates_only_the_low_confidence_rows():
 
 
 def test_default_gate_is_the_routing_providers_085():
-    assert ROUTING_CONFIDENCE_GATE == 0.85
+    assert simulate_routing(ROWS, DEFAULT_GATE) == simulate_routing(ROWS, 0.85)
+
+
+# --- the default gate follows the active profile -------------------------------------------
+
+# A real (fixture) profile table: `gated` carries a gate that is neither DEFAULT_GATE
+# nor on the default sweep's 0.05 grid, so a test can tell "read the profile" from
+# "fell back to 0.85" and from "the gate landed on the grid by luck".
+GATED_TABLE = """
+[models."kev-0.8b"]
+tier = "fast"
+repo = "ggml-org/Kev-0.8B-GGUF"
+revision = "e551e319d483ff57e1ff208924b349d397cffc1c"
+filename = "Kev-0.8B-Q8_0.gguf"
+sha256 = "27278f34eb3273bceea4c053dc50dd61a5161da21a718c4aacdf8fd5830771d0"
+parallel = 4
+ctx_per_slot = 16384
+reasoning = "auto"
+style = "plain"
+
+[models."qwen2.5-7b"]
+tier = "smart"
+repo = "bartowski/Qwen2.5-7B-Instruct-GGUF"
+revision = "8911e8a47f92bac19d6f5c64a2e2095bd2f7d031"
+filename = "Qwen2.5-7B-Instruct-Q4_K_M.gguf"
+sha256 = "65b8fcd92af6b4fefa935c625d1ac27ea29dcb6ee14589c55a8f115ceaaa1423"
+parallel = 2
+ctx_per_slot = 16384
+reasoning = "auto"
+style = "sandbox"
+
+[profiles.default]
+fast = "kev-0.8b"
+smart = "qwen2.5-7b"
+
+[profiles.gated]
+fast = "kev-0.8b"
+smart = "qwen2.5-7b"
+gate = 0.72
+"""
+
+# Confidence 0.75 sits between the two gates: kept fast at 0.72, escalated at 0.85.
+GATE_ROWS = [row(0.75, 0.2, True), row(0.95, 0.2, True)]
+
+
+@pytest.fixture
+def active_gate_table(monkeypatch, tmp_path):
+    """Point gate resolution at a real marker+TOML pair (offline: marker and TOML reads).
+
+    point_at("gated") marks the 0.72-gate profile active; point_at(None) leaves the
+    marker missing, so the table's gate-less `default` profile resolves. config_path
+    swaps in a table that cannot be read at all."""
+    config = tmp_path / "engine_profiles.toml"
+    config.write_text(GATED_TABLE)
+    marker = tmp_path / "active_profile"
+    real_active = engine_profiles.active_profile
+
+    def point_at(name, config_path=str(config)):
+        if name is None:
+            marker.unlink(missing_ok=True)
+        else:
+            marker.write_text(f"{name}\n")
+        monkeypatch.setattr(
+            engine_profiles,
+            "active_profile",
+            lambda *a, **k: real_active(
+                config_path=config_path, marker_path=str(marker)
+            ),
+        )
+
+    return point_at
+
+
+def test_the_default_gate_is_the_active_profiles_gate(active_gate_table):
+    active_gate_table("gated")
+
+    assert run_evals.active_gate() == 0.72
+    assert simulate_routing(GATE_ROWS) == simulate_routing(GATE_ROWS, 0.72)
+    assert simulate_routing(GATE_ROWS) != simulate_routing(GATE_ROWS, 0.85)
+    assert route_row(GATE_ROWS[0])["escalated"] is False
+
+
+def test_the_gate_boundary_is_strict_at_the_profiles_gate(active_gate_table):
+    active_gate_table("gated")
+
+    at_gate = row(0.72, 0.9, True, fast_confidence=0.72)
+    below = row(0.72, 0.9, True, fast_confidence=0.7199)
+    assert route_row(at_gate)["escalated"] is False
+    assert route_row(below)["escalated"] is True
+
+
+def test_without_a_marker_the_default_gate_resolves(active_gate_table):
+    # A missing marker names the table's `default` profile, which sets no gate.
+    active_gate_table(None)
+
+    assert run_evals.active_gate() == DEFAULT_GATE == 0.85
     assert simulate_routing(ROWS) == simulate_routing(ROWS, 0.85)
+
+
+def test_when_no_profile_resolves_the_default_gate_answers(active_gate_table):
+    active_gate_table(None, config_path="/nonexistent/engine_profiles.toml")
+
+    assert run_evals.active_gate() == DEFAULT_GATE
+
+
+def test_an_explicit_gate_still_overrides_the_active_profile(active_gate_table):
+    active_gate_table("gated")
+
+    at_085 = simulate_routing(GATE_ROWS, 0.85)
+    assert at_085 != simulate_routing(GATE_ROWS)
+    # only the conf-0.75 row escalates at 0.85; the conf-0.95 one never does
+    assert at_085["escalation_rate"] == 0.5
 
 
 def test_confidence_exactly_at_the_gate_is_not_escalated():
@@ -346,10 +457,15 @@ def test_simulate_json_is_machine_readable(scores_file, capsys):
     ]
 
 
-def test_simulate_defaults_include_the_production_gate(scores_file, capsys):
+def test_simulate_defaults_include_the_production_gate(
+    scores_file, capsys, active_gate_table
+):
+    active_gate_table("gated")
+
     run_evals.main(["--simulate", str(scores_file), "--json"])
     gates = [p["gate"] for p in json.loads(capsys.readouterr().out)]
-    assert ROUTING_CONFIDENCE_GATE in gates
+    assert 0.72 in gates  # off the 0.05 grid: only following the profile puts it there
+    assert 0.85 in gates  # the standard grid itself is unchanged
 
 
 def test_a_bad_gate_range_exits_with_a_usage_error(scores_file):
@@ -665,11 +781,14 @@ TOKEN_CASES = [4000, 4001]
 @pytest.mark.parametrize("smart_probs", SMART_CASES, ids=lambda c: str(c)[:22])
 @pytest.mark.parametrize("fast_probs", FAST_CASES, ids=lambda c: str(c)[:22])
 def test_simulation_agrees_with_the_real_router_cell_by_cell(
-    monkeypatch, fast_probs, smart_probs, tokens
+    monkeypatch, active_gate_table, fast_probs, smart_probs, tokens
 ):
     import jev_mcp.routing_provider as rp
     from jev_mcp.provider import EngineUnavailableError, NoulQuestion
 
+    # A non-default gate, resolved the same way on both sides: the router reads it
+    # through daemon_provider, the simulation through run_evals.active_gate().
+    active_gate_table("gated")
     fast = StubEngine(F_ID, fast_probs, tokens)
     smart = StubEngine(S_ID, smart_probs)
     monkeypatch.setattr(rp, "KevProvider", lambda base_url: fast)
@@ -697,11 +816,11 @@ def test_simulation_agrees_with_the_real_router_cell_by_cell(
         S_ID,
         [router.check_token_limit("state")],
     )
-    simulated = route_row(rows[0], 0.85)
+    simulated = route_row(rows[0])  # no explicit gate: resolves as the router did
 
     assert simulated == actual
-    # the gate the simulation applies is the one the router really has
-    assert ROUTING_CONFIDENCE_GATE == 0.85
+    # the gate the simulation applied is the one the router really read: the profile's
+    assert run_evals.active_gate() == 0.72
 
 
 # --- dump reading failures --------------------------------------------------
