@@ -53,9 +53,12 @@ eval-triage:
 	@echo "Triaging every email in $(DATASET) and reporting agreement with its expected routing (daemons must be running)..."
 	bash -c "source .venv/bin/activate && python -m tests.evals.triage_eval --dataset $(DATASET)"
 
+MEMORY_ARGS ?=
+
 eval-memory:
-	@echo "Recording startup buffers, resident footprint and swap pressure of both engines (daemons must be running)..."
-	bash -c "source .venv/bin/activate && python -m tests.evals.memory"
+	@echo "Recording startup buffers, dirty footprint, GGUF size, wired/swap/GPU memory of both engines (daemons must be running)."
+	@echo "A default run reads IDLE footprints; add MEMORY_ARGS=--warm-request to send one ~12k-token request per daemon first."
+	bash -c "source .venv/bin/activate && python -m tests.evals.memory $(MEMORY_ARGS)"
 
 # The runner is the mcp-builder skill's scripts/evaluation.py. It needs `anthropic` and an `mcp` 1.x client,
 # so it runs from its own venv (see tests/evals/usage/README.md), not the project's.
