@@ -183,6 +183,7 @@ def jev_determine_best_model(
 
     # 2. Evaluate Custom Rules (Hybrid Evidence-Based)
     provider = app.RoutingProvider()
+    gate = app.active_gate()
     state = {"task": task_description}
     for rule in config["rules"]:
         condition = rule["condition"]
@@ -192,13 +193,14 @@ def jev_determine_best_model(
         )
         try:
             res = provider.evaluate_batch(state, [q])
-            if res.get("rule", {}).get("noul", 0.0) > 0.85:
+            if res.get("rule", {}).get("noul", 0.0) > gate:
                 return json.dumps(
                     {
                         "status": "RULE_TRIGGERED",
                         "triggered_rule": condition,
                         "recommended_target": rule["target"],
                         "model": config["buckets"].get(rule["target"], rule["target"]),
+                        **app.engine_identity(provider),
                     },
                     indent=2,
                 )
@@ -229,6 +231,7 @@ def jev_determine_best_model(
                 "complexity_score": int(score),
                 "reasoning": f"Task complexity scored {score}/4. Routed to {recommended_model}.",
                 "probabilities": probs,
+                **app.engine_identity(provider),
             },
             escalation_failures(res),
             keep_status=True,
@@ -242,7 +245,9 @@ def jev_determine_best_model(
 
         return json.dumps(res_dict, indent=2)
     except Exception as e:
-        return json.dumps({"status": "ERROR", "message": str(e)})
+        return json.dumps(
+            {"status": "ERROR", "message": str(e), **app.engine_identity(provider)}
+        )
 
 
 @mcp.tool(
@@ -280,6 +285,7 @@ def jev_agent_handoff(task_description: str, available_agents: Dict[str, str]) -
             "status": "HANDOFF_RECOMMENDATION",
             "recommended_agent": best_agent,
             "probabilities": probs,
+            **app.engine_identity(provider),
         },
         escalation_failures(res),
         keep_status=True,

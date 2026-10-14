@@ -535,3 +535,228 @@ def test_fuse_script_quotes_the_output_path_in_its_messages():
     assert len(saved) == 1
     assert shlex.split(saved[0])[0] == "echo"
     assert '"' not in saved[0]
+
+
+# --- engine profiles: the target must be the active profile's smart model ---
+
+import plistlib  # noqa: E402
+
+from jev_mcp import engine_profiles  # noqa: E402
+from jev_mcp.engine_profiles import ModelSpec, Profile  # noqa: E402
+
+
+def _model(tier, filename, *, reasoning="auto"):
+    return ModelSpec(
+        name=filename.lower().removesuffix(".gguf"),
+        tier=tier,
+        repo="org/repo",
+        revision="a" * 40,
+        filename=filename,
+        sha256="b" * 64,
+        parallel=2,
+        ctx_per_slot=16384,
+        reasoning=reasoning,
+        style="sandbox",
+    )
+
+
+def _use_profile(monkeypatch, smart_file="qwen.gguf", *, reasoning="auto"):
+    profile = Profile(
+        name="lean",
+        fast=_model("fast", "kev.gguf"),
+        smart=_model("smart", smart_file, reasoning=reasoning),
+        gate=0.85,
+        eval_only=False,
+    )
+    monkeypatch.setattr(engine_profiles, "active_profile", lambda *a, **k: profile)
+    return profile
+
+
+@patch("subprocess.Popen")
+def test_train_refuses_a_target_that_is_not_the_active_smart_model(
+    mock_popen, home, converter, monkeypatch
+):
+    _use_profile(monkeypatch)
+    target = home / "other.gguf"
+    target.write_text("original")
+
+    res = json.loads(
+        server.jev_train_lora(_dataset(home), target_gguf_path=str(target))
+    )
+
+    assert res["status"] == "ERROR"
+    assert "other.gguf" in res["message"]
+    assert "qwen.gguf" in res["message"]
+    assert "lean" in res["message"]
+    mock_popen.assert_not_called()
+    assert not (home / "other.gguf.bak").exists()
+
+
+@patch("subprocess.Popen")
+def test_train_refuses_the_active_fast_model_as_a_target(
+    mock_popen, home, converter, monkeypatch
+):
+    _use_profile(monkeypatch)
+    target = home / "kev.gguf"
+    target.write_text("original")
+
+    res = json.loads(
+        server.jev_train_lora(_dataset(home), target_gguf_path=str(target))
+    )
+
+    assert res["status"] == "ERROR"
+    mock_popen.assert_not_called()
+
+
+@patch("subprocess.Popen")
+def test_train_accepts_the_active_smart_model_as_a_target(
+    mock_popen, home, converter, monkeypatch
+):
+    _use_profile(monkeypatch)
+    mock_popen.return_value = MagicMock(pid=7)
+    target = home / "qwen.gguf"
+    target.write_text("original")
+    _agent(home, SMART_LABEL, str(target))
+
+    res = json.loads(
+        server.jev_train_lora(_dataset(home), target_gguf_path=str(target))
+    )
+
+    assert res["status"] == "TRAINING_STARTED", res.get("message")
+
+
+@patch("subprocess.Popen")
+def test_train_refuses_a_reasoning_off_target_it_cannot_build_rows_for(
+    mock_popen, home, converter, monkeypatch
+):
+    _use_profile(monkeypatch, reasoning="off")
+    target = home / "qwen.gguf"
+    target.write_text("original")
+
+    res = json.loads(
+        server.jev_train_lora(_dataset(home), target_gguf_path=str(target))
+    )
+
+    assert res["status"] == "ERROR"
+    assert "think" in res["message"]
+    assert 'reasoning = "off"' in res["message"]
+    mock_popen.assert_not_called()
+
+
+@patch("subprocess.Popen")
+def test_train_without_a_target_is_not_checked_against_the_profile(
+    mock_popen, home, converter, monkeypatch
+):
+    _use_profile(monkeypatch, reasoning="off")
+    mock_popen.return_value = MagicMock(pid=7)
+
+    res = json.loads(server.jev_train_lora(_dataset(home), fuse=False))
+
+    assert res["status"] in ("TRAINING_STARTED", "NOT_AVAILABLE")
+    assert "refus" not in res.get("message", "")
+
+
+@patch("subprocess.Popen")
+def test_train_with_a_failing_resolver_keeps_todays_behaviour(
+    mock_popen, home, converter, monkeypatch
+):
+    def _raise(*args, **kwargs):
+        raise NotImplementedError
+
+    monkeypatch.setattr(engine_profiles, "active_profile", _raise)
+    mock_popen.return_value = MagicMock(pid=7)
+    target = home / "anything.gguf"
+    target.write_text("original")
+
+    res = json.loads(
+        server.jev_train_lora(_dataset(home), target_gguf_path=str(target))
+    )
+
+    assert res["status"] == "TRAINING_STARTED", res.get("message")
+
+
+def test_restore_is_allowed_for_any_target_whatever_the_profile(home, monkeypatch):
+    _use_profile(monkeypatch)
+    target = home / "other.gguf"
+    target.write_text("fine-tuned")
+    (home / "other.gguf.bak").write_text("original")
+
+    res = json.loads(
+        server.jev_train_lora(action="restore", target_gguf_path=str(target))
+    )
+
+    assert res["status"] == "RESTORED"
+
+
+# --- the launchd reader against a plist in the contract's shape ---
+
+
+def _contract_plist(model_path, label=SMART_LABEL):
+    """The shape section 5 of the contract gives the manager's plist."""
+    arguments = [
+        "/opt/homebrew/bin/llama-server",
+        "-m",
+        model_path,
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8081",
+        "--alias",
+        "qwen2.5-7b",
+        "--parallel",
+        "2",
+        "-c",
+        "32768",
+        "--log-verbosity",
+        "3",
+    ]
+    return plistlib.dumps(
+        {
+            "Label": label,
+            "ProgramArguments": arguments,
+            "RunAtLoad": True,
+            "KeepAlive": True,
+            "StandardOutPath": "/tmp/jev.log",
+            "StandardErrorPath": "/tmp/jev.log",
+            "WorkingDirectory": "/tmp",
+        }
+    )
+
+
+def _install_plist(home, payload, label=SMART_LABEL):
+    agents = home / "Library" / "LaunchAgents"
+    agents.mkdir(parents=True, exist_ok=True)
+    (agents / f"{label}.plist").write_bytes(payload)
+
+
+def test_the_label_reader_finds_the_agent_in_a_contract_shaped_plist(home):
+    _install_plist(home, _contract_plist("/models/qwen.gguf"))
+
+    assert lora_training.find_launchd_label("/models/qwen.gguf") == SMART_LABEL
+
+
+def test_the_label_reader_ignores_a_contract_shaped_plist_for_another_model(home):
+    _install_plist(home, _contract_plist("/models/kev.gguf"))
+
+    assert lora_training.find_launchd_label("/models/qwen.gguf") is None
+
+
+def test_the_label_reader_finds_the_agent_in_a_generated_plist(home):
+    spec = _model("smart", "qwen.gguf")
+    models_dir = home / "models"
+    try:
+        payload = engine_profiles.launchd_plist(
+            spec,
+            models_dir=str(models_dir),
+            port=8081,
+            label=SMART_LABEL,
+            log_path=str(home / "jev.log"),
+            llama_server="/opt/homebrew/bin/llama-server",
+            workdir=str(home),
+        )
+    except NotImplementedError:
+        pytest.skip("engine_profiles.launchd_plist is not implemented on this branch")
+
+    _install_plist(home, payload)
+
+    assert lora_training.find_launchd_label(spec.path(str(models_dir))) == SMART_LABEL

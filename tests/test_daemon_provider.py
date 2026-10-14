@@ -2,7 +2,7 @@ import pytest
 import json
 import math
 from unittest.mock import patch, MagicMock
-from jev_mcp import router_config
+from jev_mcp import daemon_provider, engine_profiles, router_config
 from jev_mcp.daemon_provider import UNKNOWN_MODEL, DaemonProvider
 from jev_mcp.provider import NoulQuestion, ChoiceQuestion, ScoreQuestion
 
@@ -221,12 +221,29 @@ def test_sandbox_prompt_does_not_depend_on_unrelated_mlx_processes(
 
 @patch.object(DaemonProvider, "_get_daemon_pid", return_value="1234")
 @patch.object(DaemonProvider, "get_logprobs")
-def test_small_model_reported_by_the_daemon_gets_the_simple_prompt(
-    mock_get_logprobs, mock_get_pid
+def test_a_plain_model_the_active_profile_names_gets_the_simple_prompt(
+    mock_get_logprobs, mock_get_pid, monkeypatch
 ):
+    # The plain prompt used to follow a "0.5b" substring of the model id; it now follows
+    # the `style` of the active profile's smart model whose file is the one served.
+    served = "/models/Plain-Small-Q8_0.gguf"
+    spec = engine_profiles.ModelSpec(
+        name="plain-small",
+        tier="smart",
+        repo="org/repo",
+        revision="a" * 40,
+        filename="Plain-Small-Q8_0.gguf",
+        sha256="b" * 64,
+        parallel=2,
+        ctx_per_slot=16384,
+        reasoning="auto",
+        style="plain",
+    )
+    profile = engine_profiles.Profile("p", spec, spec, 0.85, False)
+    monkeypatch.setattr(engine_profiles, "active_profile", lambda *a, **k: profile)
     provider = DaemonProvider()
-    provider.current_model_id = "Qwen2.5-0.5B-Instruct"
-    mock_get_logprobs.side_effect = _scripted_logprobs("Qwen2.5-0.5B-Instruct")
+    provider.current_model_id = served
+    mock_get_logprobs.side_effect = _scripted_logprobs(served)
 
     provider.evaluate_batch("state", [NoulQuestion(key="q1", prompt="Is this true?")])
 
@@ -474,9 +491,10 @@ def test_a_question_the_daemon_did_not_answer_has_no_result(
 @patch.object(DaemonProvider, "_get_daemon_pid", return_value="pid-saved-temp")
 @patch.object(DaemonProvider, "get_logprobs")
 def test_a_saved_temperature_applies_to_a_provider_built_before_it(
-    mock_get_logprobs, mock_pid
+    mock_get_logprobs, mock_pid, monkeypatch
 ):
     # The legacy global was fitted on qwen2.5-7b, so it applies only when that model answers.
+    _serve(monkeypatch, QWEN_PATH)
     answer = {"true": math.log(0.9), "false": math.log(0.1)}
     mock_get_logprobs.side_effect = [
         (answer, QWEN_PATH),
@@ -507,6 +525,21 @@ def _noul_answer(true_prob: float) -> dict[str, float]:
     return {"true": math.log(true_prob), "false": math.log(1.0 - true_prob)}
 
 
+def _serve(monkeypatch, *model_ids: str) -> None:
+    """The daemon's /props names each listed model in turn (the last one repeats).
+
+    The model id comes from /props, not from a chat reply, so tests that need the
+    provider to know its model say so here."""
+    served = iter(model_ids)
+    last = {"model": model_ids[-1]}
+
+    def fetch(base_url):
+        last["model"] = next(served, model_ids[-1])
+        return last["model"]
+
+    monkeypatch.setattr(daemon_provider, "fetch_served_model_path", fetch)
+
+
 def _wire_logprobs(mock_get_logprobs, model_ids: list[str]) -> None:
     """Answers report each listed model in turn; the empty-payload prior is always flat.
 
@@ -531,6 +564,7 @@ def test_a_temperature_set_for_the_running_model_scores_the_next_batch(
     mock_get_logprobs, mock_pid, monkeypatch
 ):
     monkeypatch.setattr(DaemonProvider, "_prior_cache", {})
+    _serve(monkeypatch, QWEN_PATH)
     _wire_logprobs(mock_get_logprobs, [QWEN_PATH, QWEN_PATH, QWEN_PATH])
     q = NoulQuestion(key="q", prompt="p")
     provider = DaemonProvider()
@@ -556,6 +590,7 @@ def test_resetting_to_the_default_scores_the_next_batch_at_one(
     mock_get_logprobs, mock_pid, monkeypatch
 ):
     monkeypatch.setattr(DaemonProvider, "_prior_cache", {})
+    _serve(monkeypatch, QWEN_PATH)
     _wire_logprobs(mock_get_logprobs, [QWEN_PATH] * 4)
     q = NoulQuestion(key="q", prompt="p")
     provider = DaemonProvider()
@@ -585,6 +620,7 @@ def test_the_legacy_global_scores_only_qwen_and_the_accessor_agrees(
     router_config.save_router_config(
         {"buckets": {}, "rules": [], "fitted_temperature": 3.0}
     )
+    _serve(monkeypatch, QWEN_PATH, LLAMA_PATH)
     _wire_logprobs(mock_get_logprobs, [QWEN_PATH, LLAMA_PATH])
     q = NoulQuestion(key="q", prompt="p")
 
@@ -653,6 +689,7 @@ def test_a_reported_model_that_is_an_existing_file_records_its_size(
     monkeypatch.setattr(DaemonProvider, "_prior_cache", {})
     gguf = tmp_path / "Qwen2.5-7B-Instruct-Q4_K_M.gguf"
     gguf.write_bytes(b"\x00" * 512)
+    _serve(monkeypatch, str(gguf))
     _wire_logprobs(mock_get_logprobs, [str(gguf)])
     provider = DaemonProvider()
 

@@ -24,7 +24,7 @@ from typing import Any, Callable, Dict, List, Optional
 # from printing warnings that would corrupt the JSON-RPC stream.
 
 from mcp.server.mcpserver import MCPServer
-from jev_mcp import model_catalog, router_config
+from jev_mcp import daemon_provider, model_catalog, router_config
 from jev_mcp.router_config import (
     UNREPORTED_MODEL_IDS,
     RouterConfig,
@@ -257,6 +257,35 @@ def start_model_sync() -> None:
     import threading
 
     threading.Thread(target=_sync_models, name="jev-model-sync", daemon=True).start()
+
+
+def active_engine_profile() -> Any:
+    """The active engine profile, or None when there is none (see daemon_provider)."""
+    return daemon_provider.active_engine_profile()
+
+
+def active_gate() -> float:
+    """The active profile's confidence gate, or the default without a profile."""
+    return daemon_provider.active_gate()
+
+
+def _served_key(engine: Any) -> str | None:
+    """The model key an engine serves, or None when it has not reported one."""
+    model_id = getattr(engine, "current_model_id", None)
+    if not isinstance(model_id, str) or model_id.strip() in UNREPORTED_MODEL_IDS:
+        return None
+    return router_config.model_key(model_id)
+
+
+def engine_identity(routing: Any) -> Dict[str, Any]:
+    """{"profile", "fast", "smart"}: the active profile and the model key each engine
+    serves, null where there is none or the engine has not reported one."""
+    profile = active_engine_profile()
+    return {
+        "profile": profile.name if profile is not None else None,
+        "fast": _served_key(getattr(routing, "fast_provider", None)),
+        "smart": _served_key(getattr(routing, "smart_provider", None)),
+    }
 
 
 def _discover_model_once(smart: Any) -> str:

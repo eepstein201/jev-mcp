@@ -6,9 +6,12 @@ import random
 import string
 import math
 import subprocess
+import time
 import urllib.request
+from collections.abc import Callable
 from typing import Any, List, Optional, Tuple
 import logging
+from jev_mcp import engine_profiles
 from jev_mcp.provider import JevProvider, NoulQuestion, ChoiceQuestion, ScoreQuestion
 from jev_mcp.router_config import (
     DEFAULT_TEMPERATURE,
@@ -20,8 +23,9 @@ from jev_mcp.security import sanitize_payload
 
 logger = logging.getLogger(__name__)
 
-SMALL_MODEL_MARKER = "0.5b"
 UNKNOWN_MODEL = "unknown_model"
+STYLE_PLAIN = "plain"
+STYLE_SANDBOX = "sandbox"
 # Below this much probability on the target tokens the reply is not an answer (the
 # model started with something else, such as a think tag).
 MIN_TARGET_MASS = 0.05
@@ -29,6 +33,127 @@ MIN_TARGET_MASS = 0.05
 MAX_CHOICE_LABELS = 26
 # A model probe must answer faster than an inference would; anything slower is a dead daemon.
 PROPS_TIMEOUT_SECONDS = 5.0
+# How long a model id read from /props is trusted before the daemon is asked again.
+SERVED_MODEL_TTL_SECONDS = 30.0
+# How long the active profile is trusted; a `make start` changes it rarely.
+PROFILE_TTL_SECONDS = 5.0
+
+_PROFILE_CLOCK: Callable[[], float] = time.monotonic
+# (the resolver function that produced it, when, the profile or None)
+_profile_cache: tuple[Any, float, "engine_profiles.Profile | None"] | None = None
+_profile_warned = False
+
+
+def active_engine_profile() -> "engine_profiles.Profile | None":
+    """The active engine profile, or None when there is none or it cannot be read.
+
+    Read with a short TTL. Any failure counts as "no profile" (the default gate and the
+    sandbox prompt), logged once at WARNING, so a missing marker never fails a tool. The
+    cache remembers which resolver function filled it, so replacing that function (a
+    test double) never sees a profile cached for the real one."""
+    global _profile_cache, _profile_warned
+    resolver = engine_profiles.active_profile
+    now = _PROFILE_CLOCK()
+    cached = _profile_cache
+    if (
+        cached is not None
+        and cached[0] is resolver
+        and now - cached[1] < PROFILE_TTL_SECONDS
+    ):
+        return cached[2]
+    try:
+        profile = resolver()
+    except Exception as e:
+        if not _profile_warned:
+            _profile_warned = True
+            logger.warning(
+                f"Could not read the active engine profile ({e!r}); using the default "
+                f"gate and the sandbox prompt."
+            )
+        profile = None
+    _profile_cache = (resolver, now, profile)
+    return profile
+
+
+def active_gate() -> float:
+    """The confidence gate of the active profile, or the default without one."""
+    profile = active_engine_profile()
+    return profile.gate if profile is not None else engine_profiles.DEFAULT_GATE
+
+
+def served_style(model_path: str) -> str:
+    """The prompt style of the served smart model: plain only for a plain model the
+    active profile names, sandbox otherwise (untrusted state is never sent bare)."""
+    profile = active_engine_profile()
+    if profile is None or model_path in UNREPORTED_MODEL_IDS:
+        return STYLE_SANDBOX
+    served_file = os.path.basename(model_path.replace("\\", "/"))
+    if served_file == profile.smart.filename and profile.smart.style == STYLE_PLAIN:
+        return STYLE_PLAIN
+    return STYLE_SANDBOX
+
+
+def fetch_served_model_path(base_url: str) -> str | None:
+    """The `model_path` the daemon behind base_url serves (GET /props), or None.
+
+    No failure ever raises: a daemon that is down, loading (503) or names no usable
+    model all answer None."""
+    from urllib.parse import urlsplit
+
+    try:
+        parts = urlsplit(base_url)
+        request = urllib.request.Request(
+            f"{parts.scheme}://{parts.netloc}/props", method="GET"
+        )
+        with urllib.request.urlopen(request, timeout=PROPS_TIMEOUT_SECONDS) as response:
+            props = json.loads(response.read().decode())
+        if not isinstance(props, dict):
+            return None
+        reported = props.get("model_path")
+        if not isinstance(reported, str):
+            return None
+        model_id = reported.strip()
+        return None if model_id in UNREPORTED_MODEL_IDS else model_id
+    except Exception as e:
+        logger.info(f"Could not discover the served model at {base_url}: {e}")
+        return None
+
+
+class ServedModelTracker:
+    """The model a daemon serves, from /props, trusted for a TTL.
+
+    Failures are not remembered, so a daemon that was down or loading is asked again on
+    the next call."""
+
+    def __init__(
+        self,
+        clock: Callable[[], float] = time.monotonic,
+        ttl: float = SERVED_MODEL_TTL_SECONDS,
+    ) -> None:
+        self._clock = clock
+        self._ttl = ttl
+        self._model_id: str | None = None
+        self._base_url = ""
+        self._read_at = 0.0
+
+    def read(self, base_url: str, force: bool = False) -> str | None:
+        """The model served at base_url, or None when the daemon cannot name one now.
+
+        A cached answer is reused only for the same base_url and inside the TTL."""
+        now = self._clock()
+        fresh = (
+            self._model_id is not None
+            and base_url == self._base_url
+            and now - self._read_at < self._ttl
+        )
+        if fresh and not force:
+            return self._model_id
+        fetched = fetch_served_model_path(base_url)
+        if fetched is not None:
+            self._model_id = fetched
+            self._base_url = base_url
+            self._read_at = now
+        return fetched
 
 
 def _model_size(model_id: str) -> int | None:
@@ -55,7 +180,11 @@ class DaemonProvider(JevProvider):
     # the jev_scan_repo thread pool is harmless.
     _prior_cache: dict[str, dict[str, float]] = {}
 
-    def __init__(self, base_url: str | None = None) -> None:
+    def __init__(
+        self,
+        base_url: str | None = None,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
         import os
         import json
 
@@ -68,6 +197,7 @@ class DaemonProvider(JevProvider):
         # Default to the smart engine's port: 8080 is the Kev daemon in the dual-engine setup.
         port = os.getenv("JEV_DAEMON_PORT", "") or os.getenv("JEV_SMART_PORT", "8081")
         self.base_url = base_url or f"http://127.0.0.1:{port}/v1/chat/completions"
+        self._served = ServedModelTracker(clock)
         self.max_tokens = 8192
         self.current_model_id = UNKNOWN_MODEL
         self.model_size: int | None = None
@@ -101,31 +231,20 @@ class DaemonProvider(JevProvider):
         its file size, when the id is an existing path) is recorded on the provider
         and returned; None comes back when the daemon named no usable model, and no
         failure ever raises."""
-        from urllib.parse import urlsplit
+        return self._adopt(self._served.read(self.base_url, force=True))
 
-        try:
-            parts = urlsplit(self.base_url)
-            request = urllib.request.Request(
-                f"{parts.scheme}://{parts.netloc}/props", method="GET"
-            )
-            with urllib.request.urlopen(
-                request, timeout=PROPS_TIMEOUT_SECONDS
-            ) as response:
-                props = json.loads(response.read().decode())
-            if not isinstance(props, dict):
-                return None
-            reported = props.get("model_path")
-            if not isinstance(reported, str):
-                return None
-            model_id = reported.strip()
-            if model_id in UNREPORTED_MODEL_IDS:
-                return None
+    def _refresh_model(self) -> None:
+        """Follow the daemon's served model (GET /props, at most once per TTL).
+
+        The chat reply's `model` field is NOT the identity: with `--alias` it is a short
+        alias, the same for every file served under it."""
+        self._adopt(self._served.read(self.base_url))
+
+    def _adopt(self, model_id: str | None) -> str | None:
+        if model_id is not None and model_id != self.current_model_id:
             self.current_model_id = model_id
             self.model_size = _model_size(model_id)
-            return model_id
-        except Exception as e:
-            logger.info(f"Could not discover the served model at {self.base_url}: {e}")
-            return None
+        return model_id
 
     def _get_daemon_pid(self) -> str:
         try:
@@ -372,6 +491,9 @@ class DaemonProvider(JevProvider):
         self, state: Any, questions: List[Any]
     ) -> dict[str, dict[str, Any]]:
         results = {}
+        # The served model first (cached for a TTL): the temperature and the prompt style
+        # below both depend on it.
+        self._refresh_model()
         # Re-read on every batch: jev_manage_temperature and jev_calibrate_threshold can change it
         # while this provider (built once at server start) is still in use. While the model is
         # still unknown this answers the default — the legacy global belongs to one model alone.
@@ -385,10 +507,11 @@ class DaemonProvider(JevProvider):
         state_str = sanitize_payload(state_str)
         daemon_pid = self._get_daemon_pid()
 
-        # This is the smart tier: untrusted state always gets the XML sandbox. Only a
-        # model the daemon itself reported as 0.5B gets the plain prompt; the choice
-        # never depends on which other processes (e.g. a training run) are alive.
-        is_small_model = SMALL_MODEL_MARKER in self.current_model_id.lower()
+        # This is the smart tier: untrusted state gets the XML sandbox unless the active
+        # profile says the served model is a plain one; the choice never depends on which
+        # other processes (e.g. a training run) are alive.
+        style = served_style(self.current_model_id)
+        is_plain = style == STYLE_PLAIN
 
         for q in questions:
             if isinstance(q, ChoiceQuestion) and len(q.options) > MAX_CHOICE_LABELS:
@@ -407,7 +530,7 @@ class DaemonProvider(JevProvider):
             if not expected_keys:
                 continue
 
-            if is_small_model:
+            if is_plain:
                 empty_payload_prompt = (
                     f"You are a strict classification model. Evaluate the question based only on the context.\n"
                     f"Context: \n"
@@ -441,13 +564,9 @@ class DaemonProvider(JevProvider):
                 )
 
             # 1. Fetch Active Logprobs
+            # `model_id` is what the reply calls the model (an alias under --alias): it
+            # only guards the prior below, it never becomes the provider's model id.
             lps, model_id = self.get_logprobs(user_prompt, expected_keys)
-            if model_id != UNKNOWN_MODEL and model_id != self.current_model_id:
-                self.current_model_id = model_id
-                self.model_size = _model_size(model_id)
-                # The model is known now (first reply, or a swap): resolve this
-                # model's temperature before the scores below are normalized.
-                self.fitted_temperature = self._saved_temperature()
             if not lps:
                 # No answer (daemon down or a reply without logprobs). Leaving the question
                 # out keeps that distinct from a real answer of all-zero probabilities.
@@ -457,8 +576,10 @@ class DaemonProvider(JevProvider):
             # Key on format_hint, not the full empty prompt: the 7B sandbox
             # template embeds a per-question salt tag, which would make every
             # cache key unique and refetch the prior on every question.
-            style = "plain" if is_small_model else "sandbox"
-            cache_key = f"{daemon_pid}::{model_id}::{style}::{format_hint}"
+            cache_key = (
+                f"{daemon_pid}::{self.current_model_id}::{model_id}::{style}::"
+                f"{format_hint}"
+            )
             cached_prior = self._prior_cache.get(cache_key)
             if cached_prior is None:
                 prior_lps, prior_model_id = self.get_logprobs(

@@ -100,6 +100,7 @@ def _semantic_lint_findings(qs):
             )
         )
 
+    gate = app.active_gate()
     try:
         # Evaluate the questions against a tiny dummy state
         lint_state = {"task": "Determine generative intent."}
@@ -108,7 +109,7 @@ def _semantic_lint_findings(qs):
         for i, q in enumerate(qs):
             res = lint_results.get(f"q_{i}", {})
             q_key = q.key
-            if res.get("noul", 0.0) > 0.85:
+            if res.get("noul", 0.0) > gate:
                 findings.append(
                     {
                         "question_key": q_key,
@@ -259,6 +260,7 @@ def _score_and_assemble(
         response = {
             "model": getattr(app.provider, "current_model_id", "unknown_model"),
             "data": results,
+            **app.engine_identity(app.provider),
         }
         if all_findings:
             response["status"] = "SUCCESS_WITH_WARNINGS"
@@ -281,7 +283,13 @@ def _score_and_assemble(
         return json.dumps(response, indent=2)
     except Exception as e:
         logger.error(f"Engine failure: {str(e)}")
-        return _error(f"INTERNAL ENGINE ERROR: {str(e)}")
+        return json.dumps(
+            {
+                "status": "ERROR",
+                "message": f"INTERNAL ENGINE ERROR: {str(e)}",
+                **app.engine_identity(app.provider),
+            }
+        )
 
 
 @mcp.tool(

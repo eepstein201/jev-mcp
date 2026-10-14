@@ -42,6 +42,7 @@ SCENARIOS = frozenset(
         "loading",
         "swap_after",
         "slow",
+        "wrong_model",
     }
 )
 
@@ -55,6 +56,8 @@ DEFAULT_SWAP_AFTER = 1
 DEFAULT_NOUL_TRUE = 0.9
 LEADING_SHARE = 0.8
 THINK_TOKEN = "<think>"
+# What the wrong_model scenario serves unless the test names a model.
+WRONG_MODEL_PATH = "/models/Unexpected-Model-GGUF/Unexpected-Model-Q4_K_M.gguf"
 LOADING_BODY = {
     "error": {"code": 503, "message": "Loading model", "type": "unavailable_error"}
 }
@@ -306,16 +309,25 @@ class FakeLlamaServer:
         Options: model, first_token_probs, noul_true, choice_probs, score_probs, confidence,
         model_path, total_slots, n_ctx, tier ("smart" or "fast": which recorded engine
         the defaults come from), model_a, model_b, n (swap_after), seconds (slow),
-        props (a value served verbatim as the /props body, for malformed shapes).
+        props (a value served verbatim as the /props body, for malformed shapes),
+        alias (the `model` of every chat and SystemOne reply, as `--alias` makes a real
+        daemon report it, while /props keeps the full path).
         `model` and `model_path` are the same setting for /props and every answer.
+        The wrong_model scenario serves WRONG_MODEL_PATH (or the `model` given) in place
+        of the tier's recorded model, with the recorded slot and context figures.
         """
         if name not in SCENARIOS:
             raise ValueError(f"unknown scenario {name!r}; known: {sorted(SCENARIOS)}")
         if options.get("tier", "smart") not in TIERS:
             raise ValueError(f"unknown tier {options['tier']!r}; known: {TIERS}")
+        stored = dict(options)
+        if name == "wrong_model" and not (
+            stored.get("model") or stored.get("model_path")
+        ):
+            stored["model"] = WRONG_MODEL_PATH
         with self._lock:
             self._scenario = name
-            self._options = dict(options)
+            self._options = stored
             self._chat_count = 0
 
     def record(self, method: str, path: str, body: Any) -> None:
@@ -379,7 +391,9 @@ class FakeLlamaServer:
             "model_path": self._model(options, "smart"),
             "total_slots": options.get("total_slots", recorded["total_slots"]),
             "default_generation_settings": {
-                "n_ctx": options.get("n_ctx", recorded["n_ctx"])
+                "n_ctx": options.get(
+                    "n_ctx", recorded["default_generation_settings"]["n_ctx"]
+                )
             },
         }
 
@@ -409,6 +423,8 @@ class FakeLlamaServer:
             model_a = options.get("model_a", "/models/fake-model-a.gguf")
             model_b = options.get("model_b", "/models/fake-model-b.gguf")
             response["model"] = model_a if index < swap_at else model_b
+        if "alias" in options:
+            response["model"] = options["alias"]
         return 200, response
 
     def _synthesize_chat(
@@ -436,6 +452,8 @@ class FakeLlamaServer:
         if scenario != "wrong_kev_shape":
             replayed = self._replay("kev_exchanges", body)
             if replayed is not None:
+                if "alias" in options:
+                    replayed["model"] = options["alias"]
                 return 200, replayed
         if scenario == "wrong_kev_shape":
             answers = {key: {"value": 0.9} for key in questions}
@@ -445,7 +463,7 @@ class FakeLlamaServer:
             }
         return 200, {
             "answers": answers,
-            "model": self._model(options, "fast"),
+            "model": options.get("alias") or self._model(options, "fast"),
             "usage": {
                 "input_tokens": max(1, len(str(body.get("state", ""))) // 4),
                 "output_tokens": 0,

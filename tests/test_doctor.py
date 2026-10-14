@@ -10,13 +10,40 @@ import pytest
 from jev_mcp.doctor import collect_report, main, problems, render
 
 
+GOOD_PROBE = {
+    "choices": [
+        {
+            "logprobs": {
+                "content": [
+                    {
+                        "token": "True",
+                        "logprob": -0.05,
+                        "top_logprobs": [
+                            {"token": "True", "logprob": -0.05},
+                            {"token": "False", "logprob": -3.2},
+                        ],
+                    }
+                ]
+            }
+        }
+    ]
+}
+
+
 @pytest.fixture
 def urlopen_ok():
-    """The engines answer GET /health at the HTTP boundary."""
+    """The engines answer /health, /props and a scoring probe at the HTTP boundary."""
 
     def _urlopen(request, timeout=None):
+        url = request.full_url
+        if url.endswith("/props"):
+            body = {"model_path": "/models/Served-Q4.gguf"}
+        elif url.endswith("/health"):
+            body = {"status": "ok"}
+        else:
+            body = GOOD_PROBE
         response = MagicMock()
-        response.read.return_value = b'{"status": "ok"}'
+        response.read.return_value = json.dumps(body).encode()
         context = MagicMock()
         context.__enter__.return_value = response
         return context
@@ -164,3 +191,198 @@ def test_server_dispatches_the_doctor_subcommand(urlopen_refused, capsys, monkey
 
     assert excinfo.value.code == 1
     json.loads(capsys.readouterr().out)
+
+
+# --- engine profiles: served model, expected model, probe and loading ------------------
+
+from jev_mcp import daemon_provider, engine_profiles  # noqa: E402
+from jev_mcp.engine_profiles import ModelSpec, Profile  # noqa: E402
+from tests.fake_llama_server import FakeLlamaServer, load_recorded  # noqa: E402
+
+_PROPS = load_recorded()["props"]
+KEV_FILE = _PROPS["fast"]["model_path"].rsplit("/", 1)[1]
+SMART_FILE = _PROPS["smart"]["model_path"].rsplit("/", 1)[1]
+
+
+def _spec(tier, filename):
+    return ModelSpec(
+        name=filename.lower(),
+        tier=tier,
+        repo="org/repo",
+        revision="a" * 40,
+        filename=filename,
+        sha256="b" * 64,
+        parallel=2,
+        ctx_per_slot=16384,
+        reasoning="auto",
+        style="plain",
+    )
+
+
+def _profile(fast_file=KEV_FILE, smart_file=SMART_FILE):
+    return Profile(
+        name="lean",
+        fast=_spec("fast", fast_file),
+        smart=_spec("smart", smart_file),
+        gate=0.85,
+        eval_only=False,
+    )
+
+
+@pytest.fixture
+def daemons(monkeypatch, tmp_router_config):
+    """A fake fast and a fake smart daemon, wired to doctor through the port variables."""
+    with FakeLlamaServer() as fast, FakeLlamaServer() as smart:
+        fast.set_scenario("normal", tier="fast")
+        monkeypatch.setenv("JEV_FAST_PORT", fast.url.rsplit(":", 1)[1])
+        monkeypatch.setenv("JEV_SMART_PORT", smart.url.rsplit(":", 1)[1])
+        monkeypatch.setenv("JEV_ALLOWED_ROOTS", "/tmp/proj")
+        yield SimpleNamespace(fast=fast, smart=smart)
+
+
+def _use_profile(monkeypatch, profile):
+    monkeypatch.setattr(engine_profiles, "active_profile", lambda *a, **k: profile)
+
+
+def _report():
+    return collect_report(env=os.environ)
+
+
+from types import SimpleNamespace  # noqa: E402
+
+
+def test_a_matching_profile_is_reported_and_is_no_problem(daemons, monkeypatch, capsys):
+    _use_profile(monkeypatch, _profile())
+
+    report = _report()
+
+    assert report["profile"] == "lean"
+    assert report["engines"]["fast"]["served_model"] == KEV_FILE
+    assert report["engines"]["fast"]["expected_model"] == KEV_FILE
+    assert report["engines"]["smart"]["served_model"] == SMART_FILE
+    assert problems(report) == []
+    assert main([]) == 0
+    text = capsys.readouterr().out
+    assert f"served : {KEV_FILE}" in text
+    assert f"expected : {SMART_FILE}" in text
+
+
+def test_a_served_model_that_is_not_the_expected_one_is_a_problem(
+    daemons, monkeypatch, capsys
+):
+    _use_profile(monkeypatch, _profile())
+    daemons.smart.set_scenario("wrong_model")
+
+    report = _report()
+
+    mismatch = [p for p in problems(report) if "smart engine" in p]
+    assert len(mismatch) == 1
+    assert SMART_FILE in mismatch[0]
+    assert "Unexpected" in mismatch[0]
+    assert main([]) == 1
+    assert "make start PROFILE=lean" in capsys.readouterr().out
+
+
+def test_without_a_profile_nothing_is_expected_and_nothing_mismatches(
+    daemons, monkeypatch
+):
+    _use_profile(monkeypatch, None)
+
+    report = _report()
+
+    assert report["profile"] is None
+    assert report["engines"]["smart"]["expected_model"] is None
+    assert report["engines"]["smart"]["served_model"] == SMART_FILE
+    assert problems(report) == []
+
+
+def test_a_resolver_that_raises_is_treated_as_no_profile(daemons, monkeypatch):
+    def _raise(*args, **kwargs):
+        raise NotImplementedError
+
+    monkeypatch.setattr(engine_profiles, "active_profile", _raise)
+    monkeypatch.setattr(daemon_provider, "_profile_warned", False)
+
+    assert _report()["profile"] is None
+
+
+def test_a_loading_engine_is_a_problem_that_says_so(daemons, monkeypatch):
+    _use_profile(monkeypatch, _profile())
+    daemons.smart.set_scenario("loading")
+
+    report = _report()
+
+    assert report["engines"]["smart"]["status"] == "loading"
+    found = [p for p in problems(report) if "smart engine" in p]
+    assert len(found) == 1
+    assert "loading" in found[0]
+    assert "down" not in found[0]
+    assert report["engines"]["smart"]["probe"] is None
+
+
+def test_a_probe_whose_first_token_is_not_a_target_is_flagged(daemons, monkeypatch):
+    _use_profile(monkeypatch, _profile())
+    daemons.smart.set_scenario("think_first")
+
+    report = _report()
+
+    assert report["engines"]["smart"]["probe"]["ok"] is False
+    found = [p for p in problems(report) if "probe" in p]
+    assert len(found) == 1
+    assert "smart engine" in found[0]
+    assert "first token" in found[0]
+
+
+def test_a_probe_with_too_little_target_mass_is_flagged(daemons, monkeypatch):
+    _use_profile(monkeypatch, _profile())
+    daemons.fast.set_scenario(
+        "normal", tier="fast", first_token_probs={"True": 0.6, "Maybe": 0.4}
+    )
+
+    report = _report()
+
+    probe = report["engines"]["fast"]["probe"]
+    assert probe["ok"] is False
+    assert probe["target_mass"] == pytest.approx(0.6)
+    assert any("fast engine" in p and "0.6" in p for p in problems(report))
+
+
+def test_a_passing_probe_reports_its_target_mass(daemons, monkeypatch):
+    _use_profile(monkeypatch, _profile())
+
+    probe = _report()["engines"]["smart"]["probe"]
+
+    assert probe["ok"] is True
+    assert probe["target_mass"] > 0.9
+
+
+def test_a_probe_that_cannot_complete_is_a_problem(daemons, monkeypatch):
+    _use_profile(monkeypatch, _profile())
+    daemons.smart.set_scenario("context_overflow")
+
+    report = _report()
+
+    assert report["engines"]["smart"]["probe"]["ok"] is False
+    assert any("probe" in p and "smart engine" in p for p in problems(report))
+
+
+def test_an_engine_that_names_no_model_when_one_is_expected_is_a_problem(
+    daemons, monkeypatch
+):
+    _use_profile(monkeypatch, _profile())
+    daemons.smart.set_scenario("normal", props={"total_slots": 2})
+
+    report = _report()
+
+    assert report["engines"]["smart"]["served_model"] is None
+    assert any("smart engine" in p and "/props" in p for p in problems(report))
+
+
+def test_doctor_prints_nothing_outside_main(daemons, monkeypatch, capsys):
+    _use_profile(monkeypatch, _profile())
+
+    report = _report()
+    render(report)
+    problems(report)
+
+    assert capsys.readouterr().out == ""

@@ -1,5 +1,8 @@
+from collections.abc import Callable
 from functools import singledispatchmethod
 import json
+import time
+from jev_mcp.daemon_provider import UNKNOWN_MODEL, ServedModelTracker
 from jev_mcp.provider import post_json
 import logging
 from jev_mcp.security import sanitize_payload
@@ -22,10 +25,16 @@ class KevProvider(JevProvider):
     Bypasses text generation entirely in favor of a specialized pointer head.
     """
 
-    def __init__(self, base_url: str = "http://127.0.0.1:8080/v1/systemone") -> None:
+    def __init__(
+        self,
+        base_url: str = "http://127.0.0.1:8080/v1/systemone",
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
         self.base_url = base_url
         self.max_tokens = 65536
-        self.current_model_id = "kev-0.8b"
+        # The file the daemon serves (GET /props `model_path`), learnt on first use.
+        self.current_model_id = UNKNOWN_MODEL
+        self._served = ServedModelTracker(clock)
 
     def check_token_limit(self, state: Any) -> int:
         state_str = json.dumps(state) if not isinstance(state, str) else state
@@ -92,6 +101,9 @@ class KevProvider(JevProvider):
     def evaluate_batch(
         self, state: Any, questions: List[QuestionType]
     ) -> Dict[str, Dict[str, Any]]:
+        served = self._served.read(self.base_url)
+        if served is not None:
+            self.current_model_id = served
         state_str = json.dumps(state) if not isinstance(state, str) else state
         state_str = sanitize_payload(state_str)
 

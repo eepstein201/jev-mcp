@@ -201,6 +201,10 @@ def test_evaluate_clean_batch_entire_result():
             }
         },
         "status": "SUCCESS",
+        # Engine identity (engine profiles): null with no profile and mock engines.
+        "profile": None,
+        "fast": None,
+        "smart": None,
     }
 
 
@@ -255,6 +259,9 @@ def test_evaluate_state_over_the_token_limit_entire_result():
     assert out == {
         "model": "test-model",
         "data": {"q1": {"noul": 0.1, "probabilities": {"true": 0.1, "false": 0.9}}},
+        "profile": None,
+        "fast": None,
+        "smart": None,
         "status": "SUCCESS_WITH_WARNINGS",
         "warnings": [
             {
