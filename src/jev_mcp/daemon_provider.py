@@ -108,7 +108,7 @@ class DaemonProvider(JevProvider):
         try:
             res = post_json(self.base_url, payload, timeout=60)
 
-            model_id = res.get("model", "unknown_model")
+            model_id = res.get("model", UNKNOWN_MODEL)
 
             choices = res.get("choices", [])
             if not choices:
@@ -156,7 +156,7 @@ class DaemonProvider(JevProvider):
             logger.error(
                 f"Daemon API call failed: {e}\nPLEASE ENSURE THE DAEMON IS RUNNING! Run: ./jev_mac_manager.sh hybrid"
             )
-            return {}, "unknown_model"
+            return {}, UNKNOWN_MODEL
 
     def _normalize_logprobs(
         self,
@@ -208,9 +208,9 @@ class DaemonProvider(JevProvider):
 
         scaled_lps = {k: (lp / T) for k, lp in dcpmi_lps.items()}
 
+        # After the mass gate at step 1, at least one raw logprob is real, so the
+        # maximum here is always finite.
         max_lp = max(scaled_lps.values())
-        if max_lp == -9999.0 or max_lp == float("-inf"):
-            return {k: 0.0 for k in expected_keys}
 
         sum_exp = sum(math.exp(lp - max_lp) for lp in scaled_lps.values())
         return {k: math.exp(lp - max_lp) / sum_exp for k, lp in scaled_lps.items()}
@@ -385,7 +385,7 @@ class DaemonProvider(JevProvider):
 
             # 1. Fetch Active Logprobs
             lps, model_id = self.get_logprobs(user_prompt, expected_keys)
-            if model_id != "unknown_model":
+            if model_id != UNKNOWN_MODEL:
                 self.current_model_id = model_id
             if not lps:
                 # No answer (daemon down or a reply without logprobs). Leaving the question

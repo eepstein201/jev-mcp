@@ -592,9 +592,9 @@ def test_an_oversized_state_with_a_silent_smart_engine_is_unanswered_not_fast():
     assert route_row(r, 0.85) == {"escalated": True, "score": None, "unanswered": True}
 
 
-def test_an_all_zero_fast_answer_with_a_silent_smart_engine_stays_the_zero_answer():
+def test_an_all_zero_fast_answer_with_a_silent_smart_engine_raises_like_an_empty_one():
     r = row(0.0, 0.0, False, fast_gated=True, smart_answered=False)
-    assert route_row(r, 0.85) == {"escalated": True, "score": 0.0, "unanswered": False}
+    assert route_row(r, 0.85) == {"escalated": True, "score": None, "unanswered": True}
 
 
 def test_the_recorded_confidence_is_used_over_one_minus_p():

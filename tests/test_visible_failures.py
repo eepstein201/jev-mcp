@@ -17,6 +17,7 @@ from jev_mcp.daemon_provider import DaemonProvider
 from jev_mcp.kev_provider import KevProvider
 from jev_mcp.provider import (
     ChoiceQuestion,
+    EngineUnavailableError,
     NoulQuestion,
     ScoreQuestion,
     escalation_failures,
@@ -337,6 +338,19 @@ def test_a_smart_engine_that_does_not_answer_marks_the_fast_answer_failed(engine
     )  # the fast answer is still returned
 
 
+def test_an_all_zero_fast_answer_with_a_silent_smart_engine_raises(engines):
+    # An all-zero map is silence, not a confident zero: same rule as an empty map.
+    fast, smart = engines
+    fast.set_scenario("normal", score_probs=[0.0, 0.0, 0.0])
+    smart.set_scenario("think_first")
+
+    with pytest.raises(EngineUnavailableError):
+        RoutingProvider().evaluate_batch(
+            STATE,
+            [ScoreQuestion(key="rank", prompt="?", labels=["low", "mid", "high"])],
+        )
+
+
 def test_only_the_question_that_failed_to_escalate_is_marked(engines):
     fast, smart = engines
     fast.set_scenario("normal", noul_true=0.5)
@@ -468,6 +482,25 @@ def test_evaluate_batch_tool_reports_degraded_when_an_escalation_failed():
     assert res["data"]["q1"]["escalation_failed"] is True
 
 
+def test_evaluate_batch_tool_end_to_end_a_think_first_smart_engine_degrades(engines):
+    # The whole path over the wire: a below-gate fast answer escalates, the smart
+    # engine starts with a think tag, and the tool must not read as a plain success.
+    fast, smart = engines
+    fast.set_scenario("normal", noul_true=0.5)
+    smart.set_scenario("think_first")
+
+    with patch("jev_mcp.app.provider", RoutingProvider()):
+        res = json.loads(
+            server.jev_evaluate_batch(
+                state={"note": STATE},
+                questions=[NoulQuestion(key="is_ship", prompt="Is it about shipping?")],
+            )
+        )
+
+    _assert_degraded(res, ["is_ship"])
+    assert res["data"]["is_ship"]["served_by"] == "fast"
+
+
 def test_evaluate_batch_tool_still_says_success_when_nothing_failed():
     provider = MagicMock()
     provider.check_token_limit.return_value = 10
@@ -552,8 +585,52 @@ def test_scan_repo_reports_degraded(tmp_path):
     assert res["escalation_failed"] == ["chunk_0"]
 
 
+def test_read_file_whole_file_block_keeps_its_status_and_reports_degraded(tmp_path):
+    f = tmp_path / "mod.py"
+    f.write_text("def irrelevant():\n    return 1\n")
+    answer = {"file_eval": {**FAILED, "probabilities": {"true": 0.4, "false": 0.6}}}
+
+    with patch(
+        "jev_mcp.routing_provider.RoutingProvider.evaluate_batch", return_value=answer
+    ):
+        res = json.loads(server.jev_read_file(str(f), "task", filter_by_chunk=False))
+
+    assert res["status"] == "BLOCKED"
+    assert res["degraded"] is True
+    assert res["escalation_failed"] == ["file_eval"]
+
+
+def test_read_file_chunk_filter_block_keeps_its_status_and_reports_degraded(tmp_path):
+    f = tmp_path / "mod.py"
+    f.write_text("def irrelevant():\n    return 1\n")
+    answer = {"chunk_0": {**FAILED, "probabilities": {"true": 0.1, "false": 0.9}}}
+
+    with patch(
+        "jev_mcp.routing_provider.RoutingProvider.evaluate_batch", return_value=answer
+    ):
+        res = json.loads(server.jev_read_file(str(f), "task", filter_by_chunk=True))
+
+    assert res["status"] == "BLOCKED"
+    assert res["degraded"] is True
+    assert res["escalation_failed"] == ["chunk_0"]
+
+
+def test_scan_repo_block_keeps_its_status_and_reports_degraded(tmp_path):
+    (tmp_path / "mod.py").write_text("def irrelevant():\n    return 1\n")
+    answer = {"chunk_0": {**FAILED, "probabilities": {"true": 0.1, "false": 0.9}}}
+
+    with patch(
+        "jev_mcp.routing_provider.RoutingProvider.evaluate_batch", return_value=answer
+    ):
+        res = json.loads(server.jev_scan_repo(str(tmp_path), "task"))
+
+    assert res["status"] == "BLOCKED"
+    assert res["degraded"] is True
+    assert res["escalation_failed"] == ["chunk_0"]
+
+
 @patch("jev_mcp.app.RoutingProvider")
-def test_determine_best_model_reports_degraded(mock_class):
+def test_determine_best_model_keeps_its_status_and_reports_degraded(mock_class):
     provider = MagicMock()
     mock_class.return_value = provider
     provider.smart_provider.current_model_id = "m"
@@ -568,12 +645,15 @@ def test_determine_best_model_reports_degraded(mock_class):
 
     res = json.loads(server.jev_determine_best_model("a task", estimated_tokens=0))
 
-    _assert_degraded(res, ["complexity"])
+    # EVALUATED is the tool's own status; degradation is flagged, not a status swap.
+    assert res["status"] == "EVALUATED"
+    assert res["degraded"] is True
+    assert res["escalation_failed"] == ["complexity"]
     assert res["complexity_score"] == 2
 
 
 @patch("jev_mcp.app.RoutingProvider")
-def test_agent_handoff_reports_degraded(mock_class):
+def test_agent_handoff_keeps_its_status_and_reports_degraded(mock_class):
     provider = MagicMock()
     mock_class.return_value = provider
     provider.smart_provider.current_model_id = "m"
@@ -588,7 +668,9 @@ def test_agent_handoff_reports_degraded(mock_class):
 
     res = json.loads(server.jev_agent_handoff("task", {"A": "x", "B": "y"}))
 
-    _assert_degraded(res, ["best_agent"])
+    assert res["status"] == "HANDOFF_RECOMMENDATION"
+    assert res["degraded"] is True
+    assert res["escalation_failed"] == ["best_agent"]
     assert res["recommended_agent"] == "A"
 
 

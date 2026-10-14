@@ -144,7 +144,8 @@ def score_dataset_detailed(provider, dataset):
     """Per row: what the engine said, and what RoutingProvider would make of it.
 
     score       P(true), 0.0 when absent
-    answered    the probability map was non-empty (the router's `_require_answers` test)
+    answered    the probability map was non-empty (with `gated`, the router's
+                `_require_answers` treats empty or all-zero as no answer)
     present     the engine returned the question's key at all (an empty map still
                 replaces a fast answer when merged; a missing key does not)
     gated       empty or all-zero map: escalated without looking at confidence
@@ -312,14 +313,13 @@ def dump_warnings(rows):
 def route_row(row, gate=ROUTING_CONFIDENCE_GATE):
     """RoutingProvider.evaluate_batch's outcome for one row, from recorded answers.
 
-    Returns {"escalated", "score", "unanswered"}. Mirrors routing_provider.py:
-      L60-67   state over 4000 tokens: smart only; its silence raises, fast not consulted
-      L76-78   empty fast answer escalates
-      L82-86   all-zero fast answer escalates
-      L89-94   top probability strictly below the gate escalates
-      L103-111 smart's entry replaces fast's only when it carries probabilities; an
-               empty or missing smart entry keeps fast (marked escalation_failed);
-               no answer left raises
+    Returns {"escalated", "score", "unanswered"}. Mirrors routing_provider.py, by rule:
+      - state over 4000 tokens: smart only; its silence raises, fast not consulted
+      - an empty or all-zero fast answer escalates without looking at confidence
+      - top probability strictly below the gate escalates
+      - smart's entry replaces fast's only when it carries probabilities; a missing
+        or empty smart entry keeps a real fast answer (marked escalation_failed)
+      - no answer left raises: fast missing, empty or all-zero, and smart silent
     """
     smart_answered = row.get("smart_answered", True)
     tokens = row.get("state_tokens")
@@ -339,7 +339,7 @@ def route_row(row, gate=ROUTING_CONFIDENCE_GATE):
         return {"escalated": False, "score": row["fast_score"], "unanswered": False}
     if smart_answered:
         return {"escalated": True, "score": row["smart_score"], "unanswered": False}
-    if fast_answered:
+    if fast_answered and not row.get("fast_gated"):
         return {"escalated": True, "score": row["fast_score"], "unanswered": False}
     return {"escalated": True, "score": None, "unanswered": True}
 

@@ -19,6 +19,16 @@ SERVED_BY_FAST = "fast"
 SERVED_BY_SMART = "smart"
 
 
+def _is_no_answer(probs: Dict[str, Any]) -> bool:
+    """The fast side's silence: an empty map and an all-zero map are both no answer.
+
+    Only Kev choice/score maps can be all-zero — no target got any mass, which is
+    not a confident zero. The smart tier is a DaemonProvider, which already maps
+    no-mass replies to an empty map, so this rule is the fast side's alone.
+    """
+    return not probs or all(v == 0.0 for v in probs.values())
+
+
 class RoutingProvider(JevProvider):
     """
     Implements a Hybrid Complexity Router.
@@ -127,6 +137,12 @@ class RoutingProvider(JevProvider):
                     "escalated": True,
                     "served_by": SERVED_BY_SMART,
                 }
+            elif _is_no_answer(merged.get(q.key, {}).get("probabilities", {})):
+                # One rule for the fast side: an empty and an all-zero fast answer are
+                # both silence. With the smart engine silent too, no answer is left;
+                # dropping the key makes _require_answers raise exactly as it does for
+                # a question the fast engine never answered at all.
+                merged.pop(q.key, None)
             elif q.key in merged:
                 logger.warning(
                     f"Smart engine did not answer escalated question '{q.key}'; "

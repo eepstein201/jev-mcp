@@ -231,6 +231,7 @@ def jev_determine_best_model(
                 "probabilities": probs,
             },
             escalation_failures(res),
+            keep_status=True,
         )
         notice = app.get_temp_notice(provider.smart_provider)
         if notice:
@@ -281,6 +282,7 @@ def jev_agent_handoff(task_description: str, available_agents: Dict[str, str]) -
             "probabilities": probs,
         },
         escalation_failures(res),
+        keep_status=True,
     )
     notice = app.get_temp_notice(provider.smart_provider)
     if notice:

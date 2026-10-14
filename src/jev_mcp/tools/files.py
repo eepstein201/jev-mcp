@@ -109,10 +109,14 @@ def jev_read_file(
 
         if not kept_chunks:
             return json.dumps(
-                {
-                    "status": "BLOCKED",
-                    "message": f"Jev evaluated {file_path} and found 0 relevant chunks for the task. The file has been blocked to save context window.",
-                }
+                mark_degraded(
+                    {
+                        "status": "BLOCKED",
+                        "message": f"Jev evaluated {file_path} and found 0 relevant chunks for the task. The file has been blocked to save context window.",
+                    },
+                    failed_escalations,
+                    keep_status=True,
+                )
             )
 
         raw_content = "\n\n".join(kept_chunks)
@@ -160,10 +164,14 @@ def jev_read_file(
             )
         else:
             return json.dumps(
-                {
-                    "status": "BLOCKED",
-                    "message": f"Jev determined this file is irrelevant to the task ({round(true_prob * 100, 1)}% confident). Blocked to save context.",
-                }
+                mark_degraded(
+                    {
+                        "status": "BLOCKED",
+                        "message": f"Jev determined this file is irrelevant to the task ({round(true_prob * 100, 1)}% confident). Blocked to save context.",
+                    },
+                    escalation_failures(res),
+                    keep_status=True,
+                )
             )
 
 
@@ -426,10 +434,14 @@ def jev_scan_repo(
 
     if not kept_chunks:
         return json.dumps(
-            {
-                "status": "BLOCKED",
-                "message": f"Scanned {len(target_files)} files and {len(all_chunks)} semantic chunks. Jev determined 0 chunks were relevant to the task. Blocked to save context window.",
-            }
+            mark_degraded(
+                {
+                    "status": "BLOCKED",
+                    "message": f"Scanned {len(target_files)} files and {len(all_chunks)} semantic chunks. Jev determined 0 chunks were relevant to the task. Blocked to save context window.",
+                },
+                failed_escalations,
+                keep_status=True,
+            )
         )
 
     raw_content = "\n\n".join(kept_chunks)

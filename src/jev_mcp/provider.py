@@ -175,13 +175,22 @@ def escalation_failures(results: Dict[str, Any]) -> List[str]:
     ]
 
 
-def mark_degraded(payload: Dict[str, Any], failed: List[str]) -> Dict[str, Any]:
-    """A copy of `payload` that says it is degraded; `payload` itself when nothing failed."""
+def mark_degraded(
+    payload: Dict[str, Any], failed: List[str], keep_status: bool = False
+) -> Dict[str, Any]:
+    """A copy of `payload` that says it is degraded; `payload` itself when nothing failed.
+
+    DEGRADED replaces a SUCCESS status (the default). A payload whose status carries
+    its own meaning (BLOCKED, EVALUATED, ...) passes keep_status=True and keeps it,
+    flagged by `degraded`/`escalation_failed` instead.
+    """
     if not failed:
         return payload
-    return {
+    degraded: Dict[str, Any] = {
         **payload,
-        "status": "DEGRADED",
         "degraded": True,
         "escalation_failed": list(failed),
     }
+    if not keep_status:
+        degraded["status"] = "DEGRADED"
+    return degraded
