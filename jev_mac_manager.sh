@@ -13,10 +13,12 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
-log_info() { echo -e "${BLUE}==>${NC} ${1}"; }
-log_success() { echo -e "${GREEN}==> SUCCESS:${NC} ${1}"; }
-log_warn() { echo -e "${YELLOW}==> WARNING:${NC} ${1}"; }
-log_error() { echo -e "${RED}==> ERROR:${NC} ${1}"; }
+# Colors are escape sequences (%b); the message is data and printed as-is (%s), so a backslash in a
+# resolved value is never interpreted.
+log_info() { printf '%b==>%b %s\n' "$BLUE" "$NC" "$1"; }
+log_success() { printf '%b==> SUCCESS:%b %s\n' "$GREEN" "$NC" "$1"; }
+log_warn() { printf '%b==> WARNING:%b %s\n' "$YELLOW" "$NC" "$1"; }
+log_error() { printf '%b==> ERROR:%b %s\n' "$RED" "$NC" "$1"; }
 
 COMMAND=${1:-help}
 TARGET_MODEL_ALIAS=${2:-0.5b}
@@ -344,7 +346,9 @@ profiles_cli() {
     if [ "${JEV_ALLOW_EVAL_ONLY:-}" = "1" ]; then
         flags+=(--allow-eval-only)
     fi
-    PYTHONPATH="$PWD/src${PYTHONPATH:+:$PYTHONPATH}" \
+    # activate polls the daemons' loopback /props: never send that through a proxy.
+    NO_PROXY="127.0.0.1,localhost${NO_PROXY:+,$NO_PROXY}" no_proxy="127.0.0.1,localhost${no_proxy:+,$no_proxy}" \
+        PYTHONPATH="$PWD/src${PYTHONPATH:+:$PYTHONPATH}" \
         "${JEV_PROFILES_PYTHON:-$PWD/.venv/bin/python}" -m jev_mcp.engine_profiles \
         "$sub" "$@" "${flags[@]}"
 }
@@ -361,7 +365,7 @@ require_profile_name() {
 # Reads `resolve` output into RESOLVED_<KEY> variables without eval or source.
 # An unknown key, a line without a value, or a missing key is an error.
 parse_resolved() {
-    local k v
+    local k v seen=" "
     RESOLVED_PROFILE="" RESOLVED_FAST_MODEL="" RESOLVED_FAST_PATH="" RESOLVED_FAST_URL="" RESOLVED_FAST_SHA256=""
     RESOLVED_SMART_MODEL="" RESOLVED_SMART_PATH="" RESOLVED_SMART_URL="" RESOLVED_SMART_SHA256=""
     while IFS='=' read -r k v; do
@@ -380,6 +384,13 @@ parse_resolved() {
                 return 1
                 ;;
         esac
+        case "$seen" in
+            *" $k "*)
+                log_error "The profile resolver gave '$k' more than once."
+                return 1
+                ;;
+        esac
+        seen="$seen$k "
         if [ -z "$v" ]; then
             log_error "The profile resolver gave no value for '$k'."
             return 1
@@ -393,9 +404,25 @@ parse_resolved() {
     fi
 }
 
+# curl hardening for multi-GB downloads: no URL globbing, bounded connect, abort a transfer that
+# stays under 10 KB/s for a minute.
+DOWNLOAD_CONNECT_TIMEOUT=30
+DOWNLOAD_MIN_SPEED=10240
+DOWNLOAD_STALL_SECONDS=60
+
 # Downloads <url> to <path>.part, checks its SHA-256, then moves it to <path>.
-# Any failure removes the .part file and returns 1; <path> is never left half-written.
+# Any failure, or an INT/TERM while it runs, removes the .part file; <path> is never left half-written.
 download_verified() {
+    local rc=0
+    DOWNLOAD_PART="$2.part"
+    trap 'rm -f "$DOWNLOAD_PART"; exit 130' INT
+    trap 'rm -f "$DOWNLOAD_PART"; exit 143' TERM
+    fetch_and_verify "$@" || rc=$?
+    trap - INT TERM
+    return "$rc"
+}
+
+fetch_and_verify() {
     local url=$1 path=$2 expected=$3
     local part="$path.part" actual
     if [[ "$url" != https://* ]]; then
@@ -404,7 +431,10 @@ download_verified() {
     fi
     log_info "Downloading $(basename "$path")..."
     mkdir -p "$(dirname "$path")" || return 1
-    if ! curl --fail --location --proto '=https' --proto-redir '=https' -o "$part" "$url"; then
+    if ! curl --fail --location --proto '=https' --proto-redir '=https' \
+        --globoff --connect-timeout "$DOWNLOAD_CONNECT_TIMEOUT" \
+        --speed-limit "$DOWNLOAD_MIN_SPEED" --speed-time "$DOWNLOAD_STALL_SECONDS" \
+        -o "$part" "$url"; then
         rm -f "$part"
         log_error "Download failed: $(basename "$path")."
         return 1
@@ -438,7 +468,11 @@ start_profile() {
     fi
     local python="${JEV_PROFILES_PYTHON:-$PWD/.venv/bin/python}"
     if [ ! -x "$python" ]; then
-        log_error "Python for the profile resolver not found at $python. Run: make install"
+        if [ -n "${JEV_PROFILES_PYTHON:-}" ]; then
+            log_error "JEV_PROFILES_PYTHON points to $python, which is not an executable file."
+        else
+            log_error "Python for the profile resolver not found at $python. Run: make install"
+        fi
         exit 1
     fi
 
@@ -459,15 +493,18 @@ start_profile() {
     check_llama_cpp
 
     log_info "Configuring dual-daemon setup ($RESOLVED_FAST_MODEL on $JEV_FAST_PORT, $RESOLVED_SMART_MODEL on $JEV_SMART_PORT)..."
+    # Both plists are written before anything is stopped: launchd reads a plist only at bootstrap,
+    # so a failed `plist` leaves the running agents untouched.
+    mkdir -p "$LOG_DIR" "$(dirname "$PLIST_FAST_PATH")"
+    write_tier_plist fast "$JEV_FAST_PORT" "$PLIST_FAST_PATH" "$LOG_FILE_FAST"
+    write_tier_plist smart "$JEV_SMART_PORT" "$PLIST_SMART_PATH" "$LOG_FILE_SMART"
+
     manage_daemon stop "$PLIST_PATH"
     # Hybrid mode never uses the single-daemon agent; leaving its plist behind
     # makes launchd reload it at login, where it fights the fast engine for its port.
     rm -f "$PLIST_PATH"
     manage_daemon stop "$PLIST_FAST_PATH"
     manage_daemon stop "$PLIST_SMART_PATH"
-    mkdir -p "$LOG_DIR" "$(dirname "$PLIST_FAST_PATH")"
-    write_tier_plist fast "$JEV_FAST_PORT" "$PLIST_FAST_PATH" "$LOG_FILE_FAST"
-    write_tier_plist smart "$JEV_SMART_PORT" "$PLIST_SMART_PATH" "$LOG_FILE_SMART"
 
     manage_daemon start "$PLIST_FAST_PATH"
     manage_daemon start "$PLIST_SMART_PATH"

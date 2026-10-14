@@ -8,6 +8,7 @@ import json
 import os
 import plistlib
 import shutil
+import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -124,7 +125,10 @@ def test_uninstall_unlinks_opencode_while_the_virtualenv_still_exists(
 PAYLOAD = "weights"
 PAYLOAD_SHA = hashlib.sha256(PAYLOAD.encode()).hexdigest()
 OTHER_SHA = "0" * 64
-CURL_FLAGS = ["--fail", "--location", "--proto", "=https", "--proto-redir", "=https"]
+CURL_FLAGS = [
+    "--fail", "--location", "--proto", "=https", "--proto-redir", "=https",
+    "--globoff", "--connect-timeout", "30", "--speed-limit", "10240", "--speed-time", "60",
+]  # fmt: skip
 
 # Stands in for `python -m jev_mcp.engine_profiles`: logs its argv, answers from env settings.
 FAKE_PROFILES_CLI = """#!{python}
@@ -135,8 +139,13 @@ assert argv[:2] == ["-m", "jev_mcp.engine_profiles"], argv
 sub, rest = argv[2], argv[3:]
 with open(os.environ["FAKE_CALLS_LOG"], "a") as log:
     log.write("py " + json.dumps({{"sub": sub, "args": rest,
-                                   "pythonpath": os.environ.get("PYTHONPATH", "")}}) + "\\n")
+                                   "pythonpath": os.environ.get("PYTHONPATH", ""),
+                                   "NO_PROXY": os.environ.get("NO_PROXY"),
+                                   "no_proxy": os.environ.get("no_proxy")}}) + "\\n")
 rc = int(os.environ.get("FAKE_" + sub.upper() + "_RC", "0"))
+only_tier = os.environ.get("FAKE_PLIST_FAIL_TIER")  # fail just this tier's plist
+if sub == "plist" and only_tier and rest[rest.index("--tier") + 1] != only_tier:
+    rc = 0
 if rc:
     print("error: " + sub + " failed", file=sys.stderr)
     sys.exit(rc)
@@ -156,6 +165,7 @@ CURL_SHIM = (
     """#!/bin/bash
 echo "curl $*" >> "{log}"
 out=""
+signal="${{CURL_SIGNAL:-}}"
 while [ $# -gt 0 ]; do
     if [ "$1" = "-o" ]; then out=$2; fi
     shift
@@ -163,6 +173,7 @@ done
 printf '%s' "${{CURL_PAYLOAD:-"""
     + PAYLOAD
     + """}}" > "$out"
+if [ -n "$signal" ]; then kill -"$signal" "$PPID"; fi
 exit "${{CURL_RC:-0}}"
 """
 )
@@ -236,9 +247,12 @@ class Hybrid:
             path.write_text("existing")
 
     def run(self, *args, **env):
+        merged = {
+            k: v for k, v in {**self.env, **env}.items() if v is not None
+        }  # None unsets
         return subprocess.run(
             ["bash", str(MANAGER), *args],
-            env={**self.env, **env},
+            env=merged,
             cwd=self.work,
             capture_output=True,
             text=True,
@@ -307,7 +321,20 @@ def test_hybrid_forwards_an_explicit_profile_name(hybrid):
 
 @pytest.mark.parametrize(
     "name",
-    ["../x", "a;b", "Upper", "", "-x", "a b", "a" * 33, "a\n../x", "$(touch pwned)"],
+    [
+        "../x",
+        "a;b",
+        "Upper",
+        "",
+        "-x",
+        "a b",
+        "a" * 33,
+        "a\n../x",
+        "$(touch pwned)",
+        "lean\n",
+        "lean\r",
+        "lean\n\n",
+    ],  # fmt: skip
 )
 def test_hybrid_rejects_an_invalid_name_without_calling_the_cli(hybrid, name):
     result = hybrid.run("hybrid", name)
@@ -315,6 +342,27 @@ def test_hybrid_rejects_an_invalid_name_without_calling_the_cli(hybrid, name):
     assert result.returncode == 2
     assert hybrid.calls() == []
     assert not (hybrid.work / "pwned").exists()
+
+
+def test_profile_name_check_runs_in_the_c_locale_whatever_the_callers_locale(tmp_path):
+    # macOS regex ranges are code-point based, so no input can show the difference there; pin the
+    # guard itself: with a DEBUG trap, LC_ALL must read C inside the check even when the caller sets
+    # a UTF-8 locale (it is the guard against locale-collated [a-z] matching uppercase letters).
+    seen = tmp_path / "seen"
+    script = tmp_path / "probe.sh"
+    script.write_text(
+        f"set -T\n"
+        f"eval \"$(sed -n '/^require_profile_name()/,/^}}/p' '{MANAGER}')\"\n"
+        f'trap \'echo "${{LC_ALL-unset}}" >> "{seen}"\' DEBUG\n'
+        f"require_profile_name lean\n"
+    )
+
+    subprocess.run(
+        ["bash", str(script)], env={**os.environ, "LC_ALL": "en_US.UTF-8"}, check=True
+    )
+
+    inside = seen.read_text().split()
+    assert "C" in inside
 
 
 def test_hybrid_accepts_the_longest_valid_name(hybrid):
@@ -349,6 +397,36 @@ def test_hybrid_rejects_malformed_resolver_output(hybrid, bad_line):
     assert result.returncode != 0
     assert hybrid.curls() == []
     assert [c["sub"] for c in hybrid.py()] == ["resolve"]
+
+
+def test_hybrid_rejects_a_duplicate_resolver_key(hybrid):
+    hybrid.have_models()
+    hybrid.write_resolve(
+        hybrid.resolve_out.read_text() + "fast_sha256=" + OTHER_SHA + "\n"
+    )
+
+    result = hybrid.run("hybrid")
+
+    assert result.returncode == 1
+    assert "more than once" in result.stdout
+    assert [c["sub"] for c in hybrid.py()] == ["resolve"]
+    assert hybrid.curls() == []
+
+
+def test_hybrid_logs_resolved_values_without_interpreting_backslash_escapes(hybrid):
+    # Arrange: a profile name that would print an ANSI sequence and a BEL through `echo -e`
+    hybrid.have_models()
+    name = "a\\033[31mRED\\x07b\\ncd"
+    hybrid.set_resolve(profile=name)
+
+    # Act
+    result = hybrid.run("hybrid")
+
+    # Assert
+    assert result.returncode == 0, result.stderr
+    assert f"Profile: {name}" in result.stdout
+    assert "\x07" not in result.stdout
+    assert "\x1b[31m" not in result.stdout
 
 
 def test_hybrid_rejects_resolver_output_with_a_missing_key(hybrid):
@@ -500,7 +578,9 @@ def test_hybrid_honours_custom_ports_in_plist_and_activate(hybrid):
     assert option(activate, "--smart-port") == "9081"
 
 
-def test_hybrid_stops_old_agents_then_starts_new_ones_then_activates(hybrid):
+def test_hybrid_writes_both_plists_then_stops_old_agents_then_starts_new_ones_then_activates(
+    hybrid,
+):
     # Arrange: a leftover single-daemon plist and old tier plists
     hybrid.have_models()
     old = hybrid.agents / "com.jev.mlx_server.plist"
@@ -527,8 +607,8 @@ def test_hybrid_stops_old_agents_then_starts_new_ones_then_activates(hybrid):
     steps = [s for s in steps if s]
     assert steps == [
         "py resolve",
-        "launchctl bootout", "launchctl bootout", "launchctl bootout",
         "py plist", "py plist",
+        "launchctl bootout", "launchctl bootout", "launchctl bootout",
         "launchctl bootstrap", "launchctl bootstrap",
         "py activate",
     ]  # fmt: skip
@@ -561,14 +641,102 @@ def test_hybrid_plist_failure_makes_the_manager_fail(hybrid):
     assert not any(c.startswith("launchctl bootstrap") for c in hybrid.calls())
 
 
-def test_hybrid_reports_a_missing_python_before_calling_anything(hybrid):
-    result = hybrid.run(
-        "hybrid", JEV_PROFILES_PYTHON=str(hybrid.work / "nope" / "python")
-    )
+def test_hybrid_leaves_running_agents_untouched_when_the_second_plist_fails(hybrid):
+    # Arrange: running agents (old plists) and a leftover single-daemon plist
+    hybrid.have_models()
+    old = hybrid.agents / "com.jev.mlx_server.plist"
+    old.write_text(PLIST.format(port=8080))
+    for tier, port in (("fast", 8080), ("smart", 8081)):
+        (hybrid.agents / f"com.jev.mlx_server_{tier}.plist").write_text(
+            PLIST.format(port=port)
+        )
+
+    # Act
+    result = hybrid.run("hybrid", FAKE_PLIST_FAIL_TIER="smart", FAKE_PLIST_RC="2")
+
+    # Assert
+    assert result.returncode == 2
+    assert [c["args"][c["args"].index("--tier") + 1] for c in hybrid.py("plist")] == [
+        "fast",
+        "smart",
+    ]
+    assert [c for c in hybrid.calls() if c.startswith(("launchctl", "pkill"))] == []
+    assert old.exists()
+    assert [c["sub"] for c in hybrid.py()] == ["resolve", "plist", "plist"]
+
+
+def test_hybrid_reports_a_missing_default_python_with_its_path_and_the_fix(hybrid):
+    result = hybrid.run("hybrid", JEV_PROFILES_PYTHON=None)
 
     assert result.returncode == 1
-    assert "make install" in result.stderr + result.stdout
+    assert f"{hybrid.work}/.venv/bin/python" in result.stdout
+    assert "make install" in result.stdout
     assert hybrid.calls() == []
+
+
+def test_hybrid_reports_a_bad_jev_profiles_python_by_its_path_without_the_install_hint(
+    hybrid,
+):
+    bad = hybrid.work / "nope" / "python"
+
+    result = hybrid.run("hybrid", JEV_PROFILES_PYTHON=str(bad))
+
+    assert result.returncode == 1
+    assert f"JEV_PROFILES_PYTHON points to {bad}" in result.stdout
+    assert "make install" not in result.stdout
+    assert hybrid.calls() == []
+
+
+def test_hybrid_defaults_to_the_checkouts_venv_python(hybrid):
+    # Arrange: JEV_PROFILES_PYTHON unset; the fake CLI stands in as .venv/bin/python
+    hybrid.have_models()
+    venv_python = hybrid.work / ".venv" / "bin" / "python"
+    venv_python.parent.mkdir(parents=True)
+    shutil.copy(hybrid.env["JEV_PROFILES_PYTHON"], venv_python)
+
+    # Act
+    result = hybrid.run("hybrid", JEV_PROFILES_PYTHON=None)
+
+    # Assert
+    assert result.returncode == 0, result.stderr
+    assert [c["sub"] for c in hybrid.py()] == ["resolve", "plist", "plist", "activate"]
+    assert hybrid.py("resolve")[0]["pythonpath"].split(":")[0] == f"{hybrid.work}/src"
+
+
+def test_cli_calls_bypass_any_proxy_for_loopback(hybrid):
+    hybrid.have_models()
+
+    result = hybrid.run("hybrid", NO_PROXY=None, no_proxy=None)
+
+    assert result.returncode == 0, result.stderr
+    for call in hybrid.py():
+        assert call["NO_PROXY"] == call["no_proxy"] == "127.0.0.1,localhost"
+
+
+def test_cli_calls_keep_the_callers_no_proxy_entries(hybrid):
+    hybrid.have_models()
+
+    hybrid.run("hybrid", NO_PROXY="corp.example", no_proxy="lower.example")
+
+    call = hybrid.py("activate")[0]
+    assert call["NO_PROXY"] == "127.0.0.1,localhost,corp.example"
+    assert call["no_proxy"] == "127.0.0.1,localhost,lower.example"
+
+
+@pytest.mark.parametrize("signame", ["TERM", "INT"])
+def test_interrupt_during_a_download_removes_the_part_file(hybrid, signame):
+    # Arrange: the curl shim writes the .part file, then signals the manager
+    if signame == "INT" and signal.getsignal(signal.SIGINT) is signal.SIG_IGN:
+        pytest.skip("SIGINT is ignored in this process tree, so bash cannot trap it")
+    expected = {"TERM": 143, "INT": 130}[signame]
+
+    # Act
+    result = hybrid.run("hybrid", CURL_SIGNAL=signame)
+
+    # Assert
+    assert result.returncode == expected
+    assert [p for p in hybrid.models.rglob("*") if p.is_file()] == []
+    assert not any(c.startswith("launchctl") for c in hybrid.calls())
 
 
 def test_allow_eval_only_flag_reaches_resolve_plist_and_activate(hybrid):
