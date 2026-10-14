@@ -1,5 +1,6 @@
 """Self-tests for the loopback fake llama-server fixture (tests/fake_llama_server.py)."""
 
+import itertools
 import json
 import math
 import socket
@@ -417,7 +418,7 @@ def test_daemon_provider_scores_the_fake_like_the_recorded_logprobs(
 ):
     # The recorded prompts carry their own salted tags; pin the salts so the provider
     # sends the recorded requests byte for byte and the fake replays the real answers.
-    salts = iter(["jdy51018", "99q9anip"])
+    salts = itertools.cycle(["jdy51018", "99q9anip"])
     monkeypatch.setattr("random.choices", lambda *a, **k: list(next(salts)))
     monkeypatch.setattr(DaemonProvider, "_prior_cache", {})
     monkeypatch.setattr(DaemonProvider, "_get_daemon_pid", lambda self: "1")
@@ -595,3 +596,105 @@ def test_a_test_that_patches_urlopen_still_overrides_the_guard(server):
     with patch("urllib.request.urlopen", side_effect=RuntimeError("patched")):
         with pytest.raises(RuntimeError, match="patched"):
             urllib.request.urlopen(server.url + "/health")
+
+
+# --- fix round 1 ---------------------------------------------------------------------
+
+
+def test_stop_is_prompt_because_the_serve_loop_polls_quickly():
+    fake = FakeLlamaServer().start()
+
+    started = time.monotonic()
+    fake.stop()
+
+    assert time.monotonic() - started < 0.3
+
+
+def test_recorded_props_model_paths_equal_the_recorded_response_models():
+    props = RECORDED["props"]
+
+    assert props["smart"]["model_path"] == RECORDED_SMART_MODEL
+    assert props["fast"]["model_path"] == RECORDED_KEV_MODEL
+
+
+def test_props_model_path_equals_the_chat_model_for_the_smart_tier(server):
+    _, props = call(server, "/props")
+    _, chat = call(server, CHAT, chat_body("Answer True or False.\nAnswer:"))
+
+    assert props["model_path"] == chat["model"]
+
+
+def test_props_model_path_equals_the_systemone_model_for_the_fast_tier(server):
+    server.set_scenario("normal", tier="fast")
+    questions = {"n": {"type": "noul", "instructions": "x"}}
+
+    _, props = call(server, "/props")
+    _, kev = call(server, SYSTEMONE, {"state": "s", "questions": questions})
+    _, chat = call(server, CHAT, chat_body("anything"))
+
+    assert props["model_path"] == kev["model"] == RECORDED_KEV_MODEL
+    assert chat["model"] == RECORDED_KEV_MODEL
+    assert props["total_slots"] == RECORDED["props"]["fast"]["total_slots"]
+
+
+def test_model_path_option_moves_props_and_chat_model_together(server):
+    server.set_scenario("normal", model_path="/models/other.gguf")
+
+    _, props = call(server, "/props")
+    _, chat = call(server, CHAT, chat_body("anything"))
+
+    assert props["model_path"] == chat["model"] == "/models/other.gguf"
+
+
+def test_confidence_option_sets_choice_and_score_confidence(server):
+    questions = {
+        "c": {"type": "choice", "instructions": "x", "criteria": {"a": "", "b": ""}},
+        "s": {"type": "score", "instructions": "x", "criteria": ["lo", "hi"]},
+    }
+    server.set_scenario("normal", confidence=0.31)
+
+    _, body = call(server, SYSTEMONE, {"state": "s", "questions": questions})
+
+    assert body["answers"]["c"]["confidence"] == 0.31
+    assert body["answers"]["s"]["confidence"] == 0.31
+
+
+def test_confidence_defaults_to_the_top_probability(server):
+    questions = {"c": {"type": "choice", "instructions": "x", "criteria": {"a": ""}}}
+
+    _, body = call(server, SYSTEMONE, {"state": "s", "questions": questions})
+
+    assert body["answers"]["c"]["confidence"] == 1.0
+
+
+def test_guard_blocks_a_malformed_port_with_url_error_not_value_error():
+    with pytest.raises(urllib.error.URLError, match="no daemon in tests"):
+        urllib.request.urlopen("http://127.0.0.1:99999/health", timeout=1)
+
+
+def test_guard_accepts_the_url_keyword_form_for_a_fake(server):
+    with urllib.request.urlopen(url=server.url + "/health", timeout=5) as response:
+        assert json.loads(response.read().decode()) == {"status": "ok"}
+
+
+def test_a_broken_pipe_is_logged_quietly_not_printed(server, capsys):
+    try:
+        raise BrokenPipeError("client went away")
+    except BrokenPipeError:
+        server._server.handle_error(None, ("127.0.0.1", 0))
+
+    assert capsys.readouterr().err == ""
+
+
+def test_other_handler_errors_still_use_the_default_traceback(server, capsys):
+    try:
+        raise ValueError("a real bug")
+    except ValueError:
+        server._server.handle_error(None, ("127.0.0.1", 0))
+
+    assert "a real bug" in capsys.readouterr().err
+
+
+def test_unknown_tier_is_rejected(server):
+    with pytest.raises(ValueError, match="unknown tier"):
+        server.set_scenario("normal", tier="medium")

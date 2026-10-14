@@ -126,11 +126,17 @@ def no_real_daemon_http(request):
 
     real_urlopen = urllib.request.urlopen
 
-    def _urlopen(req, *args, **kwargs):
+    def _urlopen(url, *args, **kwargs):
         # Traffic to a FakeLlamaServer started by the test passes; nothing else does.
-        parts = urlsplit(req if isinstance(req, str) else req.full_url)
-        if parts.hostname == LOOPBACK_HOST and is_fake_llama_port(parts.port or 0):
-            return real_urlopen(req, *args, **kwargs)
+        try:
+            parts = urlsplit(url if isinstance(url, str) else url.full_url)
+            to_fake = parts.hostname == LOOPBACK_HOST and is_fake_llama_port(
+                parts.port or 0
+            )
+        except ValueError:  # a malformed port is just another unreachable daemon
+            to_fake = False
+        if to_fake:
+            return real_urlopen(url, *args, **kwargs)
         raise urllib.error.URLError("no daemon in tests")
 
     with patch("urllib.request.urlopen", side_effect=_urlopen):

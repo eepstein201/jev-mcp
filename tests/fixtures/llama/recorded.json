@@ -83,12 +83,12 @@
   ],
   "props": {
     "fast": {
-      "model_path": "/models/Kev-0.8B-Q8_0.gguf",
+      "model_path": "/models/Kev-0.8B-GGUF/Kev-0.8B-Q8_0.gguf",
       "n_ctx": 16384,
       "total_slots": 4
     },
     "smart": {
-      "model_path": "/models/Qwen2.5-7B-Instruct-Q4_K_M.gguf",
+      "model_path": "/models/Qwen2.5-7B-Instruct-GGUF/Qwen2.5-7B-Instruct-Q4_K_M.gguf",
       "n_ctx": 16384,
       "total_slots": 2
     }

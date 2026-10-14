@@ -19,6 +19,7 @@ import json
 import logging
 import math
 import re
+import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -30,6 +31,7 @@ logger = logging.getLogger(__name__)
 LOOPBACK_HOST = "127.0.0.1"
 RECORDED_PATH = Path(__file__).parent / "fixtures" / "llama" / "recorded.json"
 
+TIERS = ("smart", "fast")
 SCENARIOS = frozenset(
     {
         "normal",
@@ -46,6 +48,8 @@ SCENARIOS = frozenset(
 CHAT_PATH = "/v1/chat/completions"
 SYSTEMONE_PATH = "/v1/systemone"
 MAX_TOP_LOGPROBS = 11
+# serve_forever notices shutdown() only between polls; its 0.5 s default makes stop() slow.
+SERVE_POLL_SECONDS = 0.02
 DEFAULT_SLOW_SECONDS = 1.0
 DEFAULT_SWAP_AFTER = 1
 DEFAULT_NOUL_TRUE = 0.9
@@ -144,7 +148,12 @@ def _probs_to_tokens(probs: Mapping[str, float]) -> list[tuple[str, float]]:
 
 
 def _kev_answer(spec: Mapping[str, Any], options: Mapping[str, Any]) -> dict[str, Any]:
-    """One SystemOne answer in the recorded shape for the question's type."""
+    """One SystemOne answer in the recorded shape for the question's type.
+
+    The `confidence` option sets choice and score confidence explicitly; the recording
+    shows it is not the top probability, so gate tests need to choose it.
+    """
+    explicit_confidence = options.get("confidence")
     qtype = spec.get("type")
     if qtype == "noul":
         return {
@@ -157,7 +166,9 @@ def _kev_answer(spec: Mapping[str, Any], options: Mapping[str, Any]) -> dict[str
         choice = max(probs, key=lambda name: probs[name])
         return {
             "choice": choice,
-            "confidence": probs[choice],
+            "confidence": (
+                probs[choice] if explicit_confidence is None else explicit_confidence
+            ),
             "probabilities": probs,
             "type": "choice",
         }
@@ -165,7 +176,9 @@ def _kev_answer(spec: Mapping[str, Any], options: Mapping[str, Any]) -> dict[str
         labels = list(spec.get("criteria") or [])
         values = list(options.get("score_probs") or _default_probs(labels).values())
         return {
-            "confidence": max(values),
+            "confidence": (
+                max(values) if explicit_confidence is None else explicit_confidence
+            ),
             "legend": {str(i): label for i, label in enumerate(labels)},
             "probabilities": {str(i): p for i, p in enumerate(values)},
             "score": sum(i * p for i, p in enumerate(values)),
@@ -212,6 +225,16 @@ class _Server(ThreadingHTTPServer):
         super().__init__((LOOPBACK_HOST, 0), _Handler)
         self.fake = fake
 
+    def handle_error(self, request: Any, client_address: Any) -> None:
+        """A client that timed out and left is expected; only that case goes quiet."""
+        error = sys.exc_info()[1]
+        if isinstance(error, (BrokenPipeError, ConnectionResetError)):
+            logger.debug(
+                "fake llama-server: client %s went away: %s", client_address, error
+            )
+            return
+        super().handle_error(request, client_address)
+
 
 class FakeLlamaServer:
     """A loopback llama-server. Use as a context manager or with start()/stop()."""
@@ -247,7 +270,10 @@ class FakeLlamaServer:
         with _active_ports_lock:
             _active_ports.add(self._server.server_address[1])
         self._thread = threading.Thread(
-            target=self._server.serve_forever, name="fake-llama-server", daemon=True
+            target=self._server.serve_forever,
+            kwargs={"poll_interval": SERVE_POLL_SECONDS},
+            name="fake-llama-server",
+            daemon=True,
         )
         self._thread.start()
         return self
@@ -277,11 +303,15 @@ class FakeLlamaServer:
     def set_scenario(self, name: str = "normal", **options: Any) -> None:
         """Switch behaviour. Options replace the previous set; swap_after restarts counting.
 
-        Options: model, first_token_probs, noul_true, choice_probs, score_probs,
-        model_path, total_slots, n_ctx, model_a, model_b, n (swap_after), seconds (slow).
+        Options: model, first_token_probs, noul_true, choice_probs, score_probs, confidence,
+        model_path, total_slots, n_ctx, tier ("smart" or "fast": which recorded engine
+        the defaults come from), model_a, model_b, n (swap_after), seconds (slow).
+        `model` and `model_path` are the same setting for /props and every answer.
         """
         if name not in SCENARIOS:
             raise ValueError(f"unknown scenario {name!r}; known: {sorted(SCENARIOS)}")
+        if options.get("tier", "smart") not in TIERS:
+            raise ValueError(f"unknown tier {options['tier']!r}; known: {TIERS}")
         with self._lock:
             self._scenario = name
             self._options = dict(options)
@@ -332,13 +362,21 @@ class FakeLlamaServer:
             return self._systemone(body, scenario, options)
         return 404, {"error": {"code": 404, "message": f"no route for {method} {path}"}}
 
+    def _model(self, options: Mapping[str, Any], default_tier: str) -> str:
+        """The one model path /props and the answers report; recorded props are the source."""
+        explicit = options.get("model") or options.get("model_path")
+        if explicit:
+            return str(explicit)
+        tier = options.get("tier", default_tier)
+        return str(self._recorded["props"][tier]["model_path"])
+
     def _props(self, options: Mapping[str, Any]) -> dict[str, Any]:
-        smart = self._recorded["props"]["smart"]
+        recorded = self._recorded["props"][options.get("tier", "smart")]
         return {
-            "model_path": options.get("model_path", smart["model_path"]),
-            "total_slots": options.get("total_slots", smart["total_slots"]),
+            "model_path": self._model(options, "smart"),
+            "total_slots": options.get("total_slots", recorded["total_slots"]),
             "default_generation_settings": {
-                "n_ctx": options.get("n_ctx", smart["n_ctx"])
+                "n_ctx": options.get("n_ctx", recorded["n_ctx"])
             },
         }
 
@@ -375,7 +413,6 @@ class FakeLlamaServer:
     ) -> dict[str, Any]:
         messages = body.get("messages") or [{}]
         prompt = str(messages[-1].get("content", ""))
-        smart_model = self._recorded["smart_exchanges"][0]["response"]["model"]
         if scenario == "think_first":
             tokens = [(THINK_TOKEN, -0.001), ("Okay", -7.0), ("Let", -9.0)]
         else:
@@ -384,7 +421,7 @@ class FakeLlamaServer:
             )
             tokens = _probs_to_tokens(probs)
         return _chat_response(
-            options.get("model", smart_model), tokens, max(1, len(prompt) // 4)
+            self._model(options, "smart"), tokens, max(1, len(prompt) // 4)
         )
 
     def _systemone(
@@ -403,10 +440,9 @@ class FakeLlamaServer:
             answers = {
                 key: _kev_answer(spec, options) for key, spec in questions.items()
             }
-        kev_response = self._recorded["kev_exchanges"][0]["response"]
         return 200, {
             "answers": answers,
-            "model": options.get("model", kev_response["model"]),
+            "model": self._model(options, "fast"),
             "usage": {
                 "input_tokens": max(1, len(str(body.get("state", ""))) // 4),
                 "output_tokens": 0,
