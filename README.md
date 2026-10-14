@@ -4,7 +4,7 @@ Jev MCP is a high-performance, mathematically rigorous FastMCP server designed f
 
 Instead of asking a cloud LLM to blindly generate text for routing or classification, Jev runs a hybrid local pipeline:
 1. **The Fast Engine (Kev 0.8B):** Instantly intercepts simple boolean, multiple-choice, and multi-agent routing logic. By utilizing a native pointer-head to extract raw mathematical probability distributions (logit extraction) without generating text, it subtracts statistical bias and yields calibrated confidence scores in roughly 40 ms per warm request (see [Performance Benchmarks](#-performance-benchmarks)) that you can threshold (use `jev_calibrate_threshold`) to trade automation rate against precision.
-2. **The Smart Engine (Qwen2.5 7B):** When tasks require deep inferential reasoning, synthetic edge-case generation, or massive context compression, Jev dynamically escalates the request to a powerful 7B reasoning model running on Apple's `mlx_lm` C++ backend.
+2. **The Smart Engine (Qwen2.5 7B):** When tasks require deep inferential reasoning, synthetic edge-case generation, or massive context compression, Jev dynamically escalates the request to a powerful 7B reasoning model served by a local `llama-server` (llama.cpp) daemon.
 
 By combining the strict mathematical safety of Kev with the reasoning depth of Qwen, Jev provides your downstream MCP clients (like Claude Desktop or Antigravity) with the ultimate local safety gate and dynamic task router.
 
@@ -642,9 +642,9 @@ Jev MCP's advanced tools (`QFE Compression`, `Auto-Fixer`, `Prompt Optimizer`, `
 flowchart TD
 
 subgraph group_interface["MCP interface"]
-  node_server["MCP tools<br/>[server.py]"]
-  node_evaluate["Batch evaluation<br/>[server.py]"]
-  node_evidence["Evidence extraction<br/>[server.py]"]
+  node_server["MCP tools<br/>[app.py, tools/]"]
+  node_evaluate["Batch evaluation<br/>[tools/evaluate.py]"]
+  node_evidence["Evidence extraction<br/>[tools/evaluate.py]"]
   node_question_types["Typed questions<br/>[provider.py]"]
 end
 
@@ -657,16 +657,16 @@ subgraph group_evaluation["Evaluation engines"]
 end
 
 subgraph group_quality["Evaluation quality"]
-  node_calibrate["Threshold calibration<br/>[server.py]"]
-  node_synthetic["Dataset generation<br/>[server.py]"]
+  node_calibrate["Threshold calibration<br/>[tools/calibrate.py]"]
+  node_synthetic["Dataset generation<br/>[tools/evaluate.py]"]
   node_security["Payload sanitization<br/>[security.py]"]
   node_linter["Decision preflight<br/>[linter.py]"]
   node_lint_cli["Linter CLI<br/>[cli_linter.py]"]
 end
 
 subgraph group_routing["Task routing"]
-  node_router_config["Routing configuration<br/>[server.py]"]
-  node_task_routing["Complexity routing<br/>[server.py]"]
+  node_router_config["Routing configuration<br/>[router_config.py]"]
+  node_task_routing["Complexity routing<br/>[tools/router.py]"]
 end
 
 node_client(("MCP client"))
@@ -694,11 +694,11 @@ node_server -.->|"exposes"| node_task_routing
 node_task_routing -->|"evaluates rules"| node_router
 node_server -->|"loads and saves"| node_router_config
 
-click node_server "https://github.com/eepstein201/jev-mcp/blob/main/src/jev_mcp/server.py"
-click node_evaluate "https://github.com/eepstein201/jev-mcp/blob/main/src/jev_mcp/server.py"
-click node_calibrate "https://github.com/eepstein201/jev-mcp/blob/main/src/jev_mcp/server.py"
-click node_synthetic "https://github.com/eepstein201/jev-mcp/blob/main/src/jev_mcp/server.py"
-click node_evidence "https://github.com/eepstein201/jev-mcp/blob/main/src/jev_mcp/server.py"
+click node_server "https://github.com/eepstein201/jev-mcp/blob/main/src/jev_mcp/app.py"
+click node_evaluate "https://github.com/eepstein201/jev-mcp/blob/main/src/jev_mcp/tools/evaluate.py"
+click node_calibrate "https://github.com/eepstein201/jev-mcp/blob/main/src/jev_mcp/tools/calibrate.py"
+click node_synthetic "https://github.com/eepstein201/jev-mcp/blob/main/src/jev_mcp/tools/evaluate.py"
+click node_evidence "https://github.com/eepstein201/jev-mcp/blob/main/src/jev_mcp/tools/evaluate.py"
 click node_question_types "https://github.com/eepstein201/jev-mcp/blob/main/src/jev_mcp/provider.py"
 click node_provider_protocol "https://github.com/eepstein201/jev-mcp/blob/main/src/jev_mcp/provider.py"
 click node_router "https://github.com/eepstein201/jev-mcp/blob/main/src/jev_mcp/routing_provider.py"
@@ -708,8 +708,8 @@ click node_logit_calibration "https://github.com/eepstein201/jev-mcp/blob/main/s
 click node_security "https://github.com/eepstein201/jev-mcp/blob/main/src/jev_mcp/security.py"
 click node_linter "https://github.com/eepstein201/jev-mcp/blob/main/src/jev_mcp/linter.py"
 click node_lint_cli "https://github.com/eepstein201/jev-mcp/blob/main/src/jev_mcp/cli_linter.py"
-click node_router_config "https://github.com/eepstein201/jev-mcp/blob/main/src/jev_mcp/server.py"
-click node_task_routing "https://github.com/eepstein201/jev-mcp/blob/main/src/jev_mcp/server.py"
+click node_router_config "https://github.com/eepstein201/jev-mcp/blob/main/src/jev_mcp/router_config.py"
+click node_task_routing "https://github.com/eepstein201/jev-mcp/blob/main/src/jev_mcp/tools/router.py"
 
 classDef toneNeutral fill:#f8fafc,stroke:#334155,stroke-width:1.5px,color:#0f172a
 classDef toneBlue fill:#dbeafe,stroke:#2563eb,stroke-width:1.5px,color:#172554
@@ -742,7 +742,7 @@ When utilizing the intelligent 7B generative model for synthetic data creation o
 *   **JSON Extractor Middleware:** Because local models lack native strict `xgrammar`, Jev forces generative outputs through a strict regex-slicing middleware. This renders your downstream applications completely immune to executing hallucinated conversational boilerplate or malicious markdown wrappers, returning only the mathematically verifiable JSON structures.
 
 ### 3. Engine-Level Security
-*   **PID-Bound Cache Protection:** When you restart the hybrid engine, the MLX backend restarts. To prevent cross-model cache poisoning or leaked mathematical priors, Jev MCP binds its high-speed in-memory cache directly to the OS-level Process ID (`PID`) of the running daemon. If the daemon restarts, the cache is instantly invalidated to guarantee mathematical purity.
+*   **PID-Bound Cache Protection:** When you restart the hybrid engine, the `llama-server` daemon restarts. To prevent cross-model cache poisoning or leaked mathematical priors, Jev MCP binds its high-speed in-memory cache directly to the OS-level Process ID (`PID`) of the running daemon. If the daemon restarts, the cache is instantly invalidated to guarantee mathematical purity.
 
 ---
 ## ⌨️ Command Line Interface (CLI) Reference
@@ -840,6 +840,8 @@ Ports come from `JEV_FAST_PORT` (default `8080`) and `JEV_SMART_PORT` (default `
 | `JEV_TRIAGE_IMPORTANT_THRESHOLD` | `0.8` | `email_triage/core.py` | `is_important` score above which an email that is not an `Action` goes to `Review` instead of being archived. Same format. Raise it if Review fills with mail you would have filed; lower it if important mail is being archived. |
 | `JEV_ALLOWED_ROOTS` | none | `security.py` | Extra directories `jev_read_file`, `jev_scan_repo` and `jev_train_lora` may touch, separated by `:`. The server's working directory, `~/.jev` and the temp directory are always allowed; credential locations stay blocked inside every root; `/` is ignored. The working directory is **not** a root when it is your home directory or above it, because a server started there would expose all of home: start the server in a project, or list your projects here. The repo's `models/` directory is always allowed, so `jev_train_lora` targets work wherever the server starts. |
 | `JEV_ULTRAFAST_PATH` | `<repo>/jev-ultrafast` | `browser_agent.py` | Location of the `jev-ultrafast` checkout used by `jev_run_browser_agent`. |
+| `JEV_LLAMA_CPP_SRC` | `~/.jev/llama.cpp-src` | `lora_training.py` | Your own llama.cpp checkout for `jev_train_lora`'s GGUF conversion. When set, the tool never downloads into it; when unset, it fetches the converter for the commit of the running `llama-server`. |
+| `JEV_SKIP_MODEL_SYNC` | unset | `app.py` | Set to any non-empty value to skip the daily `models.dev` catalog fetch at start-up. |
 
 ### 7. Health Check (`jev-mcp doctor`)
 

@@ -1,4 +1,4 @@
-<!-- Generated: 2026-10-10, re-checked 2026-10-11 | Files scanned: pyproject.toml, Makefile, ci.yml, jev_mac_manager.sh (as of eed41ad) | Token estimate: ~450 -->
+<!-- Generated: 2026-10-10, re-checked 2026-10-13 | Files scanned: pyproject.toml, Makefile, ci.yml, jev_mac_manager.sh (as of 0ac954b) | Token estimate: ~500 -->
 # Dependencies
 
 ## Python (pyproject.toml, py>=3.12)
@@ -15,11 +15,11 @@ Submodule: jev-ultrafast (github.com/browser-use/jev-ultrafast)
 
 ## Env vars
 JEV_FAST_PORT JEV_SMART_PORT JEV_DAEMON_PORT JEV_FAST_ENGINE JEV_BATCH_SIZE
-JEV_MCP_JWKS_URL JEV_MCP_JWT_SECRET JEV_MCP_JWT_AUDIENCE JEV_MCP_JWT_ISSUER (webhook JWTs) · JEV_MCP_RATE_LIMIT_PER_MINUTE (authenticated webhook requests per client address per 60 s, default 60, 0 disables; 429 + Retry-After after auth; keyed on the server-reported address — X-Forwarded-For honoured from local proxies via uvicorn proxy_headers, one shared address only behind a non-local proxy or one without that header, fix with FORWARDED_ALLOW_IPS) · JEV_TRIAGE_ACTION_THRESHOLD JEV_TRIAGE_IMPORTANT_THRESHOLD (email triage routing, 0..1, default 0.8) · JEV_ALLOWED_ROOTS (extra roots for jev_read_file / jev_scan_repo / jev_train_lora paths; os.pathsep-separated) · JEV_SKIP_MODEL_SYNC (no models.dev fetch at start-up) · JEV_ULTRAFAST_PATH (jev_run_browser_agent)
+JEV_MCP_JWKS_URL JEV_MCP_JWT_SECRET JEV_MCP_JWT_AUDIENCE JEV_MCP_JWT_ISSUER (webhook JWTs) · JEV_MCP_RATE_LIMIT_PER_MINUTE (authenticated webhook requests per client address per 60 s, default 60, 0 disables; 429 + Retry-After after auth; keyed on the server-reported address — X-Forwarded-For honoured from local proxies via uvicorn proxy_headers, one shared address only behind a non-local proxy or one without that header, fix with FORWARDED_ALLOW_IPS) · JEV_TRIAGE_ACTION_THRESHOLD JEV_TRIAGE_IMPORTANT_THRESHOLD (email triage routing, 0..1, default 0.8) · JEV_ALLOWED_ROOTS (extra roots for jev_read_file / jev_scan_repo / jev_train_lora paths; os.pathsep-separated) · JEV_SKIP_MODEL_SYNC (no models.dev fetch at start-up) · JEV_ULTRAFAST_PATH (jev_run_browser_agent) · JEV_LLAMA_CPP_SRC (own llama.cpp checkout for jev_train_lora's converter; never downloaded into)
 JEV_MCP_API_KEY (webhook bearer token; the generated Apps Script holds JEV_MCP_WEBHOOK_URL as a constant and reads the key from a Script Property of the same name, never from source)
 
 ## Build / CI
-make install|update|start|hybrid|stop|clean|test|lint|format|format-check|audit|check|eval|train · ci.yml (macos-latest, py3.12, checkout with submodules; installs with `uv sync --locked --extra dev --extra engines`) · dependabot.yml (weekly: uv lockfile, github-actions): ruff format --check src tests + mypy src/jev_mcp/ + pytest --cov-fail-under=85 + scripts/pip_audit.sh (accepted advisories: .pip-audit-ignore)
+make install|update|start|hybrid|stop|clean|test|lint|format|format-check|audit|check|train · evals (daemons running; not in CI): eval|eval-browser|eval-triage|eval-usage (`eval-usage` also needs ANTHROPIC_API_KEY + USAGE_EVAL_RUNNER) · ci.yml (macos-latest, py3.12, checkout with submodules; installs with `uv sync --locked --extra dev --extra engines`) · dependabot.yml (weekly: uv lockfile, github-actions): ruff format --check src tests + mypy src/jev_mcp/ + pytest --cov-fail-under=85 + scripts/pip_audit.sh (accepted advisories: .pip-audit-ignore)
 Commit gate: AGENTS.md (95% per file, 85% overall)
 
 ## External integrations

@@ -1,12 +1,13 @@
-<!-- Generated: 2026-10-11 | server.py split into app.py + tools/ (see git history) | Token estimate: ~900 -->
+<!-- Generated: 2026-10-11, refreshed 2026-10-13 | server.py split into app.py + tools/ (see git history) | Token estimate: ~1000 | As of: 0ac954b -->
 # Backend (MCP tools)
 
 ## Layout
-server.py (~175 lines) — entry point: `python -m jev_mcp.server` → main() (`setup-gas` / `serve-webhook` / stdio), `@mcp.prompt` definitions, re-exports.
-app.py — shared state: `mcp` (MCPServer), `provider` (RoutingProvider), `linter`, `logger`, `_clean_json`/`_safe_truncate`/`_chat_completion(_json)`, `call_fast_autofixer`, `get_temp_notice`/`get_model_notice`, `start_model_sync`/`_sync_models`. Tool modules reference `app.X` AT CALL TIME (never import `jev_mcp.server`). MCPServer carries `client_defaults.SeedingMiddleware` (handshake-time per-client bucket seeding; config provenance `buckets_source`/`detected_client`).
+server.py (~200 lines) — entry point: `python -m jev_mcp.server` → main() (`setup-gas` / `serve-webhook` / `doctor` / stdio; only the stdio path runs `start_model_sync`), 13 `@mcp.prompt` definitions, re-exports of every tool name.
+doctor.py (~200 lines) — `jev-mcp doctor [--json]`; prints only from its own main(); reads engine `/health` (2 s timeout), router config, `security` roots, auth variable NAMES, triage thresholds, versions.
+app.py (~275 lines) — shared state: `mcp` (MCPServer), `provider` (RoutingProvider), `linter`, `logger`, `_clean_json`/`_safe_truncate`/`_chat_completion(_json)`, `call_fast_autofixer`, `get_temp_notice`/`get_model_notice`, `start_model_sync`/`_sync_models`. Tool modules reference `app.X` AT CALL TIME (never import `jev_mcp.server`). MCPServer carries `client_defaults.SeedingMiddleware` (handshake-time per-client bucket seeding; config provenance `buckets_source`/`detected_client`).
 
 ## Tools (tools/) → impl
-Tool name = function name, except the three triage tools (function in brackets). Renamed 2026-10-12, no aliases; old → new table in README "Renamed tools".
+17 tools. Tool name = function name, except the three triage tools (function in brackets). Renamed 2026-10-12, no aliases; old → new table in README "Renamed tools". Every tool carries a title and behaviour hints (annotations), pinned by tests/test_tool_surface.py.
 jev_evaluate_batch             → tools/evaluate.py (state + QuestionType[] → RoutingProvider)
 jev_explain_decision           → tools/evaluate.py
 jev_generate_synthetic_dataset → tools/evaluate.py
@@ -42,4 +43,4 @@ gas_setup.setup_gas_workflow → examples/gas_triage.js (Google Apps Script)
 MAX_STATE_TOKENS=3500 · MIN_OPTIONS=2 · MAX_OPTIONS=10 · MAX_OPTION_LENGTH_RATIO=3.5
 
 ## Observed smells (for review, not fixed here)
-- (resolved) server.py was 1772 lines; now app.py + tools/ families + a ~175-line entry point
+- Largest modules: tools/evaluate.py (~560), tools/calibrate.py (~460), tools/files.py (~430), daemon_provider.py (~415) — all under the 800-line cap; tools/files.py `jev_read_file`/`jev_scan_repo` withhold irrelevant content without naming it (see docs/TODO.md)
