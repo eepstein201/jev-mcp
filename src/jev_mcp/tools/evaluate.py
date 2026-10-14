@@ -449,7 +449,7 @@ def jev_explain_decision(
 @mcp.tool(
     name="jev_generate_synthetic_dataset",
     title="Generate a labelled test dataset",
-    description="Dataset Generator: Automatically generates a Golden Dataset using the local 7B model if available, otherwise returns instructions for the primary LLM to generate it.",
+    description="Dataset Generator: Automatically generates a Golden Dataset using the local smart engine if available, otherwise returns instructions for the primary LLM to generate it.",
     annotations=ToolAnnotations(
         read_only_hint=False,
         destructive_hint=False,
@@ -477,7 +477,9 @@ def jev_generate_synthetic_dataset(
         q_prompt = q_prompt[:1000]
     q_prompt = sanitize_payload(q_prompt)
 
-    logger.info(f"Checking if 7B model is loaded for local dataset generation...")
+    logger.info(
+        f"Checking if the smart engine is loaded for local dataset generation..."
+    )
 
     expected_type = "boolean (true/false)"
     if isinstance(question, ChoiceQuestion):
@@ -552,10 +554,12 @@ Once you have generated this JSON array, you must immediately pass it into the `
                     batch_data = batch_data["dataset"]
 
                 if not isinstance(batch_data, list):
-                    raise ValueError("Local 7B Model did not return a valid JSON list.")
+                    raise ValueError(
+                        "Local smart engine did not return a valid JSON list."
+                    )
                 if not batch_data:
                     # An empty batch makes no progress; asking again could loop forever.
-                    raise ValueError("Local 7B Model returned no cases.")
+                    raise ValueError("Local smart engine returned no cases.")
                 dataset_accumulator.extend(batch_data)
 
             dataset_accumulator = dataset_accumulator[:num_cases]

@@ -33,7 +33,7 @@ def _is_no_answer(probs: Dict[str, Any]) -> bool:
 class RoutingProvider(JevProvider):
     """
     Implements a Hybrid Complexity Router.
-    Routes queries between the Fast 0.5B model and the Smart 7B model
+    Routes queries between the fast engine and the smart engine
     based on logit confidence scores and context complexity.
     """
 
@@ -74,7 +74,7 @@ class RoutingProvider(JevProvider):
         tokens = self.check_token_limit(state)
         if tokens > 4000:
             logger.info(
-                f"State size {tokens} exceeds fast-routing limit. Bypassing 0.5B and routing directly to 7B."
+                f"State size {tokens} exceeds fast-routing limit. Bypassing the fast engine and routing directly to the smart engine."
             )
             smart_only = self.smart_provider.evaluate_batch(state, questions)
             # After the batch: that is when the provider has refreshed its model id.
@@ -87,7 +87,7 @@ class RoutingProvider(JevProvider):
                 },
             )
 
-        logger.info(f"Evaluating {len(questions)} questions on Fast 0.5B model...")
+        logger.info(f"Evaluating {len(questions)} questions on the fast engine...")
         fast_results = self.fast_provider.evaluate_batch(state, questions)
 
         gate = daemon_provider.active_gate()
@@ -122,7 +122,7 @@ class RoutingProvider(JevProvider):
             }
 
         logger.info(
-            f"Escalating {len(uncertain_questions)} uncertain questions to Smart 7B model..."
+            f"Escalating {len(uncertain_questions)} uncertain questions to the smart engine..."
         )
         smart_results = self.smart_provider.evaluate_batch(state, uncertain_questions)
 

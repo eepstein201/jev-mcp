@@ -647,9 +647,10 @@ class DaemonProvider(JevProvider):
                 continue
 
             # 2. Extract Prior (Cache Hit or Fetch)
-            # Key on format_hint, not the full empty prompt: the 7B sandbox
-            # template embeds a per-question salt tag, which would make every
-            # cache key unique and refetch the prior on every question.
+            # Key on format_hint, not the full empty prompt: the smart
+            # engine's sandbox template embeds a per-question salt tag,
+            # which would make every cache key unique and refetch the
+            # prior on every question.
             cache_key = (
                 f"{daemon_pid}::{self.current_model_id}::{model_id}::{style}::"
                 f"{format_hint}"
