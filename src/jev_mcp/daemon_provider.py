@@ -1,13 +1,21 @@
 from functools import singledispatchmethod
 from jev_mcp.provider import post_json
 import json
+import os
 import random
 import string
 import math
 import subprocess
+import urllib.request
 from typing import Any, List, Optional, Tuple
 import logging
 from jev_mcp.provider import JevProvider, NoulQuestion, ChoiceQuestion, ScoreQuestion
+from jev_mcp.router_config import (
+    DEFAULT_TEMPERATURE,
+    UNREPORTED_MODEL_IDS,
+    get_temperature,
+    load_router_config,
+)
 from jev_mcp.security import sanitize_payload
 
 logger = logging.getLogger(__name__)
@@ -17,24 +25,18 @@ UNKNOWN_MODEL = "unknown_model"
 # Below this much probability on the target tokens the reply is not an answer (the
 # model started with something else, such as a think tag).
 MIN_TARGET_MASS = 0.05
-DEFAULT_TEMPERATURE = 1.0
 # A choice is read from the log-probability of a single letter token, A to Z.
 MAX_CHOICE_LABELS = 26
+# A model probe must answer faster than an inference would; anything slower is a dead daemon.
+PROPS_TIMEOUT_SECONDS = 5.0
 
 
-def _saved_temperature() -> float:
-    """The calibration temperature in the router config, or the default when it cannot be read."""
+def _model_size(model_id: str) -> int | None:
+    """The file size of the served model when its id is an existing path."""
     try:
-        from jev_mcp.router_config import load_router_config
-
-        return float(
-            load_router_config().get("fitted_temperature", DEFAULT_TEMPERATURE)
-        )
-    except Exception as e:
-        logger.warning(
-            f"Could not read the fitted temperature; using {DEFAULT_TEMPERATURE}: {e}"
-        )
-        return DEFAULT_TEMPERATURE
+        return os.stat(model_id).st_size
+    except (OSError, ValueError):
+        return None
 
 
 class DaemonProvider(JevProvider):
@@ -68,8 +70,62 @@ class DaemonProvider(JevProvider):
         self.base_url = base_url or f"http://127.0.0.1:{port}/v1/chat/completions"
         self.max_tokens = 8192
         self.current_model_id = UNKNOWN_MODEL
+        self.model_size: int | None = None
 
-        self.fitted_temperature = _saved_temperature()
+        # The model is not known yet (no reply, no probe), so no stored temperature
+        # can apply; _saved_temperature resolves it per batch once the id is known.
+        self.fitted_temperature = DEFAULT_TEMPERATURE
+
+    def _saved_temperature(self) -> float:
+        """The router-config temperature for the model being scored, or the default.
+
+        The legacy global never applies while the model is unknown: it was fitted on
+        one model alone. Any config read or shape error also falls back to the default."""
+        if self.current_model_id == UNKNOWN_MODEL:
+            return DEFAULT_TEMPERATURE
+        try:
+            return get_temperature(
+                load_router_config(), self.current_model_id, self.model_size
+            )
+        except Exception as e:
+            logger.warning(
+                f"Could not read the temperature for {self.current_model_id}; "
+                f"using {DEFAULT_TEMPERATURE}: {e}"
+            )
+            return DEFAULT_TEMPERATURE
+
+    def discover_model(self) -> str | None:
+        """The model the daemon serves, asked directly (GET /props) without inference.
+
+        llama-server reports the full path of its GGUF as `model_path`. The id (and
+        its file size, when the id is an existing path) is recorded on the provider
+        and returned; None comes back when the daemon named no usable model, and no
+        failure ever raises."""
+        from urllib.parse import urlsplit
+
+        try:
+            parts = urlsplit(self.base_url)
+            request = urllib.request.Request(
+                f"{parts.scheme}://{parts.netloc}/props", method="GET"
+            )
+            with urllib.request.urlopen(
+                request, timeout=PROPS_TIMEOUT_SECONDS
+            ) as response:
+                props = json.loads(response.read().decode())
+            if not isinstance(props, dict):
+                return None
+            reported = props.get("model_path")
+            if not isinstance(reported, str):
+                return None
+            model_id = reported.strip()
+            if model_id in UNREPORTED_MODEL_IDS:
+                return None
+            self.current_model_id = model_id
+            self.model_size = _model_size(model_id)
+            return model_id
+        except Exception as e:
+            logger.info(f"Could not discover the served model at {self.base_url}: {e}")
+            return None
 
     def _get_daemon_pid(self) -> str:
         try:
@@ -317,8 +373,9 @@ class DaemonProvider(JevProvider):
     ) -> dict[str, dict[str, Any]]:
         results = {}
         # Re-read on every batch: jev_manage_temperature and jev_calibrate_threshold can change it
-        # while this provider (built once at server start) is still in use.
-        self.fitted_temperature = _saved_temperature()
+        # while this provider (built once at server start) is still in use. While the model is
+        # still unknown this answers the default — the legacy global belongs to one model alone.
+        self.fitted_temperature = self._saved_temperature()
 
         MAX_STATE_CHARS = 16000
         state_str = json.dumps(state) if not isinstance(state, str) else state
@@ -385,8 +442,12 @@ class DaemonProvider(JevProvider):
 
             # 1. Fetch Active Logprobs
             lps, model_id = self.get_logprobs(user_prompt, expected_keys)
-            if model_id != UNKNOWN_MODEL:
+            if model_id != UNKNOWN_MODEL and model_id != self.current_model_id:
                 self.current_model_id = model_id
+                self.model_size = _model_size(model_id)
+                # The model is known now (first reply, or a swap): resolve this
+                # model's temperature before the scores below are normalized.
+                self.fitted_temperature = self._saved_temperature()
             if not lps:
                 # No answer (daemon down or a reply without logprobs). Leaving the question
                 # out keeps that distinct from a real answer of all-zero probabilities.

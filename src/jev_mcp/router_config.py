@@ -189,15 +189,23 @@ def temperature_entry(
     return entry
 
 
+def legacy_temperature(config: RouterConfig) -> float | None:
+    """The legacy global fitted temperature when it is usable, else None.
+
+    The file is hand-editable, so a raw value of the wrong shape (a string, a
+    boolean, zero, non-finite) counts as absent rather than being echoed."""
+    value = config.get("fitted_temperature")
+    return (
+        float(value)
+        if isinstance(value, (int, float)) and _is_temperature(value)
+        else None
+    )
+
+
 def _legacy_temperature(config: RouterConfig, model_id: str) -> float | None:
     """The legacy global, when it is usable and the model is the one it was fitted on."""
-    value = config.get("fitted_temperature")
-    if (
-        value is not None
-        and _is_temperature(value)
-        and model_key(model_id).startswith(LEGACY_TEMPERATURE_MODEL_PREFIX)
-    ):
-        return float(value)
+    if model_key(model_id).startswith(LEGACY_TEMPERATURE_MODEL_PREFIX):
+        return legacy_temperature(config)
     return None
 
 

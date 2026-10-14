@@ -13,7 +13,8 @@ from jev_mcp.provider import ChoiceQuestion, NoulQuestion, QuestionType, ScoreQu
 
 NO_MODEL_REPORTED = (
     "The smart engine did not report a model, so the temperature cannot be tied to one. "
-    "Start the daemons with `make start` and run an evaluation first."
+    "A direct probe found the engine unavailable as well (no engine answered); "
+    "start the daemons with `make start` and try again."
 )
 
 
@@ -499,7 +500,9 @@ def jev_manage_temperature(
                                 config
                             ).items()
                         },
-                        "legacy_fitted_temperature": config.get("fitted_temperature"),
+                        "legacy_fitted_temperature": router_config.legacy_temperature(
+                            config
+                        ),
                         "message": NO_MODEL_REPORTED,
                     },
                     indent=2,

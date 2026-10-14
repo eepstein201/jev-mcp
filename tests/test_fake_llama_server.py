@@ -266,6 +266,22 @@ def test_loading_makes_health_return_503(server):
     assert (status, body) == (503, LOADING_BODY)
 
 
+def test_loading_makes_props_return_503(server):
+    server.set_scenario("loading")
+
+    status, body = call(server, "/props")
+
+    assert (status, body) == (503, LOADING_BODY)
+
+
+def test_props_option_serves_a_custom_props_body_verbatim(server):
+    server.set_scenario("normal", props={"model_path": 42})
+
+    status, body = call(server, "/props")
+
+    assert (status, body) == (200, {"model_path": 42})
+
+
 @pytest.mark.parametrize(
     "path, body",
     [
