@@ -56,6 +56,9 @@ DEFAULT_SWAP_AFTER = 1
 DEFAULT_NOUL_TRUE = 0.9
 LEADING_SHARE = 0.8
 THINK_TOKEN = "<think>"
+# What the live Kev daemon answers on /v1/chat/completions: its pointer head is not a chat
+# model, so the first token is spread near-uniformly over words and True/False are absent.
+KEV_CHAT_TOKENS = [("We", -5.5), ("Okay", -5.5), ("The", -5.6), ("I", -5.7)]
 # What the wrong_model scenario serves unless the test names a model.
 WRONG_MODEL_PATH = "/models/Unexpected-Model-GGUF/Unexpected-Model-Q4_K_M.gguf"
 LOADING_BODY = {
@@ -310,6 +313,8 @@ class FakeLlamaServer:
         model_path, total_slots, n_ctx, tier ("smart" or "fast": which recorded engine
         the defaults come from), model_a, model_b, n (swap_after), seconds (slow),
         props (a value served verbatim as the /props body, for malformed shapes),
+        (tier "fast" chat completions answer like the live Kev daemon: near-uniform
+        words, no True/False; `first_token_probs` overrides that),
         alias (the `model` of every chat and SystemOne reply, as `--alias` makes a real
         daemon report it, while /props keeps the full path).
         `model` and `model_path` are the same setting for /props and every answer.
@@ -411,8 +416,13 @@ class FakeLlamaServer:
             overflow = self._recorded["context_overflow"]
             return overflow["status"], copy.deepcopy(overflow["body"])
 
+        fast_chat = options.get("tier") == "fast" and not options.get(
+            "first_token_probs"
+        )
         response = (
-            None if scenario == "think_first" else self._replay("smart_exchanges", body)
+            None
+            if scenario == "think_first" or fast_chat
+            else self._replay("smart_exchanges", body)
         )
         if response is None:
             response = self._synthesize_chat(body, scenario, options)
@@ -434,6 +444,8 @@ class FakeLlamaServer:
         prompt = str(messages[-1].get("content", ""))
         if scenario == "think_first":
             tokens = [(THINK_TOKEN, -0.001), ("Okay", -7.0), ("Let", -9.0)]
+        elif options.get("tier") == "fast" and not options.get("first_token_probs"):
+            tokens = list(KEV_CHAT_TOKENS)
         else:
             probs = options.get("first_token_probs") or _default_probs(
                 _prompt_targets(prompt)

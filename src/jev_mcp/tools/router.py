@@ -276,7 +276,13 @@ def jev_agent_handoff(task_description: str, available_agents: Dict[str, str]) -
     q = ChoiceQuestion(
         key="best_agent", prompt=instructions, options=list(available_agents.keys())
     )
-    res = provider.evaluate_batch(task_description, [q])
+    try:
+        res = provider.evaluate_batch(task_description, [q])
+    except Exception as e:
+        logger.error(f"jev_agent_handoff failed: {e}")
+        return json.dumps(
+            {"status": "ERROR", "message": str(e), **app.engine_identity(provider)}
+        )
     best_agent = res.get("best_agent", {}).get("choice")
     probs = res.get("best_agent", {}).get("probabilities", {})
 

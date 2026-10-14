@@ -15,17 +15,19 @@ import os
 import platform
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from jev_mcp import daemon_provider, router_config, security
+from jev_mcp import daemon_provider, engine_profiles, router_config, security
 from jev_mcp.email_triage.core import load_mail_config
-from jev_mcp.provider import post_json
+from jev_mcp.kev_provider import KevProvider
+from jev_mcp.provider import NoulQuestion, post_json
 
 HEALTH_TIMEOUT_SECONDS = 2
 # llama-server answers 503 on /health and /props while a model loads.
 LOADING_HTTP_STATUS = 503
-PROBE_TIMEOUT_SECONDS = 30
+PROBE_TIMEOUT_SECONDS = 10
 # The probe's reply must put at least this much probability on its two targets.
 PROBE_MIN_TARGET_MASS = 0.9
 PROBE_TARGETS = ("true", "false")
@@ -71,6 +73,51 @@ def _health_status(port: int) -> str:
         return "loading" if error.code == LOADING_HTTP_STATUS else "down"
     except Exception:
         return "down"
+
+
+# The fast engine scores through its SystemOne endpoint, not through chat completions
+# (a chat request to the Kev daemon returns near-uniform tokens with no True/False).
+FAST_PROBE_KEY = "probe"
+FAST_PROBE_STATE = "Water boils at 100 degrees Celsius at sea level."
+FAST_PROBE_QUESTION = "Does water boil at 100 degrees Celsius at sea level?"
+# A fast answer's probabilities must add up to one, within this slack.
+FAST_PROBE_SUM_TOLERANCE = 0.05
+
+
+def _probe_fast(port: int) -> dict[str, Any]:
+    """Score one NoulQuestion through KevProvider, the way the server scores the fast tier.
+
+    Passes when an answer comes back whose probabilities sum to about 1. Never raises."""
+    provider = KevProvider(base_url=f"http://127.0.0.1:{port}/v1/systemone")
+    try:
+        answers = provider.evaluate_batch(
+            FAST_PROBE_STATE,
+            [NoulQuestion(key=FAST_PROBE_KEY, prompt=FAST_PROBE_QUESTION)],
+        )
+        probabilities = answers.get(FAST_PROBE_KEY, {}).get("probabilities")
+        total = sum(probabilities.values()) if probabilities else None
+    except Exception as e:
+        return {
+            "ok": False,
+            "first_token": None,
+            "target_mass": None,
+            "detail": f"no usable answer ({type(e).__name__}: {e})",
+        }
+    if total is None:
+        return {
+            "ok": False,
+            "first_token": None,
+            "target_mass": None,
+            "detail": "the SystemOne endpoint returned no answer",
+        }
+    if abs(total - 1.0) > FAST_PROBE_SUM_TOLERANCE:
+        return {
+            "ok": False,
+            "first_token": None,
+            "target_mass": total,
+            "detail": f"the answer's probabilities sum to {total:.2f}, not 1",
+        }
+    return {"ok": True, "first_token": None, "target_mass": total, "detail": "ok"}
 
 
 def _probe(port: int) -> dict[str, Any]:
@@ -134,6 +181,7 @@ def _engine_report(
     profile: Any,
 ) -> dict[str, Any]:
     port = _port(env.get(port_env, default_port), default_port)
+    fast_is_kev = name == "fast" and env.get("JEV_FAST_ENGINE", "kev") == "kev"
     status = _health_status(port)
     served = None
     probe = None
@@ -142,7 +190,7 @@ def _engine_report(
             f"http://127.0.0.1:{port}"
         )
         served = os.path.basename(served_path) if served_path else None
-        probe = _probe(port)
+        probe = _probe_fast(port) if fast_is_kev else _probe(port)
     expected = None
     if profile is not None:
         expected = (profile.fast if name == "fast" else profile.smart).filename
@@ -179,17 +227,39 @@ def _versions() -> dict[str, str]:
     return versions
 
 
+def _active_profile() -> tuple[Any, str | None]:
+    """(profile, error): the active profile, read through the resolver's strict API so a
+    broken marker or table is reported (a ProfileError) instead of looking like "none".
+
+    Any other failure (the resolver not usable at all) is "no profile" and no error."""
+    try:
+        name = engine_profiles.read_active_name()
+        return engine_profiles.load_profiles().get(name), None
+    except engine_profiles.ProfileError as e:
+        return None, str(e)
+    except Exception as e:
+        daemon_provider.logger.info(f"No active engine profile could be read: {e!r}")
+        return None, None
+
+
 def collect_report(env: Mapping[str, str] = os.environ) -> dict[str, Any]:
     """Everything `doctor` reports, as plain data. Reads no secret value:
     webhook auth is summarised as the NAMES of the variables that are set."""
     thresholds = load_mail_config()
-    profile = daemon_provider.active_engine_profile()
+    profile, profile_error = _active_profile()
+    # The engines are checked at the same time, so a wedged one cannot delay the other.
+    with ThreadPoolExecutor(max_workers=len(ENGINES)) as pool:
+        futures = {
+            name: pool.submit(
+                _engine_report, name, port_env, default_port, env, profile
+            )
+            for name, port_env, default_port in ENGINES
+        }
+        engines = {name: future.result() for name, future in futures.items()}
     return {
         "profile": profile.name if profile is not None else None,
-        "engines": {
-            name: _engine_report(name, port_env, default_port, env, profile)
-            for name, port_env, default_port in ENGINES
-        },
+        "profile_error": profile_error,
+        "engines": engines,
         "router_config": _router_config_report(),
         "paths": security.allowed_roots_report(env),
         "webhook_auth": {"set": [name for name in AUTH_VARIABLES if env.get(name)]},
@@ -240,6 +310,10 @@ def _engine_problems(name: str, report: Mapping[str, Any]) -> list[str]:
 def problems(report: Mapping[str, Any]) -> list[str]:
     """The report's actionable findings, in a stable order."""
     found: list[str] = []
+    if report.get("profile_error"):
+        found.append(
+            f"the active engine profile cannot be read: {report['profile_error']}"
+        )
     for name in ("fast", "smart"):
         found.extend(_engine_problems(name, report))
     config = report["router_config"]
@@ -284,6 +358,8 @@ def render(report: Mapping[str, Any]) -> str:
     lines: list[str] = ["jev-mcp doctor", ""]
     lines.append("engines")
     lines.append(f"  profile : {report.get('profile') or 'none'}")
+    if report.get("profile_error"):
+        lines.append(f"  profile error : {report['profile_error']}")
     for name in ("fast", "smart"):
         engine = report["engines"][name]
         lines.append(f"  {name} : {engine['status']} (port {engine['port']})")

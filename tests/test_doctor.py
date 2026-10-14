@@ -40,6 +40,9 @@ def urlopen_ok():
             body = {"model_path": "/models/Served-Q4.gguf"}
         elif url.endswith("/health"):
             body = {"status": "ok"}
+        elif url.endswith("/v1/systemone"):
+            keys = json.loads(request.data)["questions"]
+            body = {"answers": {k: {"noul": 0.9, "type": "noul"} for k in keys}}
         else:
             body = GOOD_PROBE
         response = MagicMock()
@@ -241,7 +244,10 @@ def daemons(monkeypatch, tmp_router_config):
 
 
 def _use_profile(monkeypatch, profile):
-    monkeypatch.setattr(engine_profiles, "active_profile", lambda *a, **k: profile)
+    """The resolver names this profile (None: the marker names a profile the table lacks)."""
+    table = SimpleNamespace(get=lambda name: profile)
+    monkeypatch.setattr(engine_profiles, "read_active_name", lambda *a, **k: "lean")
+    monkeypatch.setattr(engine_profiles, "load_profiles", lambda *a, **k: table)
 
 
 def _report():
@@ -300,10 +306,13 @@ def test_a_resolver_that_raises_is_treated_as_no_profile(daemons, monkeypatch):
     def _raise(*args, **kwargs):
         raise NotImplementedError
 
-    monkeypatch.setattr(engine_profiles, "active_profile", _raise)
-    monkeypatch.setattr(daemon_provider, "_profile_warned", False)
+    monkeypatch.setattr(engine_profiles, "read_active_name", _raise)
 
-    assert _report()["profile"] is None
+    report = _report()
+
+    assert report["profile"] is None
+    assert report["profile_error"] is None
+    assert problems(report) == []
 
 
 def test_a_loading_engine_is_a_problem_that_says_so(daemons, monkeypatch):
@@ -335,16 +344,14 @@ def test_a_probe_whose_first_token_is_not_a_target_is_flagged(daemons, monkeypat
 
 def test_a_probe_with_too_little_target_mass_is_flagged(daemons, monkeypatch):
     _use_profile(monkeypatch, _profile())
-    daemons.fast.set_scenario(
-        "normal", tier="fast", first_token_probs={"True": 0.6, "Maybe": 0.4}
-    )
+    daemons.smart.set_scenario("normal", first_token_probs={"True": 0.6, "Maybe": 0.4})
 
     report = _report()
 
-    probe = report["engines"]["fast"]["probe"]
+    probe = report["engines"]["smart"]["probe"]
     assert probe["ok"] is False
     assert probe["target_mass"] == pytest.approx(0.6)
-    assert any("fast engine" in p and "0.6" in p for p in problems(report))
+    assert any("smart engine" in p and "0.6" in p for p in problems(report))
 
 
 def test_a_passing_probe_reports_its_target_mass(daemons, monkeypatch):
@@ -386,3 +393,97 @@ def test_doctor_prints_nothing_outside_main(daemons, monkeypatch, capsys):
     problems(report)
 
     assert capsys.readouterr().out == ""
+
+
+# --- the fast engine is probed through SystemOne, never through chat ------------------
+
+
+def test_the_fast_probe_scores_through_systemone_and_never_uses_chat(
+    daemons, monkeypatch
+):
+    _use_profile(monkeypatch, _profile())
+
+    report = _report()
+
+    assert report["engines"]["fast"]["probe"]["ok"] is True
+    paths = [path for _, path, _ in daemons.fast.requests]
+    assert "/v1/systemone" in paths
+    assert "/v1/chat/completions" not in paths
+    # The smart engine still gets the logprob probe.
+    assert "/v1/chat/completions" in [p for _, p, _ in daemons.smart.requests]
+
+
+def test_the_fakes_fast_chat_answers_like_the_live_kev_daemon(daemons):
+    # Pins the fake's fidelity: a chat probe of the fast tier cannot pass.
+    from jev_mcp.doctor import _probe
+
+    probe = _probe(int(daemons.fast.url.rsplit(":", 1)[1]))
+
+    assert probe["ok"] is False
+    assert probe["first_token"] not in ("true", "false")
+
+
+def test_a_fast_probe_without_an_answer_is_flagged(daemons, monkeypatch):
+    _use_profile(monkeypatch, _profile())
+    daemons.fast.set_scenario("wrong_kev_shape", tier="fast")
+
+    report = _report()
+
+    assert report["engines"]["fast"]["probe"]["ok"] is False
+    assert any("fast engine" in p and "probe" in p for p in problems(report))
+
+
+def test_a_fast_probe_whose_probabilities_do_not_sum_to_one_is_flagged(
+    daemons, monkeypatch
+):
+    from unittest.mock import patch as _patch
+
+    from jev_mcp.doctor import _probe_fast
+
+    with _patch(
+        "jev_mcp.doctor.KevProvider.evaluate_batch",
+        return_value={"probe": {"probabilities": {"true": 0.2, "false": 0.2}}},
+    ):
+        probe = _probe_fast(1)
+
+    assert probe["ok"] is False
+    assert "sum" in probe["detail"]
+
+
+def test_a_fast_probe_that_raises_is_flagged():
+    from unittest.mock import patch as _patch
+
+    from jev_mcp.doctor import _probe_fast
+
+    with _patch(
+        "jev_mcp.doctor.KevProvider.evaluate_batch", side_effect=RuntimeError("boom")
+    ):
+        assert _probe_fast(1)["ok"] is False
+
+
+def test_a_non_kev_fast_engine_is_probed_with_the_logprob_probe(daemons, monkeypatch):
+    # JEV_FAST_ENGINE=daemon serves the fast tier through chat completions.
+    daemons.fast.set_scenario("normal")  # a chat-capable fake
+    monkeypatch.setenv("JEV_FAST_ENGINE", "daemon")
+    _use_profile(monkeypatch, _profile())
+
+    assert _report()["engines"]["fast"]["probe"]["ok"] is True
+    assert "/v1/chat/completions" in [p for _, p, _ in daemons.fast.requests]
+
+
+# --- a broken profile is a problem, not "none" -----------------------------------------
+
+
+def test_a_profile_error_is_a_problem_and_exit_one(daemons, monkeypatch, capsys):
+    def _bad(*args, **kwargs):
+        raise engine_profiles.ProfileError("active marker names 'x!'")
+
+    monkeypatch.setattr(engine_profiles, "read_active_name", _bad)
+
+    report = _report()
+
+    assert report["profile"] is None
+    assert "x!" in report["profile_error"]
+    assert any("cannot be read" in p and "x!" in p for p in problems(report))
+    assert main([]) == 1
+    assert "profile error" in capsys.readouterr().out

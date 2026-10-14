@@ -76,8 +76,9 @@ class RoutingProvider(JevProvider):
             logger.info(
                 f"State size {tokens} exceeds fast-routing limit. Bypassing 0.5B and routing directly to 7B."
             )
-            self.current_model_id = self.smart_provider.current_model_id
             smart_only = self.smart_provider.evaluate_batch(state, questions)
+            # After the batch: that is when the provider has refreshed its model id.
+            self.current_model_id = self.smart_provider.current_model_id
             return self._require_answers(
                 questions,
                 {

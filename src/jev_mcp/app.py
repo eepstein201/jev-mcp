@@ -312,6 +312,14 @@ def reported_smart_model(smart: Any = None) -> tuple[str, int | None]:
     it is probed once via GET /props before giving up, so the temperature tools work
     without a prior evaluation."""
     smart = smart if smart is not None else provider.smart_provider
+    # A daemon restarted on another model inside the id's TTL would otherwise file this
+    # model's calibration under the previous model's key.
+    refresh = getattr(smart, "refresh_if_restarted", None)
+    if callable(refresh):
+        try:
+            refresh()
+        except Exception as e:
+            logger.warning(f"Could not check the smart engine for a restart: {e}")
     model_id = getattr(smart, "current_model_id", "")
     if not isinstance(model_id, str) or model_id.strip() in UNREPORTED_MODEL_IDS:
         model_id = _discover_model_once(smart)

@@ -24,6 +24,7 @@ from jev_mcp.security import sanitize_payload
 logger = logging.getLogger(__name__)
 
 UNKNOWN_MODEL = "unknown_model"
+UNKNOWN_PID = "unknown_pid"
 STYLE_PLAIN = "plain"
 STYLE_SANDBOX = "sandbox"
 # Below this much probability on the target tokens the reply is not an answer (the
@@ -35,23 +36,32 @@ MAX_CHOICE_LABELS = 26
 PROPS_TIMEOUT_SECONDS = 5.0
 # How long a model id read from /props is trusted before the daemon is asked again.
 SERVED_MODEL_TTL_SECONDS = 30.0
+# How long a failed /props read (a daemon that is down, loading, or has no /props) is
+# remembered before the daemon is asked again.
+FAILED_PROPS_TTL_SECONDS = 30.0
 # How long the active profile is trusted; a `make start` changes it rarely.
 PROFILE_TTL_SECONDS = 5.0
 
 _PROFILE_CLOCK: Callable[[], float] = time.monotonic
 # (the resolver function that produced it, when, the profile or None)
 _profile_cache: tuple[Any, float, "engine_profiles.Profile | None"] | None = None
-_profile_warned = False
+# The last failure reason logged, so a new reason is logged again; a rate limit keeps a
+# persistent failure from flooding the log.
+_profile_last_error: str | None = None
+_profile_last_warned_at = float("-inf")
+PROFILE_WARN_INTERVAL_SECONDS = 300.0
 
 
 def active_engine_profile() -> "engine_profiles.Profile | None":
     """The active engine profile, or None when there is none or it cannot be read.
 
     Read with a short TTL. Any failure counts as "no profile" (the default gate and the
-    sandbox prompt), logged once at WARNING, so a missing marker never fails a tool. The
+    sandbox prompt), logged at WARNING whenever its reason changes (and at most once per
+    PROFILE_WARN_INTERVAL_SECONDS for the same reason), so a missing marker never fails
+    a tool and a new failure is never hidden by an earlier one. The
     cache remembers which resolver function filled it, so replacing that function (a
     test double) never sees a profile cached for the real one."""
-    global _profile_cache, _profile_warned
+    global _profile_cache, _profile_last_error, _profile_last_warned_at
     resolver = engine_profiles.active_profile
     now = _PROFILE_CLOCK()
     cached = _profile_cache
@@ -63,13 +73,19 @@ def active_engine_profile() -> "engine_profiles.Profile | None":
         return cached[2]
     try:
         profile = resolver()
+        _profile_last_error = None
     except Exception as e:
-        if not _profile_warned:
-            _profile_warned = True
+        reason = repr(e)
+        if (
+            reason != _profile_last_error
+            or now - _profile_last_warned_at >= PROFILE_WARN_INTERVAL_SECONDS
+        ):
             logger.warning(
-                f"Could not read the active engine profile ({e!r}); using the default "
-                f"gate and the sandbox prompt."
+                f"Could not read the active engine profile ({reason}); using the "
+                f"default gate and the sandbox prompt."
             )
+            _profile_last_warned_at = now
+        _profile_last_error = reason
         profile = None
     _profile_cache = (resolver, now, profile)
     return profile
@@ -122,8 +138,10 @@ def fetch_served_model_path(base_url: str) -> str | None:
 class ServedModelTracker:
     """The model a daemon serves, from /props, trusted for a TTL.
 
-    Failures are not remembered, so a daemon that was down or loading is asked again on
-    the next call."""
+    A failed read is remembered for FAILED_PROPS_TTL_SECONDS so a daemon without /props
+    costs one GET per interval, not one per batch. A forced read (a detected swap, or
+    discover_model) always asks; if it fails, the cached model is dropped, because
+    after a swap it is no longer trustworthy."""
 
     def __init__(
         self,
@@ -135,24 +153,37 @@ class ServedModelTracker:
         self._model_id: str | None = None
         self._base_url = ""
         self._read_at = 0.0
+        self._failed_url = ""
+        self._failed_at = float("-inf")
 
     def read(self, base_url: str, force: bool = False) -> str | None:
         """The model served at base_url, or None when the daemon cannot name one now.
 
         A cached answer is reused only for the same base_url and inside the TTL."""
         now = self._clock()
-        fresh = (
-            self._model_id is not None
-            and base_url == self._base_url
-            and now - self._read_at < self._ttl
-        )
-        if fresh and not force:
-            return self._model_id
+        if not force:
+            if (
+                self._model_id is not None
+                and base_url == self._base_url
+                and now - self._read_at < self._ttl
+            ):
+                return self._model_id
+            if (
+                base_url == self._failed_url
+                and now - self._failed_at < FAILED_PROPS_TTL_SECONDS
+            ):
+                return None
         fetched = fetch_served_model_path(base_url)
         if fetched is not None:
             self._model_id = fetched
             self._base_url = base_url
             self._read_at = now
+            self._failed_url = ""
+        elif force:
+            self._model_id = None
+        else:
+            self._failed_url = base_url
+            self._failed_at = now
         return fetched
 
 
@@ -198,6 +229,9 @@ class DaemonProvider(JevProvider):
         port = os.getenv("JEV_DAEMON_PORT", "") or os.getenv("JEV_SMART_PORT", "8081")
         self.base_url = base_url or f"http://127.0.0.1:{port}/v1/chat/completions"
         self._served = ServedModelTracker(clock)
+        # What the last batch saw, to notice a daemon that was restarted on another model.
+        self._last_pid: str | None = None
+        self._last_reply_model: str | None = None
         self.max_tokens = 8192
         self.current_model_id = UNKNOWN_MODEL
         self.model_size: int | None = None
@@ -233,12 +267,38 @@ class DaemonProvider(JevProvider):
         failure ever raises."""
         return self._adopt(self._served.read(self.base_url, force=True))
 
-    def _refresh_model(self) -> None:
+    def _refresh_model(self, swapped: bool = False) -> None:
         """Follow the daemon's served model (GET /props, at most once per TTL).
 
         The chat reply's `model` field is NOT the identity: with `--alias` it is a short
-        alias, the same for every file served under it."""
-        self._adopt(self._served.read(self.base_url))
+        alias, the same for every file served under it. A detected swap (new daemon pid,
+        or a different alias in a reply) bypasses the TTL; if /props then cannot name the
+        model, the old id is dropped rather than trusted (default temperature, sandbox)."""
+        if not swapped:
+            self._adopt(self._served.read(self.base_url))
+            return
+        served = self._served.read(self.base_url, force=True)
+        if served is None:
+            self.current_model_id = UNKNOWN_MODEL
+            self.model_size = None
+        self._adopt(served)
+
+    def _daemon_restarted(self, pid: str) -> bool:
+        """True when the daemon's pid differs from the last one seen (both real pids)."""
+        previous, self._last_pid = self._last_pid, pid
+        return (
+            previous is not None
+            and previous != pid
+            and UNKNOWN_PID not in (previous, pid)
+        )
+
+    def refresh_if_restarted(self) -> None:
+        """Re-read /props now if the daemon was restarted since the last look.
+
+        Called before the model id is used to save a calibration, so a swap inside the
+        TTL cannot file one model's temperature under another's key."""
+        if self._daemon_restarted(self._get_daemon_pid()):
+            self._refresh_model(swapped=True)
 
     def _adopt(self, model_id: str | None) -> str | None:
         if model_id is not None and model_id != self.current_model_id:
@@ -267,7 +327,7 @@ class DaemonProvider(JevProvider):
                     .split("\n")[0]
                 )
             except:
-                return "unknown_pid"
+                return UNKNOWN_PID
 
     def get_logprobs(
         self, user_prompt: str, target_tokens: List[str]
@@ -491,9 +551,10 @@ class DaemonProvider(JevProvider):
         self, state: Any, questions: List[Any]
     ) -> dict[str, dict[str, Any]]:
         results = {}
-        # The served model first (cached for a TTL): the temperature and the prompt style
-        # below both depend on it.
-        self._refresh_model()
+        # The served model first (cached for a TTL, bypassed when the daemon was
+        # restarted): the temperature and the prompt style below both depend on it.
+        daemon_pid = self._get_daemon_pid()
+        self._refresh_model(swapped=self._daemon_restarted(daemon_pid))
         # Re-read on every batch: jev_manage_temperature and jev_calibrate_threshold can change it
         # while this provider (built once at server start) is still in use. While the model is
         # still unknown this answers the default — the legacy global belongs to one model alone.
@@ -505,7 +566,6 @@ class DaemonProvider(JevProvider):
             state_str = state_str[:MAX_STATE_CHARS] + "...[TRUNCATED]"
 
         state_str = sanitize_payload(state_str)
-        daemon_pid = self._get_daemon_pid()
 
         # This is the smart tier: untrusted state gets the XML sandbox unless the active
         # profile says the served model is a plain one; the choice never depends on which
@@ -567,6 +627,20 @@ class DaemonProvider(JevProvider):
             # `model_id` is what the reply calls the model (an alias under --alias): it
             # only guards the prior below, it never becomes the provider's model id.
             lps, model_id = self.get_logprobs(user_prompt, expected_keys)
+            # A reply alias that differs from the last one seen means the daemon now
+            # serves another model: re-read /props before this reply is normalized.
+            alias_changed = (
+                model_id != UNKNOWN_MODEL
+                and self._last_reply_model is not None
+                and model_id != self._last_reply_model
+            )
+            if model_id != UNKNOWN_MODEL:
+                self._last_reply_model = model_id
+            if alias_changed:
+                self._refresh_model(swapped=True)
+                self.fitted_temperature = self._saved_temperature()
+                style = served_style(self.current_model_id)
+                is_plain = style == STYLE_PLAIN
             if not lps:
                 # No answer (daemon down or a reply without logprobs). Leaving the question
                 # out keeps that distinct from a real answer of all-zero probabilities.
@@ -580,14 +654,17 @@ class DaemonProvider(JevProvider):
                 f"{daemon_pid}::{self.current_model_id}::{model_id}::{style}::"
                 f"{format_hint}"
             )
-            cached_prior = self._prior_cache.get(cache_key)
+            cached_prior = None if alias_changed else self._prior_cache.get(cache_key)
             if cached_prior is None:
                 prior_lps, prior_model_id = self.get_logprobs(
                     empty_payload_prompt, expected_keys
                 )
                 # A failed fetch is not cached, or its flat prior would skew every later score.
-                if prior_lps and self._same_known_model(
-                    q.key, model_id, prior_model_id
+                # The prompt above was built for the model before a mid-batch swap.
+                if (
+                    prior_lps
+                    and not alias_changed
+                    and self._same_known_model(q.key, model_id, prior_model_id)
                 ):
                     if len(self._prior_cache) > 256:
                         # Bound process-lifetime growth (pid churn mints new key families).

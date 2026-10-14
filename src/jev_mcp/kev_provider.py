@@ -35,6 +35,7 @@ class KevProvider(JevProvider):
         # The file the daemon serves (GET /props `model_path`), learnt on first use.
         self.current_model_id = UNKNOWN_MODEL
         self._served = ServedModelTracker(clock)
+        self._last_reply_model: str | None = None
 
     def check_token_limit(self, state: Any) -> int:
         state_str = json.dumps(state) if not isinstance(state, str) else state
@@ -98,12 +99,19 @@ class KevProvider(JevProvider):
 
         return {"score": best_label, "probabilities": mapped_probs}
 
+    def _follow_served_model(self, swapped: bool = False) -> None:
+        """Adopt the daemon's served model (GET /props, once per TTL; always when a swap
+        was seen). If a forced read cannot name the model, the old id is dropped."""
+        served = self._served.read(self.base_url, force=swapped)
+        if served is not None:
+            self.current_model_id = served
+        elif swapped:
+            self.current_model_id = UNKNOWN_MODEL
+
     def evaluate_batch(
         self, state: Any, questions: List[QuestionType]
     ) -> Dict[str, Dict[str, Any]]:
-        served = self._served.read(self.base_url)
-        if served is not None:
-            self.current_model_id = served
+        self._follow_served_model()
         state_str = json.dumps(state) if not isinstance(state, str) else state
         state_str = sanitize_payload(state_str)
 
@@ -125,6 +133,17 @@ class KevProvider(JevProvider):
                 f"Kev API call failed: {e}\nPLEASE ENSURE THE KEV DAEMON IS RUNNING! Run: ./jev_mac_manager.sh hybrid"
             )
             return {}
+
+        # A reply naming another model than the last one means the daemon was swapped.
+        reply_model = res.get("model")
+        if isinstance(reply_model, str) and reply_model:
+            changed = (
+                self._last_reply_model is not None
+                and reply_model != self._last_reply_model
+            )
+            self._last_reply_model = reply_model
+            if changed:
+                self._follow_served_model(swapped=True)
 
         final_results = {}
 
