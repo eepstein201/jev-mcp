@@ -107,11 +107,21 @@ def no_real_daemon_http(request):
         yield
         return
     import urllib.error
+    import urllib.request
+    from urllib.parse import urlsplit
 
-    with patch(
-        "urllib.request.urlopen",
-        side_effect=urllib.error.URLError("no daemon in tests"),
-    ):
+    from tests.fake_llama_server import LOOPBACK_HOST, is_fake_llama_port
+
+    real_urlopen = urllib.request.urlopen
+
+    def _urlopen(req, *args, **kwargs):
+        # Traffic to a FakeLlamaServer started by the test passes; nothing else does.
+        parts = urlsplit(req if isinstance(req, str) else req.full_url)
+        if parts.hostname == LOOPBACK_HOST and is_fake_llama_port(parts.port or 0):
+            return real_urlopen(req, *args, **kwargs)
+        raise urllib.error.URLError("no daemon in tests")
+
+    with patch("urllib.request.urlopen", side_effect=_urlopen):
         yield
 
 
