@@ -553,9 +553,9 @@ def test_an_escalated_row_the_smart_engine_did_not_answer_keeps_the_fast_answer(
     }
 
 
-def test_a_smart_key_with_an_empty_map_replaces_fast_and_then_raises():
-    # {**fast_results, **escalated}: the empty-probability smart entry wins, and
-    # _require_answers then finds no probabilities.
+def test_a_smart_key_with_an_empty_map_keeps_the_fast_answer():
+    # An empty-probability smart entry is no answer: the router keeps the fast answer
+    # (marked escalation_failed) instead of letting the empty entry replace it and raise.
     r = row(
         0.6,
         0.0,
@@ -564,7 +564,7 @@ def test_a_smart_key_with_an_empty_map_replaces_fast_and_then_raises():
         smart_answered=False,
         smart_returned_key=True,
     )
-    assert route_row(r, 0.85) == {"escalated": True, "score": None, "unanswered": True}
+    assert route_row(r, 0.85) == {"escalated": True, "score": 0.6, "unanswered": False}
 
 
 def test_a_smart_zero_that_was_a_real_answer_is_not_mistaken_for_silence():

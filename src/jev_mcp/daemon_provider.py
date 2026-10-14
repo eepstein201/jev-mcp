@@ -13,6 +13,10 @@ from jev_mcp.security import sanitize_payload
 logger = logging.getLogger(__name__)
 
 SMALL_MODEL_MARKER = "0.5b"
+UNKNOWN_MODEL = "unknown_model"
+# Below this much probability on the target tokens the reply is not an answer (the
+# model started with something else, such as a think tag).
+MIN_TARGET_MASS = 0.05
 DEFAULT_TEMPERATURE = 1.0
 # A choice is read from the log-probability of a single letter token, A to Z.
 MAX_CHOICE_LABELS = 26
@@ -63,7 +67,7 @@ class DaemonProvider(JevProvider):
         port = os.getenv("JEV_DAEMON_PORT", "") or os.getenv("JEV_SMART_PORT", "8081")
         self.base_url = base_url or f"http://127.0.0.1:{port}/v1/chat/completions"
         self.max_tokens = 8192
-        self.current_model_id = "unknown_model"
+        self.current_model_id = UNKNOWN_MODEL
 
         self.fitted_temperature = _saved_temperature()
 
@@ -159,6 +163,7 @@ class DaemonProvider(JevProvider):
         logprobs: dict[str, float],
         expected_keys: List[str],
         prior_logprobs: dict[str, float],
+        question_key: str = "",
     ) -> dict[str, float]:
         import math
 
@@ -170,10 +175,17 @@ class DaemonProvider(JevProvider):
         for k in expected_keys:
             prior_lps[k] = prior_logprobs.get(k.lower(), -9999.0)
 
-        # 1. Absolute Confidence Gate (Reject Gibberish)
+        # 1. Absolute Confidence Gate (Reject Gibberish). The reply put almost no mass on
+        # the targets, so there is no answer: an empty map, never an all-zero one that
+        # the router would take for a valid (and confident) result.
         p_act = {k: (math.exp(v) if v != -9999.0 else 0.0) for k, v in raw_lps.items()}
-        if sum(p_act.values()) < 0.05:
-            return {k: 0.0 for k in expected_keys}
+        target_mass = sum(p_act.values())
+        if target_mass < MIN_TARGET_MASS:
+            logger.warning(
+                f"Target mass {target_mass:.4f} is below {MIN_TARGET_MASS} for question "
+                f"{question_key!r} (model {self.current_model_id}); treating it as no answer."
+            )
+            return {}
 
         # 2. Laplace Smoothing for Top-11 Horizon (Alpha = 1/K)
         K = len(expected_keys)
@@ -202,6 +214,30 @@ class DaemonProvider(JevProvider):
 
         sum_exp = sum(math.exp(lp - max_lp) for lp in scaled_lps.values())
         return {k: math.exp(lp - max_lp) / sum_exp for k, lp in scaled_lps.items()}
+
+    @staticmethod
+    def _same_known_model(
+        question_key: str, answer_model: str, prior_model: str
+    ) -> bool:
+        """True when both responses name the same real model, so the prior may be cached.
+
+        The prior is a second request: a model swapped between the two, or a daemon
+        that reports no model, would store one model's prior under another's key.
+        """
+        known = (answer_model, prior_model)
+        if any(not m or m == UNKNOWN_MODEL for m in known):
+            logger.info(
+                f"Prior for {question_key!r} not cached: a response named no model "
+                f"({answer_model!r}, {prior_model!r})."
+            )
+            return False
+        if answer_model != prior_model:
+            logger.warning(
+                f"Prior for {question_key!r} not cached: the model changed from "
+                f"{answer_model!r} to {prior_model!r} between the two requests."
+            )
+            return False
+        return True
 
     @singledispatchmethod
     def _get_format(self, q: Any) -> tuple[str, list[str]]:
@@ -364,9 +400,13 @@ class DaemonProvider(JevProvider):
             cache_key = f"{daemon_pid}::{model_id}::{style}::{format_hint}"
             cached_prior = self._prior_cache.get(cache_key)
             if cached_prior is None:
-                prior_lps, _ = self.get_logprobs(empty_payload_prompt, expected_keys)
+                prior_lps, prior_model_id = self.get_logprobs(
+                    empty_payload_prompt, expected_keys
+                )
                 # A failed fetch is not cached, or its flat prior would skew every later score.
-                if prior_lps:
+                if prior_lps and self._same_known_model(
+                    q.key, model_id, prior_model_id
+                ):
                     if len(self._prior_cache) > 256:
                         # Bound process-lifetime growth (pid churn mints new key families).
                         self._prior_cache.clear()
@@ -375,7 +415,11 @@ class DaemonProvider(JevProvider):
                 prior_lps = cached_prior
 
             # 3. Math
-            probs = self._normalize_logprobs(lps, expected_keys, prior_lps)
+            probs = self._normalize_logprobs(lps, expected_keys, prior_lps, q.key)
+            if not probs:
+                # The reply was not an answer (_normalize_logprobs said why). Leaving the
+                # question out keeps it distinct from a real answer.
+                continue
 
             # 4. Results Formatter
             if isinstance(q, NoulQuestion):

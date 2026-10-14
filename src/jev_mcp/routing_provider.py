@@ -15,6 +15,9 @@ import os
 
 logger = logging.getLogger(__name__)
 
+SERVED_BY_FAST = "fast"
+SERVED_BY_SMART = "smart"
+
 
 class RoutingProvider(JevProvider):
     """
@@ -63,8 +66,13 @@ class RoutingProvider(JevProvider):
                 f"State size {tokens} exceeds fast-routing limit. Bypassing 0.5B and routing directly to 7B."
             )
             self.current_model_id = self.smart_provider.current_model_id
+            smart_only = self.smart_provider.evaluate_batch(state, questions)
             return self._require_answers(
-                questions, self.smart_provider.evaluate_batch(state, questions)
+                questions,
+                {
+                    key: {**res, "served_by": SERVED_BY_SMART}
+                    for key, res in smart_only.items()
+                },
             )
 
         logger.info(f"Evaluating {len(questions)} questions on Fast 0.5B model...")
@@ -95,20 +103,39 @@ class RoutingProvider(JevProvider):
 
         if not uncertain_questions:
             self.current_model_id = self.fast_provider.current_model_id
-            return fast_results
+            return {
+                key: {**res, "served_by": SERVED_BY_FAST}
+                for key, res in fast_results.items()
+            }
 
         logger.info(
             f"Escalating {len(uncertain_questions)} uncertain questions to Smart 7B model..."
         )
         smart_results = self.smart_provider.evaluate_batch(state, uncertain_questions)
 
-        # Merge results. A question the smart engine did not answer keeps its fast answer.
-        escalated = {
-            q_key: {**res, "escalated": True} for q_key, res in smart_results.items()
+        # Merge results. A question the smart engine did not answer keeps its fast answer,
+        # marked so callers (and tool statuses) can tell it was never second-checked.
+        merged: Dict[str, Dict[str, Any]] = {
+            key: {**res, "served_by": SERVED_BY_FAST}
+            for key, res in fast_results.items()
         }
+        for q in uncertain_questions:
+            smart_answer = smart_results.get(q.key)
+            if smart_answer and smart_answer.get("probabilities"):
+                merged[q.key] = {
+                    **smart_answer,
+                    "escalated": True,
+                    "served_by": SERVED_BY_SMART,
+                }
+            elif q.key in merged:
+                logger.warning(
+                    f"Smart engine did not answer escalated question '{q.key}'; "
+                    f"returning the fast answer marked escalation_failed."
+                )
+                merged[q.key] = {**merged[q.key], "escalation_failed": True}
 
         self.current_model_id = "hybrid_routed"
-        return self._require_answers(questions, {**fast_results, **escalated})
+        return self._require_answers(questions, merged)
 
     @staticmethod
     def _require_answers(

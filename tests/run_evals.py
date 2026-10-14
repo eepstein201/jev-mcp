@@ -317,8 +317,9 @@ def route_row(row, gate=ROUTING_CONFIDENCE_GATE):
       L76-78   empty fast answer escalates
       L82-86   all-zero fast answer escalates
       L89-94   top probability strictly below the gate escalates
-      L103-111 smart's entry replaces fast's (even an empty one, which then raises);
-               a key smart did not return keeps fast; no answer left raises
+      L103-111 smart's entry replaces fast's only when it carries probabilities; an
+               empty or missing smart entry keeps fast (marked escalation_failed);
+               no answer left raises
     """
     smart_answered = row.get("smart_answered", True)
     tokens = row.get("state_tokens")
@@ -338,9 +339,6 @@ def route_row(row, gate=ROUTING_CONFIDENCE_GATE):
         return {"escalated": False, "score": row["fast_score"], "unanswered": False}
     if smart_answered:
         return {"escalated": True, "score": row["smart_score"], "unanswered": False}
-    if row.get("smart_returned_key", smart_answered):
-        # An empty smart entry still replaces the fast one in the merge, then raises.
-        return {"escalated": True, "score": None, "unanswered": True}
     if fast_answered:
         return {"escalated": True, "score": row["fast_score"], "unanswered": False}
     return {"escalated": True, "score": None, "unanswered": True}

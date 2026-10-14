@@ -1,7 +1,9 @@
+import io
 import json
 import logging
 from typing import Any, Dict, List, Literal, Union
 from abc import ABC, abstractmethod
+import urllib.error
 import urllib.request
 
 from pydantic import BaseModel
@@ -118,11 +120,33 @@ def _question_for_row(row: dict, question: Any) -> Any:
     return question
 
 
+# How much of an error response body is kept in the raised error.
+ERROR_BODY_MAX_CHARS = 500
+
+
+def _http_error_with_body(error: urllib.error.HTTPError) -> urllib.error.HTTPError:
+    """The same HTTPError (same type, same code) with the response body in its reason.
+
+    A daemon explains a 400 in the body (`exceed_context_size_error`); the bare
+    "Bad Request" would hide it.
+    """
+    try:
+        raw = error.read()
+    except Exception:
+        raw = b""
+    body = raw.decode("utf-8", errors="replace")[:ERROR_BODY_MAX_CHARS]
+    reason = f"{error.reason}: {body}" if body else str(error.reason)
+    return urllib.error.HTTPError(
+        error.filename, error.code, reason, error.headers, io.BytesIO(raw)
+    )
+
+
 def post_json(url: str, payload: dict, timeout: int = 45) -> Any:
     """POST JSON to a local daemon and return the parsed response.
 
     Refuses non-local hosts so a tainted env var cannot redirect engine
-    traffic (and question content) off-box.
+    traffic (and question content) off-box. An HTTP error keeps its status code
+    and the start of its response body.
     """
     from urllib.parse import urlsplit
 
@@ -135,5 +159,29 @@ def post_json(url: str, payload: dict, timeout: int = 45) -> Any:
         data=json.dumps(payload).encode("utf-8"),
         headers={"Content-Type": "application/json"},
     )
-    with urllib.request.urlopen(req, timeout=timeout) as response:
-        return json.loads(response.read().decode())
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            return json.loads(response.read().decode())
+    except urllib.error.HTTPError as error:
+        raise _http_error_with_body(error) from error
+
+
+def escalation_failures(results: Dict[str, Any]) -> List[str]:
+    """The keys of questions the smart engine was asked but did not answer."""
+    return [
+        key
+        for key, result in results.items()
+        if isinstance(result, dict) and result.get("escalation_failed")
+    ]
+
+
+def mark_degraded(payload: Dict[str, Any], failed: List[str]) -> Dict[str, Any]:
+    """A copy of `payload` that says it is degraded; `payload` itself when nothing failed."""
+    if not failed:
+        return payload
+    return {
+        **payload,
+        "status": "DEGRADED",
+        "degraded": True,
+        "escalation_failed": list(failed),
+    }

@@ -85,7 +85,7 @@ def test_daemon_provider_max_lp_negative_9999(mock_urlopen):
     probs = provider._normalize_logprobs(
         {"random": -1.0}, ["true", "false"], {"true": 0.0, "false": 0.0}
     )
-    assert probs == {"true": 0.0, "false": 0.0}
+    assert probs == {}
 
 
 class FakeQuestion:

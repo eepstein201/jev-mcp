@@ -2,6 +2,7 @@ import json
 import logging
 from pathlib import Path
 
+from jev_mcp.provider import escalation_failures, mark_degraded
 from jev_mcp.router_config import write_json_atomic
 
 logger = logging.getLogger(__name__)
@@ -98,15 +99,18 @@ def evaluate_email_with_mlx(
         config=load_mail_config(),
     )
 
-    return {
-        "decision": decision["decision"],
-        "suggested_routing": decision["suggested_routing"],
-        "reason": decision["reason"],
-        "requires_action_score": requires_action_score,
-        "is_important_score": is_important_score,
-        "bucket": bucket,
-        "bucket_confidence": bucket_confidence,
-    }
+    return mark_degraded(
+        {
+            "decision": decision["decision"],
+            "suggested_routing": decision["suggested_routing"],
+            "reason": decision["reason"],
+            "requires_action_score": requires_action_score,
+            "is_important_score": is_important_score,
+            "bucket": bucket,
+            "bucket_confidence": bucket_confidence,
+        },
+        escalation_failures(results),
+    )
 
 
 def triage_email_content(context_id: str, subject: str, sender: str, body: str) -> str:
@@ -136,6 +140,5 @@ def triage_email_content(context_id: str, subject: str, sender: str, body: str) 
 
     # Normally we call our local MLX evaluator here using `core.py` and `build_triage_questions`
     result = evaluate_email_with_mlx(subject, sender, body, labels)
-    result["status"] = "success"
-
-    return json.dumps(result)
+    # A degraded triage keeps its DEGRADED status; only a clean one is a plain success.
+    return json.dumps({"status": "success", **result})

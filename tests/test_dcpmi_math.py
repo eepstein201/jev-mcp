@@ -32,8 +32,7 @@ def test_absolute_confidence_gating():
     raw_logprobs = {"true": -15.0, "false": -16.0}
 
     normalized = provider._normalize_logprobs(raw_logprobs, ["true", "false"], {})
-    assert normalized["true"] == 0.0
-    assert normalized["false"] == 0.0
+    assert normalized == {}
 
 
 def test_log_sum_exp_token_aggregation():

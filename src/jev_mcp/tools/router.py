@@ -8,7 +8,13 @@ from pydantic import Field
 
 from jev_mcp import app, router_config
 from jev_mcp.app import json_errors, logger, model_update_notice, mcp
-from jev_mcp.provider import ChoiceQuestion, NoulQuestion, ScoreQuestion
+from jev_mcp.provider import (
+    ChoiceQuestion,
+    NoulQuestion,
+    ScoreQuestion,
+    escalation_failures,
+    mark_degraded,
+)
 from jev_mcp.router_config import apply_model_updates, pending_model_updates
 
 
@@ -216,13 +222,16 @@ def jev_determine_best_model(
             bucket, router_config.FALLBACK_BUCKETS["b1"]
         )
 
-        res_dict = {
-            "status": "EVALUATED",
-            "recommended_model": recommended_model,
-            "complexity_score": int(score),
-            "reasoning": f"Task complexity scored {score}/4. Routed to {recommended_model}.",
-            "probabilities": probs,
-        }
+        res_dict = mark_degraded(
+            {
+                "status": "EVALUATED",
+                "recommended_model": recommended_model,
+                "complexity_score": int(score),
+                "reasoning": f"Task complexity scored {score}/4. Routed to {recommended_model}.",
+                "probabilities": probs,
+            },
+            escalation_failures(res),
+        )
         notice = app.get_temp_notice(provider.smart_provider)
         if notice:
             res_dict["_system_notice"] = notice
@@ -265,11 +274,14 @@ def jev_agent_handoff(task_description: str, available_agents: Dict[str, str]) -
     best_agent = res.get("best_agent", {}).get("choice")
     probs = res.get("best_agent", {}).get("probabilities", {})
 
-    res_dict = {
-        "status": "HANDOFF_RECOMMENDATION",
-        "recommended_agent": best_agent,
-        "probabilities": probs,
-    }
+    res_dict = mark_degraded(
+        {
+            "status": "HANDOFF_RECOMMENDATION",
+            "recommended_agent": best_agent,
+            "probabilities": probs,
+        },
+        escalation_failures(res),
+    )
     notice = app.get_temp_notice(provider.smart_provider)
     if notice:
         res_dict["_system_notice"] = notice

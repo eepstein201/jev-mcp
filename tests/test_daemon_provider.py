@@ -142,11 +142,10 @@ def test_normalize_logprobs(provider):
     assert sum(result.values()) == pytest.approx(1.0)
     assert result["true"] > result["false"]
 
-    # Low confidence rejection
+    # Low confidence rejection: no answer, not an all-zero map
     lps_low = {"true": math.log(0.01), "false": math.log(0.01)}
     result_low = provider._normalize_logprobs(lps_low, ["true", "false"], prior)
-    assert result_low["true"] == 0.0
-    assert result_low["false"] == 0.0
+    assert result_low == {}
 
 
 @patch.object(DaemonProvider, "_get_daemon_pid", return_value="1234")
@@ -325,13 +324,13 @@ def test_normalize_logprobs_dcpmi_math(provider):
     # We need p_act sum > 0.05 to pass Absolute Confidence Gate
     # Wait, if lps is -9999.0, p_act is 0.
     result = provider._normalize_logprobs(lps, ["true", "false"], prior)
-    assert result == {"true": 0.0, "false": 0.0}
+    assert result == {}
 
     # If p_act > 0.05 but some max_lp ends up -9999.0 (not really possible unless lps has only values where prior smoothed goes to inf, which isn't possible because smoothed prior is bounded).
 
     lps = {"true": math.log(0.01), "false": math.log(0.01)}  # sum is 0.02, < 0.05
     result = provider._normalize_logprobs(lps, ["true", "false"], prior)
-    assert result == {"true": 0.0, "false": 0.0}
+    assert result == {}
 
 
 def test_env_var():
