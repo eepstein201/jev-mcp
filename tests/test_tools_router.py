@@ -184,3 +184,78 @@ def test_notice_is_skipped_when_the_config_cannot_be_read(monkeypatch):
 
     with patch("jev_mcp.app.load_router_config", side_effect=OSError("unreadable")):
         assert app.get_temp_notice(smart) is None
+
+
+def test_notice_survives_a_malformed_temperatures_section(monkeypatch):
+    config = {
+        "buckets": {},
+        "rules": [],
+        "fitted_temperature": 1.4,
+        "temperatures": None,
+    }
+
+    res = _handoff_notice(monkeypatch, config, "/models/Qwen2.5-7B-Instruct.gguf")
+
+    assert "1.4" in res["_system_notice"]
+
+
+def test_notice_treats_a_whitespace_model_id_as_unreported(monkeypatch):
+    config = {"buckets": {}, "rules": [], "fitted_temperature": 1.4}
+
+    res = _handoff_notice(monkeypatch, config, "   ")
+
+    assert "_system_notice" not in res
+
+
+def _real_router_notice(monkeypatch, tool):
+    """Run a tool on a REAL, fresh RoutingProvider whose smart engine is never consulted."""
+    from jev_mcp.routing_provider import RoutingProvider
+
+    monkeypatch.setattr(app, "_has_notified_temp", False)
+    save_router_config(
+        router_config.with_temperature(
+            {"buckets": {"b1": "m"}, "rules": []},
+            "/models/Qwen2.5-7B-Instruct.gguf",
+            1.4,
+        )
+    )
+    # The shared provider's smart engine has answered before; the fresh one has not.
+    monkeypatch.setattr(
+        app.provider.smart_provider,
+        "current_model_id",
+        "/models/Qwen2.5-7B-Instruct.gguf",
+    )
+    answers = {
+        "complexity": {"score": "1", "probabilities": {"1": 0.9}},
+        "best_agent": {"choice": "A", "probabilities": {"A": 0.9}},
+    }
+    seen = []
+
+    def fast_answer(self, state, questions):
+        seen.append(self.smart_provider.current_model_id)
+        return {q.key: answers[q.key] for q in questions}
+
+    monkeypatch.setattr(RoutingProvider, "evaluate_batch", fast_answer)
+    res = json.loads(tool())
+    assert seen == ["unknown_model"]  # the fresh smart engine never reported a model
+    return res
+
+
+def test_determine_best_model_notice_uses_the_shared_smart_engine_when_the_fresh_one_is_unknown(
+    monkeypatch,
+):
+    res = _real_router_notice(
+        monkeypatch, lambda: server.jev_determine_best_model("task", 0)
+    )
+
+    assert "1.4" in res["_system_notice"]
+
+
+def test_handoff_notice_uses_the_shared_smart_engine_when_the_fresh_one_is_unknown(
+    monkeypatch,
+):
+    res = _real_router_notice(
+        monkeypatch, lambda: server.jev_agent_handoff("task", {"A": "does things"})
+    )
+
+    assert "1.4" in res["_system_notice"]

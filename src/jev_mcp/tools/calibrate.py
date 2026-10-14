@@ -495,7 +495,9 @@ def jev_manage_temperature(
                         # Nothing can be resolved without a model, so show what is stored.
                         "stored_temperatures": {
                             key: entry["temperature"]
-                            for key, entry in config.get("temperatures", {}).items()
+                            for key, entry in router_config.valid_temperatures(
+                                config
+                            ).items()
                         },
                         "legacy_fitted_temperature": config.get("fitted_temperature"),
                         "message": NO_MODEL_REPORTED,

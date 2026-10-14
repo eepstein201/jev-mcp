@@ -259,3 +259,102 @@ def test_temperatures_survive_a_save_and_load_round_trip():
     )
 
     assert get_temperature(load_router_config(), LLAMA, model_size=7) == 0.8
+
+
+# ---- A hand-edited temperatures section is never trusted and never raises ----
+
+GOOD = {"temperature": 2.4, "model_size": None, "updated_at": "2026-01-01 00:00:00"}
+LLAMA_KEY = model_key(LLAMA)
+QWEN_KEY = model_key(QWEN)
+
+MALFORMED_TEMPERATURES = {
+    "temperatures is null": None,
+    "temperatures is a list": [GOOD],
+    "temperatures is a string": "hot",
+    "entry is a number": {QWEN_KEY: 2.4, LLAMA_KEY: 2.4},
+    "entry is null": {QWEN_KEY: None, LLAMA_KEY: None},
+    "entry lacks temperature": {
+        QWEN_KEY: {"updated_at": "x"},
+        LLAMA_KEY: {"updated_at": "x"},
+    },
+    "entry lacks updated_at": {
+        QWEN_KEY: {"temperature": 2.4},
+        LLAMA_KEY: {"temperature": 2.4},
+    },
+    "temperature is text": {
+        QWEN_KEY: {**GOOD, "temperature": "hot"},
+        LLAMA_KEY: {**GOOD, "temperature": "hot"},
+    },
+    "temperature is a boolean": {
+        QWEN_KEY: {**GOOD, "temperature": True},
+        LLAMA_KEY: {**GOOD, "temperature": True},
+    },
+    "temperature is not finite": {
+        QWEN_KEY: {**GOOD, "temperature": float("nan")},
+        LLAMA_KEY: {**GOOD, "temperature": float("inf")},
+    },
+    "temperature is not positive": {
+        QWEN_KEY: {**GOOD, "temperature": 0},
+        LLAMA_KEY: {**GOOD, "temperature": -1.0},
+    },
+    "updated_at is not text": {
+        QWEN_KEY: {**GOOD, "updated_at": 5},
+        LLAMA_KEY: {**GOOD, "updated_at": 5},
+    },
+    "model_size is text": {
+        QWEN_KEY: {**GOOD, "model_size": "big"},
+        LLAMA_KEY: {**GOOD, "model_size": "big"},
+    },
+}
+
+
+@pytest.mark.parametrize(
+    "temperatures", MALFORMED_TEMPERATURES.values(), ids=MALFORMED_TEMPERATURES.keys()
+)
+def test_a_malformed_entry_counts_as_missing_and_falls_through(temperatures):
+    config = {
+        "buckets": {},
+        "rules": [],
+        "fitted_temperature": 1.7,
+        "temperatures": temperatures,
+    }
+
+    assert get_temperature(config, QWEN) == 1.7
+    assert is_calibrated(config, QWEN) is True
+    assert get_temperature(config, LLAMA) == DEFAULT_TEMPERATURE
+    assert is_calibrated(config, LLAMA) is False
+    assert router_config.temperature_entry(config, LLAMA, None) is None
+
+
+def test_a_well_formed_entry_is_returned_as_is():
+    config = {"buckets": {}, "rules": [], "temperatures": {LLAMA_KEY: GOOD}}
+
+    assert router_config.temperature_entry(config, LLAMA, None) == GOOD
+    assert router_config.valid_temperatures(config) == {LLAMA_KEY: GOOD}
+
+
+def test_valid_temperatures_drops_only_the_malformed_entries():
+    config = {
+        "buckets": {},
+        "rules": [],
+        "temperatures": {LLAMA_KEY: GOOD, QWEN_KEY: "broken"},
+    }
+
+    assert router_config.valid_temperatures(config) == {LLAMA_KEY: GOOD}
+
+
+@pytest.mark.parametrize("legacy", ["hot", None, True, float("nan"), -2.0, 0])
+def test_a_malformed_legacy_global_is_ignored(legacy):
+    config = {"buckets": {}, "rules": [], "fitted_temperature": legacy}
+
+    assert get_temperature(config, QWEN) == DEFAULT_TEMPERATURE
+    assert is_calibrated(config, QWEN) is False
+
+
+@pytest.mark.parametrize("temperatures", [None, [GOOD], "hot", {LLAMA_KEY: 5}])
+def test_with_temperature_replaces_a_malformed_section_without_raising(temperatures):
+    config = {"buckets": {}, "rules": [], "temperatures": temperatures}
+
+    updated = with_temperature(config, LLAMA, 0.8)
+
+    assert get_temperature(updated, LLAMA) == 0.8

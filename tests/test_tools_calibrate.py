@@ -486,3 +486,63 @@ def test_manage_temperature_reports_a_config_failure_as_json():
         out = json.loads(server.jev_manage_temperature("view"))
 
     assert out == {"status": "ERROR", "message": "unreadable"}
+
+
+# ---- Malformed hand-edited temperatures and blank model ids ----
+
+MALFORMED = {
+    "buckets": {},
+    "rules": [],
+    "fitted_temperature": 1.7,
+    "temperatures": None,
+}
+BROKEN_ENTRY = {
+    "buckets": {},
+    "rules": [],
+    "fitted_temperature": 1.7,
+    "temperatures": {QWEN_KEY: {"updated_at": "x"}, OTHER_KEY: "hot"},
+}
+
+
+@pytest.mark.parametrize("config", [MALFORMED, BROKEN_ENTRY], ids=["null", "entries"])
+def test_manage_temperature_survives_a_malformed_temperatures_section(config):
+    router_config.save_router_config(config)
+
+    qwen = _manage("view", model_id=QWEN)
+    other = _manage("view", model_id=OTHER)
+    unknown = _manage("view", model_id="unknown_model")
+    set_out = _manage("set", 2.0, model_id=OTHER)
+
+    assert (qwen["status"], qwen["current_temperature"]) == ("SUCCESS", 1.7)
+    assert (other["status"], other["current_temperature"]) == ("SUCCESS", 1.0)
+    assert unknown["status"] == "SUCCESS"
+    assert unknown["stored_temperatures"] == {}
+    assert set_out["status"] == "SUCCESS"
+    assert _manage("view", model_id=OTHER)["current_temperature"] == 2.0
+
+
+@pytest.mark.parametrize("config", [MALFORMED, BROKEN_ENTRY], ids=["null", "entries"])
+def test_calibrate_survives_a_malformed_temperatures_section(config):
+    router_config.save_router_config(config)
+
+    out = _calibrate(_provider_for(OTHER), save_to_config=True)
+
+    assert out["status"] == "CALIBRATION_COMPLETE"
+    assert out["temperature_saved"] is True
+    assert out["calibrated"] is True
+
+
+@pytest.mark.parametrize("blank", ["   ", "\t", " \n "])
+def test_a_whitespace_only_model_id_is_treated_as_no_model(blank):
+    router_config.save_router_config({"buckets": {}, "rules": []})
+    before = _stored()
+
+    calibrated = _calibrate(_provider_for(blank), save_to_config=True)
+    set_out = _manage("set", 2.0, model_id=blank)
+    reset_out = _manage("reset", model_id=blank)
+
+    assert calibrated["status"] == "ERROR"
+    assert "did not report a model" in calibrated["message"]
+    assert set_out["status"] == "ERROR"
+    assert reset_out["status"] == "ERROR"
+    assert _stored() == before

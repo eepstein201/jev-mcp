@@ -263,7 +263,7 @@ def reported_smart_model(smart: Any = None) -> tuple[str, int | None]:
     """The model id the smart engine last reported ("" when it has not) and its size when known."""
     smart = smart if smart is not None else provider.smart_provider
     model_id = getattr(smart, "current_model_id", "")
-    if not isinstance(model_id, str) or model_id in UNREPORTED_MODEL_IDS:
+    if not isinstance(model_id, str) or model_id.strip() in UNREPORTED_MODEL_IDS:
         return "", None
     size = getattr(smart, "model_size", None)
     is_size = isinstance(size, int) and not isinstance(size, bool)
@@ -278,6 +278,10 @@ def get_temp_notice(smart: Any = None) -> str | None:
 
     try:
         model_id, model_size = reported_smart_model(smart)
+        if not model_id:
+            # A provider built for one call has not asked its engine anything yet: the
+            # shared one reports the model the smart engine last ran.
+            model_id, model_size = reported_smart_model()
         if not model_id:
             return None
         config = load_router_config()

@@ -1,6 +1,7 @@
 import contextlib
 import os
 import json
+import math
 import tempfile
 from datetime import datetime
 from typing import Any, TypedDict
@@ -144,11 +145,42 @@ def model_key(model_id: str) -> str:
     return os.path.basename(model_id.strip().replace("\\", "/")).lower()
 
 
+def _is_temperature(value: Any) -> bool:
+    """A usable scoring temperature: a finite, positive number (a boolean is not one)."""
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+        and value > 0
+    )
+
+
+def _is_well_formed(entry: Any) -> bool:
+    if not isinstance(entry, dict):
+        return False
+    size = entry.get("model_size")
+    size_ok = size is None or (isinstance(size, int) and not isinstance(size, bool))
+    return (
+        _is_temperature(entry.get("temperature"))
+        and isinstance(entry.get("updated_at"), str)
+        and size_ok
+    )
+
+
+def valid_temperatures(config: RouterConfig) -> dict[str, TemperatureEntry]:
+    """The well-formed entries of `temperatures`. The file is hand-editable, so a section
+    or entry of the wrong shape counts as missing instead of raising."""
+    raw = config.get("temperatures")
+    if not isinstance(raw, dict):
+        return {}
+    return {key: entry for key, entry in raw.items() if _is_well_formed(entry)}
+
+
 def temperature_entry(
     config: RouterConfig, model_id: str, model_size: int | None
 ) -> TemperatureEntry | None:
     """The model's entry, unless both sizes are known and differ (the file was swapped)."""
-    entry = config.get("temperatures", {}).get(model_key(model_id))
+    entry = valid_temperatures(config).get(model_key(model_id))
     if entry is None:
         return None
     stored_size = entry.get("model_size")
@@ -157,10 +189,16 @@ def temperature_entry(
     return entry
 
 
-def _uses_legacy_temperature(config: RouterConfig, model_id: str) -> bool:
-    return "fitted_temperature" in config and model_key(model_id).startswith(
-        LEGACY_TEMPERATURE_MODEL_PREFIX
-    )
+def _legacy_temperature(config: RouterConfig, model_id: str) -> float | None:
+    """The legacy global, when it is usable and the model is the one it was fitted on."""
+    value = config.get("fitted_temperature")
+    if (
+        value is not None
+        and _is_temperature(value)
+        and model_key(model_id).startswith(LEGACY_TEMPERATURE_MODEL_PREFIX)
+    ):
+        return float(value)
+    return None
 
 
 def get_temperature(
@@ -171,18 +209,23 @@ def get_temperature(
     entry = temperature_entry(config, model_id, model_size)
     if entry is not None:
         return float(entry["temperature"])
-    if _uses_legacy_temperature(config, model_id):
-        return float(config["fitted_temperature"])
-    return DEFAULT_TEMPERATURE
+    legacy = _legacy_temperature(config, model_id)
+    return DEFAULT_TEMPERATURE if legacy is None else legacy
 
 
 def is_calibrated(
     config: RouterConfig, model_id: str, model_size: int | None = None
 ) -> bool:
     """Whether get_temperature answers from a stored value rather than the default."""
-    return temperature_entry(config, model_id, model_size) is not None or (
-        _uses_legacy_temperature(config, model_id)
+    return (
+        temperature_entry(config, model_id, model_size) is not None
+        or _legacy_temperature(config, model_id) is not None
     )
+
+
+def _raw_temperatures(config: RouterConfig) -> dict[str, Any]:
+    raw = config.get("temperatures")
+    return raw if isinstance(raw, dict) else {}
 
 
 def with_temperature(
@@ -207,6 +250,6 @@ def with_temperature(
     }
     return {
         **config,
-        "temperatures": {**config.get("temperatures", {}), key: entry},
+        "temperatures": {**_raw_temperatures(config), key: entry},
         "temperature_updated_at": stamp,
     }
