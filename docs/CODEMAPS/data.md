@@ -1,8 +1,11 @@
-<!-- Generated: 2026-10-10, refreshed 2026-10-13 | Files scanned: 9 | Token estimate: ~450 | As of: 0ac954b -->
+<!-- Generated: 2026-10-10, refreshed 2026-10-14 | Files scanned: 9 | Token estimate: ~500 | As of: 43fb0dd -->
 # Data & State (no database)
 
 | Path | Owner | Contents |
 |------|-------|----------|
+| engine_profiles.toml (tracked) | hand-edited | engine profiles: 8 models (tier, repo, pinned revision + sha256, parallel, ctx_per_slot, reasoning, style) and 7 profiles (fast + smart pair; gate default 0.85; eval_only flags) |
+| ~/.jev/active_profile | engine_profiles `activate` (via `make start`) | one line: the active profile name; missing file = `default` |
+| models/<repo name>/<file> (repo-local) | jev_mac_manager.sh | GGUF weights downloaded per engine_profiles.toml (SHA-256 verified, staged as `.part`) |
 | ~/.jev/router_config.json | router_config.py | buckets b1-b4 → model names, rules[], temperatures{} (per smart model; legacy global fitted_temperature applies to qwen2.5-7b only), auto_update, buckets_source ("detected"/"user"), detected_client |
 | ~/.jev/model_catalog.json | model_catalog.py | reduced models.dev catalog (id, family, release date, price), refreshed daily at start-up |
 | ~/.jev/jev.log | server logging | runtime log |

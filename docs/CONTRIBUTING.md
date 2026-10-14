@@ -13,16 +13,16 @@
 make install     # venv + models + both daemons (see README for details)
 ```
 
-Copy `.env.example` to `.env` if you need non-default ports or batch size.
+Copy `.env.example` to `.env` if you need non-default ports, to start eval-only profiles (`JEV_ALLOW_EVAL_ONLY=1`), or to set the legacy single-daemon batch size.
 
 ## Commands
 
 <!-- AUTO-GENERATED from Makefile -->
 | Command | Description |
 |---------|-------------|
-| `make install` | `jev_mac_manager.sh install`, then `hybrid` (download both models, start both daemons) |
-| `make update` | `jev_mac_manager.sh update` |
-| `make start` / `make hybrid` | `jev_mac_manager.sh hybrid` |
+| `make install` | `jev_mac_manager.sh install`, then `hybrid` (the engine-profile flow for `default`: verified model downloads, both daemons, activate) |
+| `make update` | `jev_mac_manager.sh update` (legacy single-model restart; run `make start` afterwards) |
+| `make start [PROFILE=x]` / `make hybrid [x]` | `jev_mac_manager.sh hybrid [x]`: resolve the profile in `engine_profiles.toml`, download missing models (SHA-256 verified), rewrite both plists, restart both daemons, activate |
 | `make stop` | `jev_mac_manager.sh stop` |
 | `make clean` | `jev_mac_manager.sh uninstall --headless` |
 | `make format` | `ruff format src tests` in `.venv` |
@@ -31,9 +31,10 @@ Copy `.env.example` to `.env` if you need non-default ports or batch size.
 | `make test` | `pytest --cov=src --cov-report=term-missing --cov-fail-under=85 tests/` in `.venv` |
 | `make audit` | `scripts/pip_audit.sh`: pip-audit on the installed environment; advisories listed in `.pip-audit-ignore` are accepted, any other fails (needs network) |
 | `make check` | `format-check`, then `lint`, then `test`, then `audit`: the same four gates CI runs, in CI order |
-| `make eval` | `python tests/run_evals.py`: warm-up + timed benchmark of both engines on `tests/golden_dataset.json` (daemons must be running) |
+| `make eval` | `python tests/run_evals.py`: warm-up + timed benchmark of both engines on `tests/golden_dataset.json` (daemons must be running; `--scores-out` dumps per-row scores, `--simulate` replays the routing gate offline) |
 | `make eval-browser` | `python -m tests.evals.browser_eval`: each browser-agent case 4 times, one pass rate per case (daemons must be running; drives a real browser; `--repeats N` and `--cases D4 T3 ...` when run directly) |
 | `make eval-triage` | `python -m tests.evals.triage_eval --dataset $(DATASET)`: agreement with the expected routing, then every disagreement (daemons must be running; `DATASET` defaults to `tests/evals/triage_synthetic.jsonl`; `--json` when run directly prints every row with its scores) |
+| `make eval-memory` | `python -m tests.evals.memory`: both engines' startup buffers, dirty footprint, GGUF size, wired/swap/GPU memory (daemons must be running; idle by default, `MEMORY_ARGS=--warm-request` sends one ~12k-token request per daemon first) |
 | `make eval-usage` | Asks a model 10 read-only questions that need the right jev tools, against a seeded home, and reports accuracy and tool calls (daemons must be running; calls the Anthropic API, so `ANTHROPIC_API_KEY` and `USAGE_EVAL_RUNNER` must be set; see `tests/evals/usage/README.md`) |
 | `make train` | Prints a pointer; training runs through the `jev_train_lora` MCP tool |
 <!-- /AUTO-GENERATED -->

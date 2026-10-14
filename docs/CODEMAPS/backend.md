@@ -1,10 +1,11 @@
-<!-- Generated: 2026-10-11, refreshed 2026-10-13 | server.py split into app.py + tools/ (see git history) | Token estimate: ~1000 | As of: 0ac954b -->
+<!-- Generated: 2026-10-11, refreshed 2026-10-14 | server.py split into app.py + tools/ (see git history) | Token estimate: ~1100 | As of: 43fb0dd -->
 # Backend (MCP tools)
 
 ## Layout
 server.py (~200 lines) — entry point: `python -m jev_mcp.server` → main() (`setup-gas` / `serve-webhook` / `doctor` / stdio; only the stdio path runs `start_model_sync`), 13 `@mcp.prompt` definitions, re-exports of every tool name.
-doctor.py (~200 lines) — `jev-mcp doctor [--json]`; prints only from its own main(); reads engine `/health` (2 s timeout), router config, `security` roots, auth variable NAMES, triage thresholds, versions.
-app.py (~275 lines) — shared state: `mcp` (MCPServer), `provider` (RoutingProvider), `linter`, `logger`, `_clean_json`/`_safe_truncate`/`_chat_completion(_json)`, `call_fast_autofixer`, `get_temp_notice`/`get_model_notice`, `start_model_sync`/`_sync_models`. Tool modules reference `app.X` AT CALL TIME (never import `jev_mcp.server`). MCPServer carries `client_defaults.SeedingMiddleware` (handshake-time per-client bucket seeding; config provenance `buckets_source`/`detected_client`).
+doctor.py (~420 lines) — `jev-mcp doctor [--json]`; prints only from its own main(); reads engine `/health` (2 s timeout), the active profile's expected vs `/props`-served model per engine, router config, `security` roots, auth variable NAMES, triage thresholds, versions.
+engine_profiles.py (~700 lines) — profile table + resolver CLI (`python -m jev_mcp.engine_profiles resolve|plist|activate`; contract: docs/superpowers/specs/2026-10-14-engine-profiles-cli-contract.md §5); reads tracked engine_profiles.toml, validates every field against allow-lists; `active_profile()` never raises (None + WARNING). Stdlib only.
+app.py (~360 lines) — shared state: `mcp` (MCPServer), `provider` (RoutingProvider), `linter`, `logger`, `_clean_json`/`_safe_truncate`/`_chat_completion(_json)`, `call_fast_autofixer`, `get_temp_notice`/`get_model_notice`, `start_model_sync`/`_sync_models`, `active_engine_profile`/`engine_identity` ({profile, fast, smart} spread into evaluation and routing results). Tool modules reference `app.X` AT CALL TIME (never import `jev_mcp.server`). MCPServer carries `client_defaults.SeedingMiddleware` (handshake-time per-client bucket seeding; config provenance `buckets_source`/`detected_client`).
 
 ## Tools (tools/) → impl
 17 tools. Tool name = function name, except the three triage tools (function in brackets). Renamed 2026-10-12, no aliases; old → new table in README "Renamed tools". Every tool carries a title and behaviour hints (annotations), pinned by tests/test_tool_surface.py.
@@ -43,4 +44,4 @@ gas_setup.setup_gas_workflow → examples/gas_triage.js (Google Apps Script)
 MAX_STATE_TOKENS=3500 · MIN_OPTIONS=2 · MAX_OPTIONS=10 · MAX_OPTION_LENGTH_RATIO=3.5
 
 ## Observed smells (for review, not fixed here)
-- Largest modules: tools/evaluate.py (~560), tools/calibrate.py (~460), tools/files.py (~430), daemon_provider.py (~415) — all under the 800-line cap; tools/files.py `jev_read_file`/`jev_scan_repo` withhold irrelevant content without naming it (see docs/TODO.md)
+- Largest modules: daemon_provider.py (~720), engine_profiles.py (~700), tools/evaluate.py (~580), tools/calibrate.py (~530) — all under the 800-line cap; tools/files.py `jev_read_file`/`jev_scan_repo` withhold irrelevant content without naming it (see docs/TODO.md)
