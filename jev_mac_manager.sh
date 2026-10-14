@@ -334,6 +334,148 @@ manage_daemon() {
     fi
 }
 
+# --- Engine profiles (hybrid): every model fact comes from `engine_profiles resolve` ---
+
+# Runs `python -m jev_mcp.engine_profiles <subcommand> ...` for this checkout.
+profiles_cli() {
+    local sub=$1
+    shift
+    local flags=(--config "$PWD/engine_profiles.toml" --models-dir "$PWD/models")
+    if [ "${JEV_ALLOW_EVAL_ONLY:-}" = "1" ]; then
+        flags+=(--allow-eval-only)
+    fi
+    PYTHONPATH="$PWD/src${PYTHONPATH:+:$PYTHONPATH}" \
+        "${JEV_PROFILES_PYTHON:-$PWD/.venv/bin/python}" -m jev_mcp.engine_profiles \
+        "$sub" "$@" "${flags[@]}"
+}
+
+# Exits 2 unless $1 is a valid profile name (the same pattern the resolver enforces).
+require_profile_name() {
+    local LC_ALL=C
+    if ! [[ "$1" =~ ^[a-z0-9][a-z0-9._-]{0,31}$ ]]; then
+        log_error "Invalid profile name. Use lowercase letters, digits, '.', '_' or '-' (1-32 characters, starting with a letter or digit)."
+        exit 2
+    fi
+}
+
+# Reads `resolve` output into RESOLVED_<KEY> variables without eval or source.
+# An unknown key, a line without a value, or a missing key is an error.
+parse_resolved() {
+    local k v
+    RESOLVED_PROFILE="" RESOLVED_FAST_MODEL="" RESOLVED_FAST_PATH="" RESOLVED_FAST_URL="" RESOLVED_FAST_SHA256=""
+    RESOLVED_SMART_MODEL="" RESOLVED_SMART_PATH="" RESOLVED_SMART_URL="" RESOLVED_SMART_SHA256=""
+    while IFS='=' read -r k v; do
+        case "$k" in
+            profile) RESOLVED_PROFILE=$v ;;
+            fast_model) RESOLVED_FAST_MODEL=$v ;;
+            fast_path) RESOLVED_FAST_PATH=$v ;;
+            fast_url) RESOLVED_FAST_URL=$v ;;
+            fast_sha256) RESOLVED_FAST_SHA256=$v ;;
+            smart_model) RESOLVED_SMART_MODEL=$v ;;
+            smart_path) RESOLVED_SMART_PATH=$v ;;
+            smart_url) RESOLVED_SMART_URL=$v ;;
+            smart_sha256) RESOLVED_SMART_SHA256=$v ;;
+            *)
+                log_error "Unexpected line in the profile resolver output."
+                return 1
+                ;;
+        esac
+        if [ -z "$v" ]; then
+            log_error "The profile resolver gave no value for '$k'."
+            return 1
+        fi
+    done <<< "$1"
+    if [ -z "$RESOLVED_PROFILE" ] || [ -z "$RESOLVED_FAST_MODEL" ] || [ -z "$RESOLVED_FAST_PATH" ] \
+        || [ -z "$RESOLVED_FAST_URL" ] || [ -z "$RESOLVED_FAST_SHA256" ] || [ -z "$RESOLVED_SMART_MODEL" ] \
+        || [ -z "$RESOLVED_SMART_PATH" ] || [ -z "$RESOLVED_SMART_URL" ] || [ -z "$RESOLVED_SMART_SHA256" ]; then
+        log_error "The profile resolver output is incomplete."
+        return 1
+    fi
+}
+
+# Downloads <url> to <path>.part, checks its SHA-256, then moves it to <path>.
+# Any failure removes the .part file and returns 1; <path> is never left half-written.
+download_verified() {
+    local url=$1 path=$2 expected=$3
+    local part="$path.part" actual
+    if [[ "$url" != https://* ]]; then
+        log_error "Refusing to download from a non-https URL."
+        return 1
+    fi
+    log_info "Downloading $(basename "$path")..."
+    mkdir -p "$(dirname "$path")" || return 1
+    if ! curl --fail --location --proto '=https' --proto-redir '=https' -o "$part" "$url"; then
+        rm -f "$part"
+        log_error "Download failed: $(basename "$path")."
+        return 1
+    fi
+    if ! actual=$(shasum -a 256 "$part" | awk '{print $1}') || [ "$actual" != "$expected" ]; then
+        rm -f "$part"
+        log_error "SHA-256 mismatch for $(basename "$path"); the download was discarded."
+        return 1
+    fi
+    if ! mv "$part" "$path"; then
+        rm -f "$part"
+        return 1
+    fi
+    log_success "Downloaded $(basename "$path")."
+}
+
+# Writes one tier's plist through the profiles CLI at the existing label, log and port.
+write_tier_plist() {
+    local tier=$1 port=$2 target_plist=$3 target_log=$4 llama_bin
+    llama_bin=$(command -v llama-server)
+    profiles_cli plist "$RESOLVED_PROFILE" --tier "$tier" --port "$port" \
+        --label "$(basename "$target_plist" .plist)" --log "$target_log" \
+        --llama-server "$llama_bin" --workdir "$PWD" --out "$target_plist"
+}
+
+# Usage: start_profile [name]
+start_profile() {
+    local out rc=0
+    if [ $# -gt 0 ]; then
+        require_profile_name "$1"
+    fi
+    local python="${JEV_PROFILES_PYTHON:-$PWD/.venv/bin/python}"
+    if [ ! -x "$python" ]; then
+        log_error "Python for the profile resolver not found at $python. Run: make install"
+        exit 1
+    fi
+
+    out=$(profiles_cli resolve ${1+"$1"}) || rc=$?
+    if [ "$rc" -ne 0 ]; then
+        exit "$rc"
+    fi
+    parse_resolved "$out" || exit 1
+    log_info "Profile: $RESOLVED_PROFILE"
+
+    log_info "Checking models for profile $RESOLVED_PROFILE..."
+    if [ ! -f "$RESOLVED_FAST_PATH" ]; then
+        download_verified "$RESOLVED_FAST_URL" "$RESOLVED_FAST_PATH" "$RESOLVED_FAST_SHA256" || exit 1
+    fi
+    if [ ! -f "$RESOLVED_SMART_PATH" ]; then
+        download_verified "$RESOLVED_SMART_URL" "$RESOLVED_SMART_PATH" "$RESOLVED_SMART_SHA256" || exit 1
+    fi
+    check_llama_cpp
+
+    log_info "Configuring dual-daemon setup ($RESOLVED_FAST_MODEL on $JEV_FAST_PORT, $RESOLVED_SMART_MODEL on $JEV_SMART_PORT)..."
+    manage_daemon stop "$PLIST_PATH"
+    # Hybrid mode never uses the single-daemon agent; leaving its plist behind
+    # makes launchd reload it at login, where it fights the fast engine for its port.
+    rm -f "$PLIST_PATH"
+    manage_daemon stop "$PLIST_FAST_PATH"
+    manage_daemon stop "$PLIST_SMART_PATH"
+    mkdir -p "$LOG_DIR" "$(dirname "$PLIST_FAST_PATH")"
+    write_tier_plist fast "$JEV_FAST_PORT" "$PLIST_FAST_PATH" "$LOG_FILE_FAST"
+    write_tier_plist smart "$JEV_SMART_PORT" "$PLIST_SMART_PATH" "$LOG_FILE_SMART"
+
+    manage_daemon start "$PLIST_FAST_PATH"
+    manage_daemon start "$PLIST_SMART_PATH"
+
+    profiles_cli activate "$RESOLVED_PROFILE" --fast-port "$JEV_FAST_PORT" --smart-port "$JEV_SMART_PORT" \
+        || { rc=$?; log_error "Profile $RESOLVED_PROFILE did not become active."; exit "$rc"; }
+}
+
 case "$COMMAND" in
     install)
         echo -e "${BLUE}====================================================${NC}"
@@ -390,25 +532,9 @@ case "$COMMAND" in
         echo -e "${BLUE}====================================================${NC}"
         echo -e "${BLUE}  Starting Hybrid Complexity Router Mode            ${NC}"
         echo -e "${BLUE}====================================================${NC}"
-        
-        log_info "Checking models for Hybrid mode..."
-        download_gguf "https://huggingface.co/ggml-org/Kev-0.8B-GGUF/resolve/main/Kev-0.8B-Q8_0.gguf" "$(dirname "$MODEL_05B")"
-        download_gguf "https://huggingface.co/bartowski/Qwen2.5-7B-Instruct-GGUF/resolve/main/Qwen2.5-7B-Instruct-Q4_K_M.gguf" "$(dirname "$MODEL_7B")"
-        check_llama_cpp
 
-        log_info "Configuring dual-daemon setup (0.5B on $JEV_FAST_PORT, 7B on $JEV_SMART_PORT)..."
-        manage_daemon stop "$PLIST_PATH"
-        # Hybrid mode never uses the single-daemon agent; leaving its plist behind
-        # makes launchd reload it at login, where it fights the fast engine for its port.
-        rm -f "$PLIST_PATH"
-        manage_daemon stop "$PLIST_FAST_PATH"
-        manage_daemon stop "$PLIST_SMART_PATH"
-        setup_launchd_plist "$MODEL_05B" "$JEV_FAST_PORT" "$PLIST_FAST_PATH" "$LOG_FILE_FAST"
-        setup_launchd_plist "$MODEL_7B" "$JEV_SMART_PORT" "$PLIST_SMART_PATH" "$LOG_FILE_SMART"
-        
-        manage_daemon start "$PLIST_FAST_PATH"
-        manage_daemon start "$PLIST_SMART_PATH"
-        
+        start_profile ${2+"$2"}
+
         echo -e "${GREEN}Hybrid Mode Active! Jev MCP will now intelligently route requests.${NC}"
         ;;
 
@@ -451,17 +577,8 @@ case "$COMMAND" in
         ;;
 
     start)
-        if [ ! -d ".venv" ]; then
-            log_error "The Python virtual environment is missing."
-            log_error "Please install the system first by running: make install MODEL=$TARGET_MODEL_ALIAS"
-            exit 1
-        fi
-        SELECTED_MODEL=$(resolve_model "$TARGET_MODEL_ALIAS")
-        log_info "Configuring daemon for model: $TARGET_MODEL_ALIAS ($SELECTED_MODEL)"
-        manage_daemon stop
-        setup_launchd_plist "$SELECTED_MODEL"
-        echo -e "${GREEN}Starting Jev MCP Daemon...${NC}"
-        manage_daemon start
+        log_error "'start' no longer takes a model alias. Start a model pair with: make start PROFILE=<name>"
+        exit 2
         ;;
 
     stop)
@@ -517,9 +634,8 @@ case "$COMMAND" in
         echo -e "${RED}Invalid command.${NC}"
         echo "Usage:"
         echo "  ./jev_mac_manager.sh install "
-        echo "  ./jev_mac_manager.sh hybrid"
+        echo "  ./jev_mac_manager.sh hybrid [profile]"
         echo "  ./jev_mac_manager.sh update "
-        echo "  ./jev_mac_manager.sh start "
         echo "  ./jev_mac_manager.sh stop"
         echo "  ./jev_mac_manager.sh uninstall"
         exit 1
