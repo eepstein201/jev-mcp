@@ -415,11 +415,22 @@ DOWNLOAD_STALL_SECONDS=60
 download_verified() {
     local rc=0
     DOWNLOAD_PART="$2.part"
-    trap 'rm -f "$DOWNLOAD_PART"; exit 130' INT
-    trap 'rm -f "$DOWNLOAD_PART"; exit 143' TERM
+    DOWNLOAD_PID=""
+    trap 'abort_download 130' INT
+    trap 'abort_download 143' TERM
     fetch_and_verify "$@" || rc=$?
     trap - INT TERM
     return "$rc"
+}
+
+# Trap body: kill the running curl, wait for it to be gone, delete its .part file, then exit.
+abort_download() {
+    if [ -n "$DOWNLOAD_PID" ]; then
+        kill "$DOWNLOAD_PID" 2>/dev/null || true
+        wait "$DOWNLOAD_PID" 2>/dev/null || true
+    fi
+    rm -f "$DOWNLOAD_PART"
+    exit "$1"
 }
 
 fetch_and_verify() {
@@ -431,10 +442,17 @@ fetch_and_verify() {
     fi
     log_info "Downloading $(basename "$path")..."
     mkdir -p "$(dirname "$path")" || return 1
-    if ! curl --fail --location --proto '=https' --proto-redir '=https' \
+    # curl runs in the background and the shell waits on it: bash runs a trap only after a foreground
+    # command ends, but `wait` is interrupted at once, so a TERM/INT can kill curl straight away.
+    curl --fail --location --proto '=https' --proto-redir '=https' \
         --globoff --connect-timeout "$DOWNLOAD_CONNECT_TIMEOUT" \
         --speed-limit "$DOWNLOAD_MIN_SPEED" --speed-time "$DOWNLOAD_STALL_SECONDS" \
-        -o "$part" "$url"; then
+        -o "$part" "$url" &
+    DOWNLOAD_PID=$!
+    local curl_rc=0
+    wait "$DOWNLOAD_PID" || curl_rc=$?
+    DOWNLOAD_PID=""
+    if [ "$curl_rc" -ne 0 ]; then
         rm -f "$part"
         log_error "Download failed: $(basename "$path")."
         return 1
@@ -452,12 +470,13 @@ fetch_and_verify() {
 }
 
 # Writes one tier's plist through the profiles CLI at the existing label, log and port.
+# The file is written to <target_plist>.new; the label comes from the live name, not the .new one.
 write_tier_plist() {
     local tier=$1 port=$2 target_plist=$3 target_log=$4 llama_bin
     llama_bin=$(command -v llama-server)
     profiles_cli plist "$RESOLVED_PROFILE" --tier "$tier" --port "$port" \
         --label "$(basename "$target_plist" .plist)" --log "$target_log" \
-        --llama-server "$llama_bin" --workdir "$PWD" --out "$target_plist"
+        --llama-server "$llama_bin" --workdir "$PWD" --out "$target_plist.new"
 }
 
 # Usage: start_profile [name]
@@ -493,11 +512,20 @@ start_profile() {
     check_llama_cpp
 
     log_info "Configuring dual-daemon setup ($RESOLVED_FAST_MODEL on $JEV_FAST_PORT, $RESOLVED_SMART_MODEL on $JEV_SMART_PORT)..."
-    # Both plists are written before anything is stopped: launchd reads a plist only at bootstrap,
-    # so a failed `plist` leaves the running agents untouched.
+    # Both new plists go to <live>.new before anything is stopped, so a failed `plist` leaves the live
+    # plists (which `stop` reads for the old ports, and launchd reloads at login) and the running
+    # agents untouched. They replace the live plists only after the old agents are stopped.
     mkdir -p "$LOG_DIR" "$(dirname "$PLIST_FAST_PATH")"
-    write_tier_plist fast "$JEV_FAST_PORT" "$PLIST_FAST_PATH" "$LOG_FILE_FAST"
-    write_tier_plist smart "$JEV_SMART_PORT" "$PLIST_SMART_PATH" "$LOG_FILE_SMART"
+    rc=0
+    write_tier_plist fast "$JEV_FAST_PORT" "$PLIST_FAST_PATH" "$LOG_FILE_FAST" || rc=$?
+    if [ "$rc" -eq 0 ]; then
+        write_tier_plist smart "$JEV_SMART_PORT" "$PLIST_SMART_PATH" "$LOG_FILE_SMART" || rc=$?
+    fi
+    if [ "$rc" -ne 0 ]; then
+        rm -f "$PLIST_FAST_PATH.new" "$PLIST_SMART_PATH.new"
+        log_error "Could not generate the launchd plists; nothing was stopped."
+        exit "$rc"
+    fi
 
     manage_daemon stop "$PLIST_PATH"
     # Hybrid mode never uses the single-daemon agent; leaving its plist behind
@@ -505,6 +533,8 @@ start_profile() {
     rm -f "$PLIST_PATH"
     manage_daemon stop "$PLIST_FAST_PATH"
     manage_daemon stop "$PLIST_SMART_PATH"
+    mv "$PLIST_FAST_PATH.new" "$PLIST_FAST_PATH"
+    mv "$PLIST_SMART_PATH.new" "$PLIST_SMART_PATH"
 
     manage_daemon start "$PLIST_FAST_PATH"
     manage_daemon start "$PLIST_SMART_PATH"

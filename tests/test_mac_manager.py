@@ -11,6 +11,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -174,9 +175,15 @@ printf '%s' "${{CURL_PAYLOAD:-"""
     + PAYLOAD
     + """}}" > "$out"
 if [ -n "$signal" ]; then kill -"$signal" "$PPID"; fi
+if [ -n "${{CURL_HANG:-}}" ]; then echo $$ > "$CURL_HANG"; exec /bin/sleep 30; fi
 exit "${{CURL_RC:-0}}"
 """
 )
+
+
+def _default_sigint():
+    """Child setup: a manager started from a runner that ignores SIGINT could not trap it."""
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
 
 
 class Hybrid:
@@ -257,6 +264,7 @@ class Hybrid:
             capture_output=True,
             text=True,
             timeout=60,
+            preexec_fn=_default_sigint,
         )
 
     def calls(self):
@@ -558,7 +566,7 @@ def test_hybrid_generates_each_tiers_plist_at_the_existing_label_log_and_port(hy
         assert option(call, "--log") == f"{home}/.jev/mlx_server_{tier}.log"
         assert (
             option(call, "--out")
-            == f"{home}/Library/LaunchAgents/com.jev.mlx_server_{tier}.plist"
+            == f"{home}/Library/LaunchAgents/com.jev.mlx_server_{tier}.plist.new"
         )
         assert option(call, "--llama-server") == str(hybrid.llama)
         assert option(call, "--workdir") == str(hybrid.work)
@@ -638,31 +646,90 @@ def test_hybrid_plist_failure_makes_the_manager_fail(hybrid):
     result = hybrid.run("hybrid", FAKE_PLIST_RC="2")
 
     assert result.returncode == 2
-    assert not any(c.startswith("launchctl bootstrap") for c in hybrid.calls())
+    assert not any(c.startswith("launchctl") for c in hybrid.calls())
+    assert not list(hybrid.agents.glob("*.new"))
 
 
-def test_hybrid_leaves_running_agents_untouched_when_the_second_plist_fails(hybrid):
-    # Arrange: running agents (old plists) and a leftover single-daemon plist
-    hybrid.have_models()
-    old = hybrid.agents / "com.jev.mlx_server.plist"
-    old.write_text(PLIST.format(port=8080))
-    for tier, port in (("fast", 8080), ("smart", 8081)):
+def seed_running_agents(hybrid, fast_port=8080, smart_port=8081):
+    """Old live plists for both tiers plus a single-daemon plist; returns their bytes."""
+    (hybrid.agents / "com.jev.mlx_server.plist").write_text(
+        PLIST.format(port=fast_port)
+    )
+    for tier, port in (("fast", fast_port), ("smart", smart_port)):
         (hybrid.agents / f"com.jev.mlx_server_{tier}.plist").write_text(
             PLIST.format(port=port)
         )
+    return {p.name: p.read_bytes() for p in hybrid.agents.iterdir()}
+
+
+@pytest.mark.parametrize("failing_tier", ["fast", "smart"])
+def test_hybrid_leaves_live_plists_and_agents_untouched_when_a_plist_fails(
+    hybrid, failing_tier
+):
+    # Arrange: running agents (old plists) and a leftover single-daemon plist
+    hybrid.have_models()
+    before = seed_running_agents(hybrid)
 
     # Act
-    result = hybrid.run("hybrid", FAKE_PLIST_FAIL_TIER="smart", FAKE_PLIST_RC="2")
+    result = hybrid.run("hybrid", FAKE_PLIST_FAIL_TIER=failing_tier, FAKE_PLIST_RC="2")
 
     # Assert
     assert result.returncode == 2
-    assert [c["args"][c["args"].index("--tier") + 1] for c in hybrid.py("plist")] == [
-        "fast",
-        "smart",
-    ]
+    assert [option(c, "--tier") for c in hybrid.py("plist")] == (
+        ["fast"] if failing_tier == "fast" else ["fast", "smart"]
+    )
     assert [c for c in hybrid.calls() if c.startswith(("launchctl", "pkill"))] == []
-    assert old.exists()
-    assert [c["sub"] for c in hybrid.py()] == ["resolve", "plist", "plist"]
+    assert {
+        p.name: p.read_bytes() for p in hybrid.agents.iterdir()
+    } == before  # no .new left
+    assert [c["sub"] for c in hybrid.py()][:1] == ["resolve"]
+    assert "activate" not in [c["sub"] for c in hybrid.py()]
+
+
+def test_hybrid_kills_the_old_port_when_the_port_changes(hybrid):
+    # Arrange: agents last started on 8080/8081; this run moves them to 9080/9081
+    hybrid.have_models()
+    seed_running_agents(hybrid)
+
+    # Act
+    result = hybrid.run("hybrid", JEV_FAST_PORT="9080", JEV_SMART_PORT="9081")
+
+    # Assert: stop read the OLD live plists, then the new ones replaced them
+    assert result.returncode == 0, result.stderr
+    kills = " ".join(c for c in hybrid.calls() if c.startswith("pkill"))
+    assert "--port 8080" in kills and "--port 8081" in kills
+    assert "--port 9080" not in kills and "--port 9081" not in kills
+    live = {
+        tier: plistlib.loads(
+            (hybrid.agents / f"com.jev.mlx_server_{tier}.plist").read_bytes()
+        )
+        for tier in ("fast", "smart")
+    }
+    assert live["fast"]["ProgramArguments"][6] == "9080"
+    assert live["smart"]["ProgramArguments"][6] == "9081"
+    assert not list(hybrid.agents.glob("*.new"))
+
+
+def test_hybrid_moves_the_new_plists_in_after_the_stop_and_before_the_start(hybrid):
+    # Arrange: record the live fast plist's port every time launchctl is called
+    hybrid.have_models()
+    seed_running_agents(hybrid)
+    live = hybrid.agents / "com.jev.mlx_server_fast.plist"
+    hybrid._shim(
+        "launchctl",
+        f'#!/bin/bash\necho "launchctl $1 port=$(grep -A1 -- --port {live} | tail -1 | tr -dc 0-9)" >> "{hybrid.log}"\n',
+    )
+
+    # Act
+    result = hybrid.run("hybrid", JEV_FAST_PORT="9080")
+
+    # Assert
+    assert result.returncode == 0, result.stderr
+    ports = [c.split("port=")[1] for c in hybrid.calls() if c.startswith("launchctl")]
+    verbs = [c.split()[1] for c in hybrid.calls() if c.startswith("launchctl")]
+    assert verbs == ["bootout"] * 3 + ["bootstrap"] * 2
+    assert ports[:3] == ["8080"] * 3  # old plist still live while stopping
+    assert ports[3:] == ["9080"] * 2  # new plist live when starting
 
 
 def test_hybrid_reports_a_missing_default_python_with_its_path_and_the_fix(hybrid):
@@ -726,8 +793,6 @@ def test_cli_calls_keep_the_callers_no_proxy_entries(hybrid):
 @pytest.mark.parametrize("signame", ["TERM", "INT"])
 def test_interrupt_during_a_download_removes_the_part_file(hybrid, signame):
     # Arrange: the curl shim writes the .part file, then signals the manager
-    if signame == "INT" and signal.getsignal(signal.SIGINT) is signal.SIG_IGN:
-        pytest.skip("SIGINT is ignored in this process tree, so bash cannot trap it")
     expected = {"TERM": 143, "INT": 130}[signame]
 
     # Act
@@ -737,6 +802,52 @@ def test_interrupt_during_a_download_removes_the_part_file(hybrid, signame):
     assert result.returncode == expected
     assert [p for p in hybrid.models.rglob("*") if p.is_file()] == []
     assert not any(c.startswith("launchctl") for c in hybrid.calls())
+
+
+def test_term_during_a_running_download_kills_curl_and_removes_the_part(
+    hybrid, tmp_path
+):
+    # Arrange: the curl shim writes the .part file, records its pid, then sleeps for 30 s
+    pidfile = tmp_path / "curl.pid"
+    proc = subprocess.Popen(
+        ["bash", str(MANAGER), "hybrid"],
+        env={**hybrid.env, "CURL_HANG": str(pidfile)},
+        cwd=hybrid.work,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        preexec_fn=_default_sigint,
+    )
+    try:
+        deadline = time.monotonic() + 15
+        while not pidfile.exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert pidfile.exists(), "curl shim never started"
+        curl_pid = int(pidfile.read_text())
+
+        # Act
+        started = time.monotonic()
+        proc.terminate()
+        returncode = proc.wait(timeout=10)
+        elapsed = time.monotonic() - started
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+        proc.communicate()
+
+    # Assert: prompt exit, no leftovers, no live curl
+    assert returncode == 143
+    assert elapsed < 5
+    assert [p for p in hybrid.models.rglob("*") if p.is_file()] == []
+    for _ in range(40):
+        try:
+            os.kill(curl_pid, 0)
+        except ProcessLookupError:
+            break
+        time.sleep(0.05)
+    else:
+        os.kill(curl_pid, signal.SIGKILL)
+        pytest.fail("the curl child was left running")
 
 
 def test_allow_eval_only_flag_reaches_resolve_plist_and_activate(hybrid):
