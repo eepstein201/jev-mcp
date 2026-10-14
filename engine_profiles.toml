@@ -1,0 +1,124 @@
+# Engine profiles: which fast and smart models the llama.cpp daemons serve.
+# Schema and rules: docs/superpowers/specs/2026-10-14-engine-profiles-cli-contract.md (section 3).
+# Revisions are commit hashes, never branches; sha256 is the file digest at that revision.
+# `make start [PROFILE=name]` activates a profile; eval_only profiles also need JEV_ALLOW_EVAL_ONLY=1.
+
+[models."kev-0.8b"]
+tier = "fast"
+repo = "ggml-org/Kev-0.8B-GGUF"
+revision = "e551e319d483ff57e1ff208924b349d397cffc1c"
+filename = "Kev-0.8B-Q8_0.gguf"
+sha256 = "27278f34eb3273bceea4c053dc50dd61a5161da21a718c4aacdf8fd5830771d0"
+parallel = 4
+ctx_per_slot = 16384
+reasoning = "auto"
+style = "plain"
+
+[models."kev-4b"]
+tier = "fast"
+repo = "ggml-org/Kev-4B-GGUF"
+revision = "d924f2e2c3872da8b8aaf3eb4453b4126deceb79"
+filename = "Kev-4B-Q4_K_M.gguf"
+sha256 = "33ae6b18926502b2209a1bf7d3b61a350d65938441515c686bb87d226a19eff9"
+parallel = 4
+ctx_per_slot = 16384
+reasoning = "auto"
+style = "plain"
+
+[models."kev-4b-q8"]
+tier = "fast"
+repo = "ggml-org/Kev-4B-GGUF"
+revision = "d924f2e2c3872da8b8aaf3eb4453b4126deceb79"
+filename = "Kev-4B-Q8_0.gguf"
+sha256 = "7c2ebed90560522c2801389db482ac1dc4c36d828f201f6074c1d60e433948da"
+parallel = 4
+ctx_per_slot = 16384
+reasoning = "auto"
+style = "plain"
+
+[models."qwen2.5-7b"]
+tier = "smart"
+repo = "bartowski/Qwen2.5-7B-Instruct-GGUF"
+revision = "8911e8a47f92bac19d6f5c64a2e2095bd2f7d031"
+filename = "Qwen2.5-7B-Instruct-Q4_K_M.gguf"
+sha256 = "65b8fcd92af6b4fefa935c625d1ac27ea29dcb6ee14589c55a8f115ceaaa1423"
+parallel = 2
+ctx_per_slot = 16384
+reasoning = "auto"
+style = "sandbox"
+
+[models."qwen3.5-4b"]
+tier = "smart"
+repo = "bartowski/Qwen_Qwen3.5-4B-GGUF"
+revision = "4168f45a16a1290d65a4ec0fa312ae917a4c15d6"
+filename = "Qwen_Qwen3.5-4B-Q4_K_M.gguf"
+sha256 = "13c16f426047e2de38cd075bdade4a7bcbc8c774384876f677740cda65f8a983"
+parallel = 2
+ctx_per_slot = 16384
+reasoning = "off"
+style = "sandbox"
+
+[models."qwen3.5-4b-q6"]
+tier = "smart"
+repo = "bartowski/Qwen_Qwen3.5-4B-GGUF"
+revision = "4168f45a16a1290d65a4ec0fa312ae917a4c15d6"
+filename = "Qwen_Qwen3.5-4B-Q6_K.gguf"
+sha256 = "5a5bc7a3f9375b395e9f81fb69109038cf160c84606b8192f13cbb8355ca59f2"
+parallel = 2
+ctx_per_slot = 16384
+reasoning = "off"
+style = "sandbox"
+
+[models."qwen3.5-4b-q8"]
+tier = "smart"
+repo = "bartowski/Qwen_Qwen3.5-4B-GGUF"
+revision = "4168f45a16a1290d65a4ec0fa312ae917a4c15d6"
+filename = "Qwen_Qwen3.5-4B-Q8_0.gguf"
+sha256 = "5c74c0ede371924357dff0cb6ba145bd67208b9b2389ded681adfff3f7608db7"
+parallel = 2
+ctx_per_slot = 16384
+reasoning = "off"
+style = "sandbox"
+
+[models."qwen3.5-9b"]
+tier = "smart"
+repo = "bartowski/Qwen_Qwen3.5-9B-GGUF"
+revision = "182be2fd6c7bc44887d88a91cb03ff009cc9f549"
+filename = "Qwen_Qwen3.5-9B-Q4_K_M.gguf"
+sha256 = "d784ce9eda1a5a7b51e8f705a9e6310844bf4f173654d115823c775fdea56d43"
+parallel = 2
+ctx_per_slot = 16384
+reasoning = "off"
+style = "sandbox"
+
+[profiles.default]
+fast = "kev-0.8b"
+smart = "qwen2.5-7b"
+
+[profiles.lean]
+fast = "kev-0.8b"
+smart = "qwen3.5-4b"
+
+[profiles.balanced]
+fast = "kev-4b"
+smart = "qwen3.5-4b"
+
+[profiles.accuracy]
+fast = "kev-4b"
+smart = "qwen3.5-9b"
+eval_only = true
+
+[profiles.probe-kev4b-q8]
+fast = "kev-4b-q8"
+smart = "qwen3.5-4b"
+eval_only = true
+
+[profiles.probe-q35-q6]
+fast = "kev-4b"
+smart = "qwen3.5-4b-q6"
+eval_only = true
+
+[profiles.probe-q35-q8]
+fast = "kev-4b"
+smart = "qwen3.5-4b-q8"
+eval_only = true
