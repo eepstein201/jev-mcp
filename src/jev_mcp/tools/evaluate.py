@@ -7,7 +7,7 @@ from typing import Any, Dict, List
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
-from jev_mcp import app
+from jev_mcp import app, router_config
 from jev_mcp.app import logger, mcp
 from jev_mcp.provider import (
     ChoiceQuestion,
@@ -17,6 +17,14 @@ from jev_mcp.provider import (
     escalation_failures,
     mark_degraded,
 )
+
+
+def _model_label(model_id: Any) -> str:
+    """The response's `model`: a served file shows as its file name (model_key), never as
+    a local path; the router's own labels and an unreported model pass through."""
+    if not isinstance(model_id, str) or not model_id:
+        return "unknown_model"
+    return model_id if "/" not in model_id else router_config.model_key(model_id)
 
 
 def _error(message: str) -> str:
@@ -100,6 +108,7 @@ def _semantic_lint_findings(qs):
             )
         )
 
+    gate = app.active_gate()
     try:
         # Evaluate the questions against a tiny dummy state
         lint_state = {"task": "Determine generative intent."}
@@ -108,7 +117,7 @@ def _semantic_lint_findings(qs):
         for i, q in enumerate(qs):
             res = lint_results.get(f"q_{i}", {})
             q_key = q.key
-            if res.get("noul", 0.0) > 0.85:
+            if res.get("noul", 0.0) > gate:
                 findings.append(
                     {
                         "question_key": q_key,
@@ -257,8 +266,9 @@ def _score_and_assemble(
         results = app.provider.evaluate_batch(state, questions)
 
         response = {
-            "model": getattr(app.provider, "current_model_id", "unknown_model"),
+            "model": _model_label(getattr(app.provider, "current_model_id", None)),
             "data": results,
+            **app.engine_identity(app.provider),
         }
         if all_findings:
             response["status"] = "SUCCESS_WITH_WARNINGS"
@@ -281,7 +291,13 @@ def _score_and_assemble(
         return json.dumps(response, indent=2)
     except Exception as e:
         logger.error(f"Engine failure: {str(e)}")
-        return _error(f"INTERNAL ENGINE ERROR: {str(e)}")
+        return json.dumps(
+            {
+                "status": "ERROR",
+                "message": f"INTERNAL ENGINE ERROR: {str(e)}",
+                **app.engine_identity(app.provider),
+            }
+        )
 
 
 @mcp.tool(

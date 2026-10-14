@@ -11,7 +11,38 @@ from typing import Literal, Optional
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
+from jev_mcp import app
 from jev_mcp.app import logger, mcp
+
+
+def _target_refusal(target_gguf_path: str) -> Optional[str]:
+    """Why a train run may not replace target_gguf_path under the active profile, if so.
+
+    No active profile means no check. Otherwise the target must be the profile's smart
+    model. A smart model with reasoning = "off" is refused outright: its training rows
+    would need the empty think block, and this tool does not build rows (they come
+    from the caller's dataset) nor know the model's chat template, so it cannot add or
+    verify that block."""
+    profile = app.active_engine_profile()
+    if profile is None:
+        return None
+    smart = profile.smart
+    name = os.path.basename(target_gguf_path)
+    if name != smart.filename:
+        return (
+            f"Refusing to replace {name}: the active profile {profile.name!r} serves "
+            f"{smart.filename} as its smart model. Pass that file as target_gguf_path, "
+            f"or switch profiles with `make start PROFILE=...`."
+        )
+    if smart.reasoning == "off":
+        return (
+            f'Refusing to replace {name}: it runs with reasoning = "off", so every '
+            f"training row must carry the empty think block its chat template expects. "
+            f"jev_train_lora does not build rows or know that template, so it cannot "
+            f"add or verify the block (fine-tuning this model family is not supported "
+            f"yet). Train without target_gguf_path to get a standalone adapter instead."
+        )
+    return None
 
 
 @mcp.tool(
@@ -70,6 +101,11 @@ def jev_train_lora(
                     }
                 )
             return json.dumps(lora_training.restore_model(target_gguf_path), indent=2)
+
+        if target_gguf_path:
+            refusal = _target_refusal(target_gguf_path)
+            if refusal:
+                return json.dumps({"status": "ERROR", "message": refusal})
 
         if not is_safe_path(dataset_path):
             return json.dumps(

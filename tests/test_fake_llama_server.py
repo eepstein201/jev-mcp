@@ -425,8 +425,9 @@ def test_kev_provider_parses_the_fake_like_the_recorded_response(server):
             },
         },
     }
-    assert [path for _, path, _ in server.requests] == [SYSTEMONE]
-    assert server.requests[0][2] == exchange["request"]
+    # The provider asks /props for its model id once, then posts the questions.
+    assert [path for _, path, _ in server.requests] == ["/props", SYSTEMONE]
+    assert server.requests[1][2] == exchange["request"]
 
 
 def test_daemon_provider_scores_the_fake_like_the_recorded_logprobs(
@@ -453,7 +454,8 @@ def test_daemon_provider_scores_the_fake_like_the_recorded_logprobs(
     results = provider.evaluate_batch(EMAIL, questions)
 
     recorded_requests = [e["request"] for e in RECORDED["smart_exchanges"]]
-    assert [body for _, _, body in server.requests] == recorded_requests
+    posted = [body for method, _, body in server.requests if method == "POST"]
+    assert posted == recorded_requests
     assert provider.current_model_id == RECORDED_SMART_MODEL
     assert set(results) == {"is_delivery", "kind"}
     # The recorded 7B put its mass on "False" for this delivery email.
@@ -714,3 +716,71 @@ def test_other_handler_errors_still_use_the_default_traceback(server, capsys):
 def test_unknown_tier_is_rejected(server):
     with pytest.raises(ValueError, match="unknown tier"):
         server.set_scenario("normal", tier="medium")
+
+
+# --- engine-profiles additions: recorded props, wrong_model, alias ---------------------
+
+
+@pytest.mark.parametrize("tier", ["smart", "fast"])
+def test_every_recorded_props_carries_the_nested_n_ctx_beside_the_top_level_one(tier):
+    recorded = RECORDED["props"][tier]
+
+    assert recorded["default_generation_settings"]["n_ctx"] == recorded["n_ctx"]
+
+
+def test_wrong_model_scenario_serves_a_different_model_than_the_recorded_one(server):
+    server.set_scenario("wrong_model")
+
+    _, props = call(server, "/props")
+    _, chat = call(server, CHAT, chat_body("Answer True or False.\nAnswer:"))
+
+    assert props["model_path"] != RECORDED_SMART_MODEL
+    assert chat["model"] == props["model_path"]
+    # Only the identity differs: the slot and context figures stay the recorded ones.
+    assert props["total_slots"] == RECORDED["props"]["smart"]["total_slots"]
+
+
+def test_wrong_model_scenario_follows_the_requested_tier(server):
+    server.set_scenario("wrong_model", tier="fast")
+
+    _, props = call(server, "/props")
+
+    assert props["model_path"] != RECORDED_KEV_MODEL
+    assert props["total_slots"] == RECORDED["props"]["fast"]["total_slots"]
+
+
+def test_wrong_model_scenario_accepts_an_explicit_model(server):
+    server.set_scenario("wrong_model", model="/models/Chosen-Q4.gguf")
+
+    _, props = call(server, "/props")
+
+    assert props["model_path"] == "/models/Chosen-Q4.gguf"
+
+
+def test_alias_option_renames_the_chat_reply_but_not_props(server):
+    server.set_scenario("normal", alias="qwen2.5-7b")
+
+    _, props = call(server, "/props")
+    _, chat = call(server, CHAT, chat_body("Answer True or False.\nAnswer:"))
+
+    assert chat["model"] == "qwen2.5-7b"
+    assert props["model_path"] == RECORDED_SMART_MODEL
+
+
+def test_alias_option_overrides_a_replayed_recording_too(server):
+    server.set_scenario("normal", alias="qwen2.5-7b")
+    recorded_request = RECORDED["smart_exchanges"][0]["request"]
+
+    _, chat = call(server, CHAT, recorded_request)
+
+    assert chat["model"] == "qwen2.5-7b"
+
+
+def test_alias_option_renames_the_systemone_reply(server):
+    server.set_scenario("normal", tier="fast", alias="kev-0.8b")
+
+    _, props = call(server, "/props")
+    _, kev = call(server, SYSTEMONE, RECORDED["kev_exchanges"][0]["request"])
+
+    assert kev["model"] == "kev-0.8b"
+    assert props["model_path"] == RECORDED_KEV_MODEL

@@ -9,6 +9,7 @@ from jev_mcp.provider import (
     NoulQuestion,
     ScoreQuestion,
 )
+from jev_mcp import daemon_provider
 from jev_mcp.daemon_provider import DaemonProvider
 from jev_mcp.kev_provider import KevProvider
 import os
@@ -75,8 +76,9 @@ class RoutingProvider(JevProvider):
             logger.info(
                 f"State size {tokens} exceeds fast-routing limit. Bypassing 0.5B and routing directly to 7B."
             )
-            self.current_model_id = self.smart_provider.current_model_id
             smart_only = self.smart_provider.evaluate_batch(state, questions)
+            # After the batch: that is when the provider has refreshed its model id.
+            self.current_model_id = self.smart_provider.current_model_id
             return self._require_answers(
                 questions,
                 {
@@ -88,6 +90,7 @@ class RoutingProvider(JevProvider):
         logger.info(f"Evaluating {len(questions)} questions on Fast 0.5B model...")
         fast_results = self.fast_provider.evaluate_batch(state, questions)
 
+        gate = daemon_provider.active_gate()
         uncertain_questions = []
         for q in questions:
             res = fast_results.get(q.key, {})
@@ -105,9 +108,9 @@ class RoutingProvider(JevProvider):
                 continue
 
             max_prob = max(probs.values())
-            if max_prob < 0.85:
+            if max_prob < gate:
                 logger.info(
-                    f"Fast model confidence {max_prob * 100:.1f}% < 85% for question '{q.key}'. Will escalate."
+                    f"Fast model confidence {max_prob * 100:.1f}% < {gate * 100:.0f}% for question '{q.key}'. Will escalate."
                 )
                 uncertain_questions.append(q)
 

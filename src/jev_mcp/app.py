@@ -24,7 +24,7 @@ from typing import Any, Callable, Dict, List, Optional
 # from printing warnings that would corrupt the JSON-RPC stream.
 
 from mcp.server.mcpserver import MCPServer
-from jev_mcp import model_catalog, router_config
+from jev_mcp import daemon_provider, model_catalog, router_config
 from jev_mcp.router_config import (
     UNREPORTED_MODEL_IDS,
     RouterConfig,
@@ -259,6 +259,35 @@ def start_model_sync() -> None:
     threading.Thread(target=_sync_models, name="jev-model-sync", daemon=True).start()
 
 
+def active_engine_profile() -> Any:
+    """The active engine profile, or None when there is none (see daemon_provider)."""
+    return daemon_provider.active_engine_profile()
+
+
+def active_gate() -> float:
+    """The active profile's confidence gate, or the default without a profile."""
+    return daemon_provider.active_gate()
+
+
+def _served_key(engine: Any) -> str | None:
+    """The model key an engine serves, or None when it has not reported one."""
+    model_id = getattr(engine, "current_model_id", None)
+    if not isinstance(model_id, str) or model_id.strip() in UNREPORTED_MODEL_IDS:
+        return None
+    return router_config.model_key(model_id)
+
+
+def engine_identity(routing: Any) -> Dict[str, Any]:
+    """{"profile", "fast", "smart"}: the active profile and the model key each engine
+    serves, null where there is none or the engine has not reported one."""
+    profile = active_engine_profile()
+    return {
+        "profile": profile.name if profile is not None else None,
+        "fast": _served_key(getattr(routing, "fast_provider", None)),
+        "smart": _served_key(getattr(routing, "smart_provider", None)),
+    }
+
+
 def _discover_model_once(smart: Any) -> str:
     """The model id a direct probe of the smart engine returned, or "" when none did.
 
@@ -283,6 +312,14 @@ def reported_smart_model(smart: Any = None) -> tuple[str, int | None]:
     it is probed once via GET /props before giving up, so the temperature tools work
     without a prior evaluation."""
     smart = smart if smart is not None else provider.smart_provider
+    # A daemon restarted on another model inside the id's TTL would otherwise file this
+    # model's calibration under the previous model's key.
+    refresh = getattr(smart, "refresh_if_restarted", None)
+    if callable(refresh):
+        try:
+            refresh()
+        except Exception as e:
+            logger.warning(f"Could not check the smart engine for a restart: {e}")
     model_id = getattr(smart, "current_model_id", "")
     if not isinstance(model_id, str) or model_id.strip() in UNREPORTED_MODEL_IDS:
         model_id = _discover_model_once(smart)
