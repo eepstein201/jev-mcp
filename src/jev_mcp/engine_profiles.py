@@ -516,7 +516,7 @@ def _cmd_plist(args: argparse.Namespace) -> list[str]:
 def _parse_props(tier: str, port: int, body: bytes) -> dict[str, Any]:
     try:
         props = json.loads(body)
-    except ValueError as exc:
+    except (ValueError, RecursionError) as exc:  # not JSON, or nested absurdly deep
         raise _RuntimeFailure(
             [f"{tier} /props on port {port}: response is not JSON"]
         ) from exc

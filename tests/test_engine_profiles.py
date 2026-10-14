@@ -1015,8 +1015,10 @@ class FakeResponse:
     def __init__(self, status: int, body: dict | bytes):
         self.status = status
         self._body = body if isinstance(body, bytes) else json.dumps(body).encode()
+        self.read_sizes: list[int] = []
 
     def read(self, size: int = -1) -> bytes:
+        self.read_sizes.append(size)
         return self._body if size < 0 else self._body[:size]
 
     def __enter__(self):
@@ -1358,13 +1360,16 @@ def test_activate_oversized_props_body_counts_as_a_failed_read(
     tmp_path, capsys, daemons
 ):
     healthy(daemons, tmp_path)
-    huge = b" " * (ep._MAX_PROPS_BYTES + 1)
-    daemons.script[8080] = [FakeResponse(200, huge)]
+    huge = FakeResponse(200, b" " * (ep._MAX_PROPS_BYTES + 1))
+    daemons.script[8080] = [huge]
     marker = tmp_path / "active_profile"
     code, out, err = run_main(
         capsys, *activate_argv(tmp_path, marker, "--timeout", "2")
     )
     assert (code, out) == (1, "") and err.count("\n") == 1 and "larger than" in err
+    assert set(huge.read_sizes) == {
+        ep._MAX_PROPS_BYTES + 1
+    }  # the read itself is bounded
     assert not marker.exists()
 
 
@@ -1376,6 +1381,21 @@ def test_activate_props_body_at_the_cap_is_still_parsed(tmp_path, capsys, daemon
     daemons.script[8080] = [FakeResponse(200, padded)]
     code, *_ = run_main(capsys, *activate_argv(tmp_path, tmp_path / "active_profile"))
     assert code == 0
+
+
+def test_activate_deeply_nested_json_is_a_failed_read_not_a_traceback(
+    tmp_path, capsys, daemons
+):
+    healthy(daemons, tmp_path)
+    nested = (
+        b"[" * 400_000 + b"]" * 400_000
+    )  # under the 1 MiB cap, deeper than the recursion limit
+    assert len(nested) < ep._MAX_PROPS_BYTES
+    daemons.script[8080] = [FakeResponse(200, nested)]
+    marker = tmp_path / "active_profile"
+    code, out, err = run_main(capsys, *activate_argv(tmp_path, marker))
+    assert (code, out) == (1, "") and err.count("\n") == 1 and "fast" in err
+    assert "Traceback" not in err and not marker.exists()
 
 
 def test_activate_invalid_json_is_exit_1(tmp_path, capsys, daemons):
