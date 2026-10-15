@@ -1,8 +1,8 @@
-<!-- Generated: 2026-10-10, refreshed 2026-10-13 | Files scanned: 35 src + 60 test modules | Token estimate: ~750 | As of: 0ac954b -->
+<!-- Generated: 2026-10-10, refreshed 2026-10-14 | Files scanned: 38 src + 67 test modules | Token estimate: ~800 | As of: 43fb0dd -->
 # Architecture
 
 Type: single Python package `src/jev_mcp/` (hatchling), MCP stdio server. No frontend.
-Entry: `jev-mcp = jev_mcp.server:main` (stdio by default; subcommands `setup-gas`, `serve-webhook`, `doctor`) · `jev-lint = jev_mcp.cli_linter:main` · `python -m jev_mcp.client_config link-opencode|unlink-opencode` (called by the manager)
+Entry: `jev-mcp = jev_mcp.server:main` (stdio by default; subcommands `setup-gas`, `serve-webhook`, `doctor`) · `jev-lint = jev_mcp.cli_linter:main` · `python -m jev_mcp.client_config link-opencode|unlink-opencode` (called by the manager) · `python -m jev_mcp.engine_profiles resolve|plist|activate` (profile resolver; also called by the manager)
 
 ## Data flow
 ```
@@ -12,21 +12,22 @@ MCP client (Claude Code / Claude Desktop / Antigravity CLI / OpenCode)
 server.py (entry: prompts + main)  ──  app.py MCPServer + tools/* registrations
    │  linter.py (DecisionPreflightLinter gate) → call_fast_autofixer → QFE compress (> router max_tokens 8192 = min(kev 65536, daemon 8192))
    ▼
-routing_provider.RoutingProvider  (0.85 confidence gate)
-   ├─ KevProvider    → llama-server :JEV_FAST_PORT 8080  (Kev-0.8B, fast)
-   └─ DaemonProvider → llama-server :JEV_SMART_PORT 8081 (Qwen-2.5-7B, DCPMI math, Platt scaling)
-   ▲ managed by jev_mac_manager.sh (launchd)
+routing_provider.RoutingProvider  (confidence gate: active profile's gate, 0.85 without one)
+   ├─ KevProvider    → llama-server :JEV_FAST_PORT 8080  (profile fast model; default Kev-0.8B)
+   └─ DaemonProvider → llama-server :JEV_SMART_PORT 8081 (profile smart model, default Qwen-2.5-7B; DCPMI math, Platt scaling)
+   ▲ managed by jev_mac_manager.sh (launchd), which serves the active engine profile
 ```
 
 ## Subsystems
 - Evaluation core: provider.py (ABC + Noul/Choice/Score questions, post_json) → kev/daemon/routing providers
+- Engine profiles: engine_profiles.py ↔ tracked engine_profiles.toml (8 models, 7 profiles) + ~/.jev/active_profile marker (written only by `activate`); `make start [PROFILE=x]` = resolve → SHA-256-verified downloads → plists (.new, before anything stops) → restart → activate. Server side: served model id from /props model_path (30 s TTL), gate + smart prompt style (plain/sandbox) from the profile; responses carry {profile, fast, smart} via app.engine_identity
 - Safety: security.py (sanitize_payload), linter.py, path checks in jev_read_file
 - Repo tools: scanner.py, chunker.py (tree-sitter py/js/ts)
 - Router config: router_config.py ↔ ~/.jev/router_config.json · model_catalog.py (models.dev catalog, update suggestions) · client_defaults.py (SeedingMiddleware: per-client bucket defaults at the MCP handshake)
-- Health: doctor.py (`jev-mcp doctor [--json]`: engine /health, router-config validity, path roots, auth variables by NAME only, thresholds, versions; exit 0/1)
+- Health: doctor.py (`jev-mcp doctor [--json]`: engine /health + profile-expected vs served model, router-config validity, path roots, auth variables by NAME only, thresholds, versions; exit 0/1)
 - Client config: client_config.py (writes/removes this server's OpenCode entry; never rewrites an unparseable file)
-- Tests: tests/conftest.py stubs the MCP SDK; autouse `no_real_daemon_http` fails any unmocked daemon HTTP call
-- Evals (need live daemons, not part of `make test`): tests/run_evals.py (engine benchmark) · tests/evals/{browser_eval,triage_eval,hf_email_import}.py + usage/ (tool-usage eval, calls the Anthropic API) — `make eval|eval-browser|eval-triage|eval-usage`
+- Tests: tests/conftest.py stubs the MCP SDK; autouse `no_real_daemon_http` fails any unmocked daemon HTTP call; manager e2e tests/test_mac_manager.py runs the real manager against a temp HOME (stand-in launchctl/pkill) + fake llama server
+- Evals (need live daemons, not part of `make test`): tests/run_evals.py (engine benchmark; `--scores-out` per-row dump, `--simulate` offline routing-gate replay) · tests/evals/{browser_eval,triage_eval,hf_email_import,memory}.py + usage/ (tool-usage eval, calls the Anthropic API) — `make eval|eval-browser|eval-triage|eval-memory|eval-usage`
 - Email triage: email_triage/* (FastAPI webhook + MCP tools + Slack HITL + Google Apps Script)
 - Browser agent: ultrafast_adapter.py ↔ jev-ultrafast submodule (stub dispatch in server)
 - LoRA training: jev_train_lora → lora_training.py (mlx_lm.lora → fuse --dequantize → convert_hf_to_gguf.py → llama-quantize → launchctl kickstart of the serving agent; restore action)

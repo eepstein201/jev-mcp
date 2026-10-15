@@ -9,9 +9,12 @@ update:
 	@echo "Updating Jev MCP Environment..."
 	./jev_mac_manager.sh update
 
+# make start [PROFILE=name]: the value is read raw with $(value) and single-quoted for the shell, and
+# PROFILE is not exported, so neither make nor the shell ever evaluates what the caller typed.
+unexport PROFILE
 start:
 	@echo "Starting Jev MCP Daemon..."
-	./jev_mac_manager.sh hybrid
+	./jev_mac_manager.sh hybrid $(if $(value PROFILE),'$(subst ','\'',$(value PROFILE))')
 
 stop:
 	@echo "Stopping Jev MCP Daemon..."

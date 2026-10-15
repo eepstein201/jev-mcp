@@ -201,6 +201,12 @@ def test_evaluate_clean_batch_entire_result():
             }
         },
         "status": "SUCCESS",
+        # Engine identity (engine profiles): with the repo profile table present and
+        # no active marker the resolver serves the default profile; the mock engines
+        # report no model, so fast and smart stay null.
+        "profile": "default",
+        "fast": None,
+        "smart": None,
     }
 
 
@@ -255,6 +261,9 @@ def test_evaluate_state_over_the_token_limit_entire_result():
     assert out == {
         "model": "test-model",
         "data": {"q1": {"noul": 0.1, "probabilities": {"true": 0.1, "false": 0.9}}},
+        "profile": "default",
+        "fast": None,
+        "smart": None,
         "status": "SUCCESS_WITH_WARNINGS",
         "warnings": [
             {

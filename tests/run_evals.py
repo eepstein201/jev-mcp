@@ -38,9 +38,9 @@ BOOTSTRAP_RESAMPLES = 1000
 SATURATION_EPS = 1e-6
 # Mirrors RoutingProvider (src/jev_mcp/routing_provider.py): a state estimated above
 # FAST_ROUTING_TOKEN_LIMIT tokens skips the fast engine; a fast answer whose top
-# probability is below ROUTING_CONFIDENCE_GATE is escalated to the smart engine.
+# probability is below the active profile's gate (active_gate(); DEFAULT_GATE when no
+# profile resolves) is escalated to the smart engine.
 FAST_ROUTING_TOKEN_LIMIT = 4000
-ROUTING_CONFIDENCE_GATE = 0.85
 DEFAULT_GATE_RANGE = "0.5:1.0:0.05"
 QUESTION_KEY = "eval"
 PROPS_TIMEOUT_SECONDS = 3
@@ -310,7 +310,16 @@ def dump_warnings(rows):
     ]
 
 
-def route_row(row, gate=ROUTING_CONFIDENCE_GATE):
+def active_gate() -> float:
+    """The gate RoutingProvider applies right now: the active profile's gate, or
+    engine_profiles.DEFAULT_GATE when no profile resolves (marker + TOML reads only)."""
+    from jev_mcp import engine_profiles
+
+    profile = engine_profiles.active_profile()
+    return profile.gate if profile is not None else engine_profiles.DEFAULT_GATE
+
+
+def route_row(row, gate=None):
     """RoutingProvider.evaluate_batch's outcome for one row, from recorded answers.
 
     Returns {"escalated", "score", "unanswered"}. Mirrors routing_provider.py, by rule:
@@ -320,7 +329,12 @@ def route_row(row, gate=ROUTING_CONFIDENCE_GATE):
       - smart's entry replaces fast's only when it carries probabilities; a missing
         or empty smart entry keeps a real fast answer (marked escalation_failed)
       - no answer left raises: fast missing, empty or all-zero, and smart silent
+
+    gate=None (the default) resolves through the active profile, exactly the gate the
+    router reads; an explicitly passed gate overrides it.
     """
+    if gate is None:
+        gate = active_gate()
     smart_answered = row.get("smart_answered", True)
     tokens = row.get("state_tokens")
     if tokens is not None and tokens > FAST_ROUTING_TOKEN_LIMIT:
@@ -344,12 +358,14 @@ def route_row(row, gate=ROUTING_CONFIDENCE_GATE):
     return {"escalated": True, "score": None, "unanswered": True}
 
 
-def simulate_routing(rows, gate=ROUTING_CONFIDENCE_GATE):
+def simulate_routing(rows, gate=None):
     """Routed accuracy and escalation rate at one gate, with no inference.
 
     A row the router would raise on (no engine answered) counts as wrong and is
-    reported in `unanswered`.
+    reported in `unanswered`. gate=None resolves through the active profile, exactly
+    as route_row does; an explicitly passed gate overrides it.
     """
+    gate = active_gate() if gate is None else gate
     n = len(rows)
     if n == 0:
         return {
@@ -407,6 +423,14 @@ def format_sweep(points):
     return "\n".join(lines)
 
 
+def default_gates():
+    """The default sweep: the standard grid, plus the active gate when it is off it,
+    so the gate the router really applies is always one of the reported points."""
+    grid = parse_gate_range(DEFAULT_GATE_RANGE)
+    gate = active_gate()
+    return grid if gate in grid else sorted([*grid, gate])
+
+
 def run_simulation(path, gate_spec, as_json):
     try:
         rows = read_scores_jsonl(path)
@@ -416,7 +440,8 @@ def run_simulation(path, gate_spec, as_json):
         sys.exit(f"{path} has no rows")
     for warning in dump_warnings(rows):
         print(f"WARNING: {warning}", file=sys.stderr)
-    sweep = gate_sweep(rows, parse_gate_range(gate_spec))
+    gates = parse_gate_range(gate_spec) if gate_spec is not None else default_gates()
+    sweep = gate_sweep(rows, gates)
     if as_json:
         print(json.dumps(sweep))
     else:
@@ -477,9 +502,9 @@ def build_parser():
     )
     parser.add_argument(
         "--gates",
-        default=DEFAULT_GATE_RANGE,
+        default=None,
         metavar="START:STOP:STEP",
-        help=f"gates for --simulate (default {DEFAULT_GATE_RANGE})",
+        help=f"gates for --simulate (default {DEFAULT_GATE_RANGE} plus the active gate)",
     )
     parser.add_argument("--json", action="store_true", help="--simulate: JSON output")
     parser.add_argument(
@@ -498,10 +523,11 @@ def main(argv):
         random.seed(args.seed)
 
     if args.simulate:
-        try:
-            parse_gate_range(args.gates)
-        except ValueError as exc:
-            parser.error(str(exc))
+        if args.gates is not None:
+            try:
+                parse_gate_range(args.gates)
+            except ValueError as exc:
+                parser.error(str(exc))
         run_simulation(args.simulate, args.gates, args.json)
         return
 
