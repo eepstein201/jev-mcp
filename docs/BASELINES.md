@@ -85,3 +85,101 @@ PYTHONPATH=src .venv/bin/python tests/run_evals.py --simulate SCORES.jsonl --jso
 
 Requires the daemons running (`make start`) and a quiet machine; system counters are
 whole-host snapshots, so concurrent workloads contaminate them.
+
+# Phase-1 profile comparison
+
+Measured 2026-10-14 to 2026-10-15 on branch `feat/engine-profiles` @ b0e50a8, same host and
+exclusive-lane rules as phase 0. Candidates were started with `make start PROFILE=<name>`
+and judged against the phase-0 default (Kev-0.8B + Qwen2.5-7B) above.
+
+| profile | fast | smart |
+|---|---|---|
+| default | Kev-0.8B Q8_0 | Qwen2.5-7B Q4_K_M |
+| lean | Kev-0.8B Q8_0 | Qwen3.5-4B Q4_K_M |
+| balanced | Kev-4B Q4_K_M | Qwen3.5-4B Q4_K_M |
+
+## Verdicts
+
+A profile changes the shipped default only if (1) the paired-bootstrap 95% lower bound of
+(profile − phase-0) routed accuracy exceeds −2.0 points, (2) synthetic-30 triage is within
+1 row of the default's 24/30, and (3) dirty footprint is strictly lower. Verdict 2,
+"promising but unproven", needs the point estimate ≥ −2.0 points plus (2) and (3), with
+only the CI bound failing. Anything else is "not recommended".
+
+Accuracy is routed accuracy on the 88-row golden set at a gate matching phase-0's 51.1%
+escalation; the difference is against the phase-0 dump at gate 0.85. Values are r1 / r2 / r3.
+
+| profile | routed accuracy (diff) | 95% CI of diff | McNemar p | triage /30 | dirty idle footprint | verdict |
+|---|---|---|---|---|---|---|
+| lean (gate 0.85) | 94.3 / 95.5 / 93.2% (+2.3 / +3.4 / +1.1) | [−2.3, +6.8] / [0.0, +8.0] / [−3.4, +5.7] | 0.63 / 0.25 / 1.0 | 22, 21 (fail) | 2.36 GB vs 3.09 GB (−24%) | **NOT RECOMMENDED** |
+| balanced (gate 0.962) | 100.0 / 98.9 / 100.0% (+8.0 / +6.8 / +8.0) | [+3.4, +13.6] / [+1.1, +12.5] / [+3.4, +13.6] | 0.016 / 0.070 / 0.016 | 20, 22 (fail) | 3.83 GB vs 3.09 GB (+24%) | **NOT RECOMMENDED** |
+
+No profile reaches verdict 1, so the default is unchanged. At n=88 one row is about 1.1
+points and the CI half-width is several points (about 4.5 here), so verdict 1 needs a
+larger labelled set (about 500 rows).
+
+- **Lean** is not worse on accuracy (point estimate +1.1 to +3.4; the CI lower bound is
+  below −2.0 on 2 of 3 repeats, so this is inconclusive at n=88) and uses less memory, but
+  it fails triage (22 and 21 vs 24 ± 1), which keeps it out of verdict 2.
+- **Balanced** is clearly more accurate (every repeat's CI lower bound is above 0), but
+  fails triage (20 and 22) and uses more memory (+0.75 GB idle).
+
+## Details
+
+Routing replay (`--simulate`), 3 repeats per profile:
+
+| | fast AUC | smart AUC | fast acc @ 0.5 | gate / escalation | routed accuracy |
+|---|---|---|---|---|---|
+| default | 0.9282 | 1.0000 | 89.8% | 0.85 / 51.1% | 92.0% |
+| lean | 0.9282 | 1.0000 | 89.8% | 0.85 / 51.1% | 94.3 / 95.5 / 93.2% |
+| balanced | 0.9948 | 1.0000 | 98.9% | 0.962 / 51.1% | 100.0 / 98.9 / 100.0% |
+
+- Balanced has no 0.05-grid gate within ±2 points of 51.1% escalation (0.95 → 42.0%,
+  1.00 → 100%); 0.962 was found with a 0.001 sweep. At the shipped gate 0.85 it escalates
+  12.5% of rows at 98.9% routed accuracy.
+- Both candidates run Qwen3.5-4B with reasoning off. Each profile's proof (empty
+  `<think></think>` from `/apply-template`, true+false token mass median 0.988, min ≥ 0.955,
+  0 of 88 rows under 0.05) is in the P1-M artifacts. Platt scaling was not triggered
+  (>0.99 saturation 40.9% lean, 39.8% balanced), so no temperature was fitted or saved.
+- Latency per sample: smart 0.5 s (Qwen2.5-7B) vs 1.6–1.7 s lean and 2.3–2.8 s balanced
+  (Qwen3.5-4B, 3–5× slower); fast 33 ms (Kev-0.8B) vs 143 ms (Kev-4B).
+
+Memory (dirty footprint, fresh daemons, ~20 s after health, same `-c` totals as phase 0):
+
+| | fast idle | smart idle | idle total | warm total | swap delta (warm) |
+|---|---|---|---|---|---|
+| default | 1,055,246,472 B | 2,033,096,296 B | 3,088,342,768 B | 3,266,305,872 B | +3428 MiB (phase-0 12k prompt) |
+| lean | 1,034,193,008 B | 1,322,356,600 B | 2,356,549,608 B | 2,630,670,480 B | −8 MiB |
+| balanced | 2,509,509,456 B | 1,324,224,352 B | 3,833,733,808 B | 4,193,428,336 B | +47 MiB |
+
+Triage (`make eval-triage`, branch code): synthetic-30 default 24, 24; lean 22, 21;
+balanced 20, 22. Informational seeds (default not re-measured): lean 52/120 and 50/120,
+balanced 41/120 and 53/120.
+
+Browser agent (`make eval-browser`, 4 runs per case, informational, outside the decision
+rule): default 31/32 and 30/32 (one run hit a harness CDP timeout), balanced 32/32,
+lean 26/32 (T3 0/4). With n=4 per case none of this attributes a difference to a model.
+
+## Caveats
+
+- The three repeats re-score the same 88 rows, so they are not independent samples; the
+  decision is made per repeat, and no pooled p-value is reported.
+- The 24/30 triage anchor was labelled against the phase-0 engines, and the default's
+  runs were measured with main's `jev_mcp` (the shared venv); `triage_eval` needs
+  `PYTHONPATH=src` to import branch code. Lean's main-code runs (20, 21) fail the same
+  rule. A 40-row human-labelled slice is pending and can separate model regression from
+  anchor bias.
+- Memory is footprint, not total model memory (see the phase-0 note above). Compare it
+  alongside GGUF size: Kev-4B Q4_K_M is 3,033,489,824 B on disk.
+- Candidates were measured at their profile-pinned gate; every profile ships with the 0.85
+  gate, so balanced's matched-gate accuracy is not what `PROFILE=balanced` serves today.
+
+## Reproducing
+
+```
+make start PROFILE=lean            # or balanced; restore with make start PROFILE=default
+PYTHONPATH=src .venv/bin/python tests/run_evals.py --scores-out SCORES.jsonl
+PYTHONPATH=src .venv/bin/python tests/run_evals.py --simulate SCORES.jsonl --json
+PYTHONPATH=src .venv/bin/python -m tests.evals.triage_eval
+PYTHONPATH=src .venv/bin/python -m tests.evals.memory --json
+```
