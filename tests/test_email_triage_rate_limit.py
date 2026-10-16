@@ -249,3 +249,25 @@ def test_the_limit_is_keyed_on_the_asgi_reported_client_address(monkeypatch):
 
     assert excinfo.value.status_code == 429
     assert excinfo.value.headers["Retry-After"] == "60"
+
+
+def test_refund_gives_back_the_newest_count():
+    limiter = SlidingWindowLimiter(limit=1, clock=lambda: 0.0)
+    assert limiter.check("a") is None
+    assert limiter.check("a") is not None
+
+    limiter.refund("a")
+
+    assert limiter.tracked_keys() == 0
+    assert limiter.check("a") is None
+
+
+def test_refund_keeps_older_counts_and_ignores_unknown_keys():
+    limiter = SlidingWindowLimiter(limit=2, clock=lambda: 0.0)
+    limiter.check("a")
+    limiter.check("a")
+    limiter.refund("a")
+    limiter.refund("nobody")
+
+    assert limiter.check("a") is None
+    assert limiter.check("a") is not None

@@ -10,6 +10,13 @@ from jev_mcp.email_triage.rate_limit import SlidingWindowLimiter, limit_from_env
 from jev_mcp.email_triage.slack import build_escalation_message, build_hitl_message
 from jev_mcp.provider import EngineUnavailableError
 
+# A degraded triage (the smart engine failed) is answered 503 so the caller retries, until the
+# caller's attempt number (header X-Triage-Attempt, 1 = first try) reaches this many; the last
+# attempt gets the unconfirmed result with HTTP 200.
+MAX_DEGRADED_ATTEMPTS = 3
+DEGRADED_RETRY_AFTER_SECONDS = 5
+ATTEMPT_HEADER = "X-Triage-Attempt"
+
 # Bounds what the server buffers before validation. Generous on purpose: 1M characters is at most
 # 1 MB of ASCII but several MB when a client escapes non-ASCII text as \uXXXX.
 MAX_REQUEST_BYTES = 8 * 1024 * 1024
@@ -104,13 +111,32 @@ def get_auth(authorization: Optional[str] = Header(None)):
 limiter = SlidingWindowLimiter(limit=limit_from_env())
 
 
+def _client_address(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
+
+def _attempt_number(raw: Optional[str]) -> Optional[int]:
+    """The caller's attempt number, or None when the header is missing or not a positive integer."""
+    text = (raw or "").strip()
+    if not (text.isascii() and text.isdigit()):
+        return None
+    attempt = int(text)
+    return attempt if attempt >= 1 else None
+
+
+def _should_retry_degraded(raw_attempt: Optional[str]) -> bool:
+    # Missing or unreadable means "final attempt": clients that never send the header get the result.
+    attempt = _attempt_number(raw_attempt)
+    return attempt is not None and attempt < MAX_DEGRADED_ATTEMPTS
+
+
 async def enforce_rate_limit(request: Request, auth: dict = Depends(get_auth)) -> None:
     # auth is a dependency of this dependency, so FastAPI solves it first: the limit is
     # consulted only after authentication and counts authenticated requests alone.
     # Unauthenticated requests are answered with 401 and never consume the allowance, so a
     # flood of them cannot lock out the real sender. async so a refusal is answered from the
     # event loop, not queued behind triage calls in the worker thread pool.
-    client_address = request.client.host if request.client else "unknown"
+    client_address = _client_address(request)
     retry_after = limiter.check(client_address)
     if retry_after is not None:
         raise HTTPException(
@@ -121,7 +147,12 @@ async def enforce_rate_limit(request: Request, auth: dict = Depends(get_auth)) -
 
 
 @app.post("/api/v1/triage/email", dependencies=[Depends(enforce_rate_limit)])
-def triage_email(payload: EmailPayload, auth: dict = Depends(get_auth)):
+def triage_email(
+    payload: EmailPayload,
+    request: Request,
+    auth: dict = Depends(get_auth),
+    attempt: Optional[str] = Header(None, alias=ATTEMPT_HEADER),
+):
     try:
         result_str = triage_email_content(
             context_id=payload.context_id,
@@ -137,6 +168,16 @@ def triage_email(payload: EmailPayload, auth: dict = Depends(get_auth)):
 
     if result.get("status") == "needs_config":
         raise HTTPException(status_code=400, detail=result["message"])
+
+    if result.get("degraded") and _should_retry_degraded(attempt):
+        # The request was answered only to be retried: give back its rate-limit count so a
+        # retrying client is not locked out by its own retries. No Slack message for this attempt.
+        limiter.refund(_client_address(request))
+        raise HTTPException(
+            status_code=503,
+            detail="The smart engine failed; retry.",
+            headers={"Retry-After": str(DEGRADED_RETRY_AFTER_SECONDS)},
+        )
 
     decision = result.get("decision")
     suggested = result.get("suggested_routing")
