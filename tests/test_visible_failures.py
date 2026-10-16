@@ -727,3 +727,70 @@ def test_local_choose_reports_the_questions_that_failed_to_escalate(monkeypatch)
 
     assert result["escalation_failed"] == ["operation"]
     assert result["answers"]["operation"]["choice"] == "CLICK"
+
+
+# --- 4. a degraded triage fails toward attention, never toward silence ---------------------
+
+
+def _triage_results(requires_action, important, bucket_probs, failed_key=None):
+    results = {
+        "requires_action": {"probabilities": {"true": requires_action}},
+        "is_important": {"probabilities": {"true": important}},
+        "bucket": {"probabilities": bucket_probs},
+    }
+    if failed_key:
+        results[failed_key] = {**FAILED, **results[failed_key]}
+    return results
+
+
+def _evaluate_email(monkeypatch, results):
+    from jev_mcp.email_triage.mcp_tool import evaluate_email_with_mlx
+
+    provider = MagicMock()
+    provider.evaluate_batch.return_value = results
+    monkeypatch.setattr("jev_mcp.routing_provider.RoutingProvider", lambda: provider)
+    return evaluate_email_with_mlx("s", "x@y.com", "body", ["Notifications"])
+
+
+CONFIDENT_BUCKET = {"Notifications": 0.95, "Receipts": 0.05}
+
+
+def test_degraded_triage_never_archives_silently(monkeypatch):
+    results = _triage_results(0.05, 0.1, CONFIDENT_BUCKET, "bucket")
+
+    res = _evaluate_email(monkeypatch, results)
+
+    assert res["status"] == "DEGRADED"
+    assert res["suggested_routing"] == "hitl_slack_block"
+    assert res["decision"] == "Review"
+    assert res["reason"] == "escalation_failed_unconfirmed"
+
+
+def test_degraded_triage_keeps_an_escalation(monkeypatch):
+    results = _triage_results(0.95, 0.9, CONFIDENT_BUCKET, "requires_action")
+
+    res = _evaluate_email(monkeypatch, results)
+
+    assert res["status"] == "DEGRADED"
+    assert res["suggested_routing"] == "escalate_to_slack"
+    assert res["reason"] == "requires_action"
+
+
+def test_degraded_triage_keeps_a_review(monkeypatch):
+    results = _triage_results(0.5, 0.1, CONFIDENT_BUCKET, "requires_action")
+
+    res = _evaluate_email(monkeypatch, results)
+
+    assert res["status"] == "DEGRADED"
+    assert res["suggested_routing"] == "hitl_slack_block"
+    assert res["reason"] == "ambiguous_action"
+
+
+def test_clean_triage_still_archives(monkeypatch):
+    results = _triage_results(0.05, 0.1, CONFIDENT_BUCKET)
+
+    res = _evaluate_email(monkeypatch, results)
+
+    assert "degraded" not in res
+    assert res["suggested_routing"] == "archive_and_label"
+    assert res["decision"] == "Notifications"
