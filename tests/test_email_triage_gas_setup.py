@@ -1,4 +1,6 @@
 import json
+import shutil
+import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -187,3 +189,80 @@ def test_the_template_reads_the_key_from_script_properties_not_source():
 
     assert "PropertiesService.getScriptProperties()" in source
     assert "const JEV_MCP_API_KEY" not in source
+
+
+def test_the_template_sends_the_attempt_header_and_retries_on_503():
+    source = TEMPLATE_PATH.read_text()
+
+    assert "X-Triage-Attempt" in source
+    assert "MAX_DEGRADED_ATTEMPTS = 3" in source
+    assert "503" in source
+    assert "Utilities.sleep" in source
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+@pytest.mark.parametrize(
+    "codes, expected_calls, expected_attempts, marked_read",
+    [
+        ([200], 1, [1], True),
+        ([503, 200], 2, [1, 2], True),
+        ([503, 503, 200], 3, [1, 2, 3], True),
+        ([503, 503, 503, 200], 3, [1, 2, 3], False),
+        ([500], 1, [1], False),
+    ],
+)
+def test_the_template_retries_a_503_up_to_the_cap_and_stops_on_other_answers(
+    tmp_path, codes, expected_calls, expected_attempts, marked_read
+):
+    harness = tmp_path / "harness.js"
+    harness.write_text(
+        f"""
+const vm = require('vm');
+const codes = {json.dumps(codes)};
+const attempts = [];
+let sleeps = 0;
+let marked = false;
+const message = {{
+  isUnread: () => true, getSubject: () => 's', getFrom: () => 'f',
+  getPlainBody: () => 'b', getId: () => 'id', markRead: () => {{ marked = true; }},
+}};
+const sandbox = {{
+  Logger: {{ log: () => {{}} }},
+  Utilities: {{ sleep: () => {{ sleeps += 1; }} }},
+  PropertiesService: {{ getScriptProperties: () => ({{ getProperty: () => '' }}) }},
+  GmailApp: {{ search: () => [{{ getMessages: () => [message] }}] }},
+  UrlFetchApp: {{ fetch: (url, options) => {{
+    attempts.push(Number(options.headers['X-Triage-Attempt']));
+    const code = codes[Math.min(attempts.length, codes.length) - 1];
+    return {{ getResponseCode: () => code, getContentText: () => '' }};
+  }} }},
+}};
+vm.createContext(sandbox);
+vm.runInContext(require('fs').readFileSync(process.argv[2], 'utf8')
+  .replace("'TEMPLATE'", "'https://hook.example/api'"), sandbox);
+sandbox.processUnreadEmails();
+console.log(JSON.stringify({{ attempts, sleeps, marked }}));
+"""
+    )
+
+    out = subprocess.run(
+        ["node", str(harness), str(TEMPLATE_PATH)],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+
+    seen = json.loads(out)
+    assert seen["attempts"] == expected_attempts
+    assert len(seen["attempts"]) == expected_calls
+    assert seen["sleeps"] == expected_calls - 1
+    assert seen["marked"] is marked_read
+
+
+def test_the_template_attempt_cap_matches_the_server():
+    from jev_mcp.email_triage.api import MAX_DEGRADED_ATTEMPTS
+
+    assert (
+        f"const MAX_DEGRADED_ATTEMPTS = {MAX_DEGRADED_ATTEMPTS};"
+        in TEMPLATE_PATH.read_text()
+    )
