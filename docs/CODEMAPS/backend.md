@@ -38,6 +38,7 @@ POST /api/v1/triage/email → api.triage_email (Depends get_auth ← auth.verify
       body > 2000 chars (COMPACTION_MIN_BODY_CHARS) → server.jev_compact_context(goal=labels, conf COMPACTION_CONFIDENCE=0.3) → body = compressed_context
       (lazy import of tools.files inside fn; any failure/empty result silently keeps original body)
   → core.decide_routing → slack.build_escalation_message / build_hitl_message
+api.triage_email: degraded result + X-Triage-Attempt < MAX_DEGRADED_ATTEMPTS (3) → 503 + Retry-After, rate-limit count refunded (limiter.refund), no Slack; else 200 with an "Unconfirmed" Slack notice; mcp_tool.fail_toward_attention turns a degraded archive_and_label into hitl_slack_block
 gas_setup.setup_gas_workflow → examples/gas_triage.js (Google Apps Script)
 
 ## Linter thresholds (linter.py)
