@@ -195,8 +195,8 @@ def jev_compact_context(
         description="The user's current goal or the objective the context is needed for."
     ),
     confidence_threshold: float = Field(
-        default=0.3,
-        description="The relevance score (0-1) a chunk needs to be kept. The fast engine scores relevant chunks roughly 0.3-0.9 and irrelevant ones below 0.35, so values above about 0.4 discard relevant context.",
+        default=0.2,
+        description="The relevance score (0-1) a chunk needs to be kept. The fast engine scores many relevant chunks low, so on a labelled set 0.2 kept about 95% of them and 0.3 only about 77%. Raising the threshold compresses more but discards relevant context.",
     ),
 ) -> str:
     import json

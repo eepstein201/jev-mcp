@@ -71,9 +71,9 @@ def test_compact_scores_each_top_level_key_of_a_dict_state_separately():
     assert result["chunk_scores"] == [0.9, 0.1]
 
 
-def test_compact_default_threshold_matches_the_fast_engines_measured_score_range():
-    # On a 24-pair labelled set the fast engine scored relevant chunks 0.32-0.90 and
-    # irrelevant ones 0.04-0.35; 0.3 kept 12/12 relevant and 1/12 irrelevant, 0.85 kept 1/12 relevant.
+def test_compact_default_threshold_keeps_nearly_all_relevant_chunks_on_the_labelled_set():
+    # On the labelled goal set (tests/evals/compaction_goals.jsonl) the tune split kept 95% of the
+    # relevant chunks at 0.2 and 81% at the earlier 0.3; see docs/compaction-threshold.md.
     import inspect
 
     default = (
@@ -82,7 +82,7 @@ def test_compact_default_threshold_matches_the_fast_engines_measured_score_range
         .default
     )
 
-    assert default.default == 0.3
+    assert default.default == 0.2
 
 
 def test_compact_asks_whether_a_chunk_is_directly_relevant_to_the_goal():
