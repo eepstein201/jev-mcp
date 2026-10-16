@@ -23,8 +23,8 @@ irrelevant one, so the default is chosen for recall first and compression second
 
 ## Caveats
 
-- The holdout is 12 rows and 105 chunks (36 relevant), so a single chunk moves holdout recall by
-  about 3 points. Tune recall at 0.20 sits exactly on the 0.95 limit; the neighbouring grid points
+- The holdout is 12 rows and 105 chunks (18 relevant), so a single relevant chunk moves holdout recall
+  by about 6 points. Tune recall at 0.20 sits exactly on the 0.95 limit; the neighbouring grid points
   differ by several points either way.
 - The labels were written by Claude, not by the repository owner, and the contexts are
   hand-written rather than real session state. Re-measure on real content before treating 0.2 as
