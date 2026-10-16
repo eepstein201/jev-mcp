@@ -8,6 +8,7 @@ from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from jev_mcp import app
+from jev_mcp.compaction import GENERIC_QUESTION, chunk_state, score_chunk
 from jev_mcp.app import json_errors, logger, mcp
 from jev_mcp.provider import (
     EngineUnavailableError,
@@ -202,59 +203,21 @@ def jev_compact_context(
 
     logger.info("Starting Confidence-Gated Context Compaction...")
 
-    # Only a string under "text" is treated as prose; anything else is scored as JSON, key by key.
-    has_text = isinstance(state, dict) and isinstance(state.get("text"), str)
-    state_str = state["text"] if has_text else json.dumps(state)
-    if not state_str.strip():
+    chunks = chunk_state(state)
+    if not chunks:
         return json.dumps({"status": "ERROR", "message": "State is empty."})
-
-    # Semantic chunking (simple paragraph/block chunking for now)
-    # Using double newline or single newline if too long
-    if isinstance(state, dict) and state and not has_text:
-        # One chunk per top-level key, so unrelated fields are scored separately.
-        raw_chunks = [
-            f"{k}: {v if isinstance(v, str) else json.dumps(v)}"
-            for k, v in state.items()
-        ]
-    else:
-        raw_chunks = [c.strip() for c in state_str.split("\n\n") if c.strip()]
-        if not raw_chunks:
-            raw_chunks = [c.strip() for c in state_str.split("\n") if c.strip()]
-
-    chunks: List[str] = []
-    for c in raw_chunks:
-        if len(c) > 2000:
-            # Fixed-width slices keep the text verbatim; re-wrapping would collapse its whitespace.
-            chunks.extend(c[i : i + 2000] for i in range(0, len(c), 2000))
-        else:
-            chunks.append(c)
 
     kept_chunks = []
     total_chunks = len(chunks)
     dropped_chunks = 0
     chunk_scores: List[Optional[float]] = []
+    prompt = GENERIC_QUESTION.format(goal=goal)
 
     # We will evaluate these in batches if needed, but for now sequentially
     # to avoid context overflow on the provider.
     for i, chunk in enumerate(chunks):
-        q = NoulQuestion(
-            key=f"chunk_{i}",
-            prompt=f"Is the information in this text snippet directly relevant to achieving the goal: '{goal}'?",
-        )
-
         try:
-            # We force the fast provider directly to save time and prevent escalation
-            # Since we just want a fast filter
-            if hasattr(app.provider, "fast_provider"):
-                res = app.provider.fast_provider.evaluate_batch({"text": chunk}, [q])
-            else:
-                res = app.provider.evaluate_batch({"text": chunk}, [q])
-
-            if q.key not in res:
-                # The fast engine reports an outage as an empty result, not an exception.
-                raise EngineUnavailableError(f"No engine answered {q.key}")
-            chunk_res = res.get(q.key, {})
-            score = chunk_res.get("noul", 0.0)
+            score = score_chunk(app.provider, i, chunk, prompt)
             chunk_scores.append(round(score, 3))
 
             if score >= confidence_threshold:
