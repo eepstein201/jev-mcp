@@ -16,8 +16,8 @@ import platform
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
-from collections.abc import Mapping, Sequence
-from typing import Any
+from collections.abc import Callable, Mapping, Sequence
+from typing import Any, TypeVar
 
 from jev_mcp import daemon_provider, engine_profiles, router_config, security
 from jev_mcp.email_triage.core import load_mail_config
@@ -28,6 +28,9 @@ HEALTH_TIMEOUT_SECONDS = 2
 # llama-server answers 503 on /health and /props while a model loads.
 LOADING_HTTP_STATUS = 503
 PROBE_TIMEOUT_SECONDS = 10
+# A probe that times out is attempted this many more times (a model paged in from
+# swap, or an engine busy with other requests, can miss one window); other failures are not.
+PROBE_TIMEOUT_RETRIES = 1
 # The probe's reply must put at least this much probability on its two targets.
 PROBE_MIN_TARGET_MASS = 0.9
 PROBE_TARGETS = ("true", "false")
@@ -84,16 +87,50 @@ FAST_PROBE_QUESTION = "Does water boil at 100 degrees Celsius at sea level?"
 FAST_PROBE_SUM_TOLERANCE = 0.05
 
 
+_T = TypeVar("_T")
+
+
+def _is_timeout(error: BaseException | None) -> bool:
+    if isinstance(error, urllib.error.URLError):
+        error = error.reason if isinstance(error.reason, BaseException) else error
+    return isinstance(error, TimeoutError)
+
+
+def _retry_on_timeout(attempt: Callable[[], _T]) -> _T:
+    """Run attempt, retrying PROBE_TIMEOUT_RETRIES times if it raises a timeout; any
+    other error, and a timeout on the last attempt, propagate."""
+    for _ in range(PROBE_TIMEOUT_RETRIES):
+        try:
+            return attempt()
+        except Exception as e:
+            if not _is_timeout(e):
+                raise
+    return attempt()
+
+
 def _probe_fast(port: int) -> dict[str, Any]:
     """Score one NoulQuestion through KevProvider, the way the server scores the fast tier.
 
     Passes when an answer comes back whose probabilities sum to about 1. Never raises."""
     provider = KevProvider(base_url=f"http://127.0.0.1:{port}/v1/systemone")
-    try:
+
+    def score() -> dict[str, Any]:
         answers = provider.evaluate_batch(
             FAST_PROBE_STATE,
             [NoulQuestion(key=FAST_PROBE_KEY, prompt=FAST_PROBE_QUESTION)],
         )
+        # KevProvider swallows its transport errors; surface a timeout so it is retried.
+        if not answers and _is_timeout(provider.last_error):
+            raise provider.last_error  # type: ignore[misc]
+        return answers
+
+    try:
+        try:
+            answers = _retry_on_timeout(score)
+        except Exception as e:
+            if not _is_timeout(e):
+                raise
+            answers = {}  # a second timeout reads as "no answer", as before
         probabilities = answers.get(FAST_PROBE_KEY, {}).get("probabilities")
         total = sum(probabilities.values()) if probabilities else None
     except Exception as e:
@@ -134,10 +171,12 @@ def _probe(port: int) -> dict[str, Any]:
         "temperature": 0.0,
     }
     try:
-        res = post_json(
-            f"http://127.0.0.1:{port}/v1/chat/completions",
-            payload,
-            timeout=PROBE_TIMEOUT_SECONDS,
+        res = _retry_on_timeout(
+            lambda: post_json(
+                f"http://127.0.0.1:{port}/v1/chat/completions",
+                payload,
+                timeout=PROBE_TIMEOUT_SECONDS,
+            )
         )
         first = res["choices"][0]["logprobs"]["content"][0]
         token = str(first.get("token", "")).strip().lower()
