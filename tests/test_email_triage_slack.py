@@ -101,3 +101,37 @@ def test_the_reason_texts_are_the_agreed_copy():
         "low_bucket_confidence": "The model was not sure which label fits.",
         "confident_bucket": "Nothing is asked of you and the label is clear.",
     }
+
+
+DEGRADED = {
+    "degraded": True,
+    "escalation_failed": ["bucket"],
+    "reason": "requires_action",
+}
+
+
+@pytest.mark.parametrize("builder", [build_hitl_message, build_escalation_message])
+def test_degraded_card_says_the_result_is_unconfirmed(builder):
+    payload = builder(EMAIL, DEGRADED)
+
+    text = json.dumps(payload)
+    assert "Unconfirmed" in text
+    assert "smart engine failed" in text
+
+
+@pytest.mark.parametrize("builder", [build_hitl_message, build_escalation_message])
+def test_degraded_card_only_adds_the_notice(builder):
+    plain = builder(EMAIL, {"reason": "requires_action"})
+    degraded = builder(EMAIL, DEGRADED)
+
+    extra = [block for block in degraded["blocks"] if block not in plain["blocks"]]
+    assert len(extra) == 1
+    assert len(degraded["blocks"]) == len(plain["blocks"]) + 1
+    assert [b for b in degraded["blocks"] if b is not extra[0]] == plain["blocks"]
+
+
+@pytest.mark.parametrize("builder", [build_hitl_message, build_escalation_message])
+def test_clean_card_has_no_notice(builder):
+    assert "Unconfirmed" not in json.dumps(
+        builder(EMAIL, {"reason": "requires_action"})
+    )

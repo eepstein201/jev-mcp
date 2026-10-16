@@ -25,6 +25,23 @@ def _why_blocks(decision_data: dict) -> list[dict]:
     ]
 
 
+DEGRADED_NOTICE = (
+    ":warning: *Unconfirmed:* the smart engine failed, so this routing rests on "
+    "the fast engine's low-confidence answer. Please check it yourself."
+)
+
+
+def _degraded_blocks(decision_data: dict) -> list[dict]:
+    if not decision_data.get("degraded"):
+        return []
+    return [
+        {
+            "type": "context",
+            "elements": [{"type": "mrkdwn", "text": DEGRADED_NOTICE}],
+        }
+    ]
+
+
 def build_hitl_message(email_data: dict, decision_data: dict) -> dict:
     """Builds an interactive Slack Block Kit message for Human-in-the-Loop review."""
     subject = _escape(email_data.get("subject", "No Subject"))
@@ -39,6 +56,7 @@ def build_hitl_message(email_data: dict, decision_data: dict) -> dict:
                     "text": f"*Review Required:* {subject}\nFrom: {sender}",
                 },
             },
+            *_degraded_blocks(decision_data),
             *_why_blocks(decision_data),
             {
                 "type": "actions",
@@ -79,6 +97,7 @@ def build_escalation_message(email_data: dict, decision_data: dict) -> dict:
                 "type": "section",
                 "text": {"type": "mrkdwn", "text": f"*{subject}*\nFrom: {sender}"},
             },
+            *_degraded_blocks(decision_data),
             *_why_blocks(decision_data),
         ]
     }
