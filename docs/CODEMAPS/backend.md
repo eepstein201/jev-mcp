@@ -20,7 +20,7 @@ jev_determine_best_model       → tools/router.py
 jev_agent_handoff              → tools/router.py
 jev_train_lora                 → tools/training.py (engine mlx|llama.cpp, fuse, target_gguf_path, action train|restore; steps in lora_training.py; ensure_converter syncs ~/.jev/llama.cpp-src to the llama-server commit)
 jev_read_file                  → tools/files.py (path-secured, chunked)
-jev_compact_context            → tools/files.py (confidence_threshold default 0.3)
+jev_compact_context            → tools/files.py (confidence_threshold default 0.2)
 jev_scan_repo                  → tools/files.py
 jev_run_browser_agent          → tools/browser.py → browser_agent.run_browser_agent (jev-ultrafast Agent loop; choose → ultrafast_adapter.local_choose, field text → smart daemon; http/https only, max_steps)
 jev_triage_email [tool_triage_email_content] / jev_configure_triage_labels [tool_configure_triage_labels] / jev_setup_gas_workflow [tool_setup_gas_workflow] → tools/triage.py → email_triage/*

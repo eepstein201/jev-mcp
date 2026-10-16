@@ -468,7 +468,7 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
 *   **Arguments:**
     *   `state` *(object)*: The massive JSON state or text to compress.
     *   `goal` *(string)*: The user's current goal or the objective the context is needed for.
-    *   `confidence_threshold` *(float, default: 0.3)*: The relevance score a chunk needs to be kept. On a 24-pair labelled check the fast engine scored relevant chunks 0.32–0.90 and irrelevant ones 0.04–0.35, so 0.3 kept every relevant chunk while values above about 0.4 started discarding them.
+    *   `confidence_threshold` *(float, default: 0.2)*: The relevance score a chunk needs to be kept. The fast engine often scores relevant chunks low; on a 36-row labelled set (319 chunks) 0.2 kept about 95% of the relevant chunks while dropping about a third of all chunks, and the earlier default 0.3 kept only 77%. Raise it to compress harder at the cost of dropping relevant context. See [docs/compaction-threshold.md](docs/compaction-threshold.md).
 *   **Output:** besides `compacted_state`, the result includes `chunk_scores` (one score per chunk, `null` when scoring failed and the chunk was kept), so you can see what was close to the threshold. Dict states are scored one top-level key at a time.
 
 
