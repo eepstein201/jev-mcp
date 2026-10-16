@@ -629,14 +629,13 @@ case "$COMMAND" in
             pip install -e ".[engines]"
             
 
-            SELECTED_MODEL=$(resolve_model "$TARGET_MODEL_ALIAS")
-            manage_daemon stop
-            setup_launchd_plist "$SELECTED_MODEL" "$JEV_FAST_PORT" "$PLIST_PATH" "$LOG_FILE"
-            manage_daemon start "$PLIST_PATH"
-            
+            # Same flow as `make start`: restart the fast and smart agents on the active profile
+            # (the default one without a marker). The legacy single daemon would fight the fast agent for its port.
+            start_profile
+
             link_mcp_configs
-            
-            log_success "Environment updated and daemon restarted with $TARGET_MODEL_ALIAS."
+
+            log_success "Environment updated and both daemons restarted on profile $RESOLVED_PROFILE."
         else
             log_error "No .venv found. Run 'install' first."
             exit 1

@@ -9,7 +9,7 @@ Jev MCP is a local tool: an MCP stdio server plus two `llama-server` daemons man
 | Fast engine (the profile's fast model; `default`: Kev 0.8B) | launchd `com.jev.mlx_server_fast`, port `JEV_FAST_PORT` (8080) |
 | Smart engine (the profile's smart model; `default`: Qwen 7B) | launchd `com.jev.mlx_server_smart`, port `JEV_SMART_PORT` (8081) |
 | Plists | `~/Library/LaunchAgents/com.jev.mlx_server_{fast,smart}.plist` |
-| Legacy single-daemon agent | launchd `com.jev.mlx_server` (`install`/`update` only); `hybrid` stops it and deletes its plist |
+| Legacy single-daemon agent | launchd `com.jev.mlx_server` (`install` only); `hybrid` stops it and deletes its plist |
 | Daemon logs | `~/.jev/mlx_server_fast.log`, `~/.jev/mlx_server_smart.log` |
 | MCP server log | `~/.jev/jev.log` |
 | Router config | `~/.jev/router_config.json` |
@@ -25,8 +25,7 @@ make start [PROFILE=name]   # (re)start both daemons on a profile; downloads mis
                             # (SHA-256 verified), then activates: writes ~/.jev/active_profile
                             # only once both daemons serve the profile's models
 make stop                   # stop both daemons, keep the install
-make update                 # re-pull code, update packages, restart the legacy single-model
-                            # daemon; run make start afterwards to bring the profile pair back
+make update                 # re-pull code, update packages, restart both daemons on the active profile; downloads missing model files
 make clean                  # uninstall: unload daemons, remove plists, the venv and ALL of ~/.jev
 ```
 

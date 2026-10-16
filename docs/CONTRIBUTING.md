@@ -21,7 +21,7 @@ Copy `.env.example` to `.env` if you need non-default ports, to start eval-only 
 | Command | Description |
 |---------|-------------|
 | `make install` | `jev_mac_manager.sh install`, then `hybrid` (the engine-profile flow for `default`: verified model downloads, both daemons, activate) |
-| `make update` | `jev_mac_manager.sh update` (legacy single-model restart; run `make start` afterwards) |
+| `make update` | `jev_mac_manager.sh update` (re-pull, reinstall, then restart both daemons on the active profile, as `make start` does) |
 | `make start [PROFILE=x]` / `make hybrid [x]` | `jev_mac_manager.sh hybrid [x]`: resolve the profile in `engine_profiles.toml`, download missing models (SHA-256 verified), rewrite both plists, restart both daemons, activate |
 | `make stop` | `jev_mac_manager.sh stop` |
 | `make clean` | `jev_mac_manager.sh uninstall --headless` |
