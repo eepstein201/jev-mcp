@@ -2,13 +2,13 @@
 
 import json
 import os
-from typing import Any, Dict, List, Optional
+from typing import Annotated, Any, Dict, List, Optional
 
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from jev_mcp import app
-from jev_mcp.compaction import GENERIC_QUESTION, chunk_state, score_chunk
+from jev_mcp.compaction import chunk_state, plan_scoring, score_chunk
 from jev_mcp.app import json_errors, logger, mcp
 from jev_mcp.provider import (
     EngineUnavailableError,
@@ -196,8 +196,14 @@ def jev_compact_context(
     ),
     confidence_threshold: float = Field(
         default=0.3,
-        description="The relevance score (0-1) a chunk needs to be kept. The fast engine scores relevant chunks roughly 0.3-0.9 and irrelevant ones below 0.35, so values above about 0.4 discard relevant context.",
+        description="The relevance score (0-1) a chunk needs to be kept. The fast engine scores relevant chunks roughly 0.3-0.9 and irrelevant ones below 0.35, so values above about 0.4 discard relevant context. With goal_aware, the default is replaced by the goal type's own threshold.",
     ),
+    goal_aware: Annotated[
+        bool,
+        Field(
+            description="Experimental. Classify the goal (open items, find a fact, continue work) and score chunks with a question and threshold tuned for that type; any other goal keeps the generic question. Off by default."
+        ),
+    ] = False,
 ) -> str:
     import json
 
@@ -211,7 +217,9 @@ def jev_compact_context(
     total_chunks = len(chunks)
     dropped_chunks = 0
     chunk_scores: List[Optional[float]] = []
-    prompt = GENERIC_QUESTION.format(goal=goal)
+    prompt, confidence_threshold, goal_type = plan_scoring(
+        app.provider, goal, confidence_threshold, goal_aware
+    )
 
     # We will evaluate these in batches if needed, but for now sequentially
     # to avoid context overflow on the provider.
@@ -245,6 +253,7 @@ def jev_compact_context(
     if was_truncated:
         status_msg += " (TRUNCATED TO PROTECT CONTEXT WINDOW)"
 
+    goal_fields = {"goal_type": goal_type} if goal_type is not None else {}
     return json.dumps(
         {
             "status": status_msg,
@@ -253,6 +262,7 @@ def jev_compact_context(
             "dropped_chunks": dropped_chunks,
             "compression_ratio": f"{compression_ratio:.1f}%",
             "chunk_scores": chunk_scores,
+            **goal_fields,
             "compacted_state": safe_text,
         },
         indent=2,

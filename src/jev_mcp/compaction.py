@@ -13,6 +13,8 @@ CHUNK_MAX_CHARS = 2000
 
 GENERIC_QUESTION = "Is the information in this text snippet directly relevant to achieving the goal: '{goal}'?"
 
+DEFAULT_CONFIDENCE_THRESHOLD = 0.3
+
 GOAL_TYPES = ("open_items", "find_fact", "continue_work")
 OTHER_GOAL = "other"
 
@@ -96,3 +98,21 @@ def classify_goal(provider: Any, goal: str) -> str:
     except Exception:
         return OTHER_GOAL
     return choice if choice in GOAL_TYPES else OTHER_GOAL
+
+
+def plan_scoring(
+    provider: Any, goal: str, threshold: float, goal_aware: bool
+) -> tuple[str, float, str | None]:
+    """The question, keep threshold and goal type (None when goal-blind) to score with.
+
+    Goal-aware scoring swaps in the type's question and default threshold; a caller threshold
+    other than the default always wins, and an unclassified goal keeps the generic question.
+    """
+    if not goal_aware:
+        return GENERIC_QUESTION.format(goal=goal), threshold, None
+    goal_type = classify_goal(provider, goal)
+    if goal_type == OTHER_GOAL:
+        return GENERIC_QUESTION.format(goal=goal), threshold, goal_type
+    if threshold == DEFAULT_CONFIDENCE_THRESHOLD:
+        threshold = TYPED_THRESHOLDS[goal_type]
+    return TYPED_QUESTIONS[goal_type].format(goal=goal), threshold, goal_type

@@ -214,3 +214,61 @@ def test_read_file_reads_a_file_exactly_at_the_size_cap(tmp_path, monkeypatch):
     res = json.loads(server.jev_read_file(str(f), "any task", filter_by_chunk=False))
 
     assert "limit" not in res.get("message", "")
+
+
+def _goal_aware_provider(goal_type, noul):
+    """A fast tier that classifies the goal as `goal_type` and scores every chunk `noul`."""
+    provider = MagicMock()
+    prompts = []
+
+    def evaluate(state, questions):
+        q = questions[0]
+        if q.key == "goal_type":
+            return {q.key: {"choice": goal_type}}
+        prompts.append(q.prompt)
+        return {q.key: {"noul": noul}}
+
+    provider.fast_provider.evaluate_batch.side_effect = evaluate
+    return provider, prompts
+
+
+def _compact(**kwargs):
+    return json.loads(
+        server.jev_compact_context(
+            state={"a": "alpha", "b": "beta"}, goal="g", **kwargs
+        )
+    )
+
+
+def test_compact_is_goal_blind_by_default():
+    provider, prompts = _goal_aware_provider("open_items", 0.31)
+    with patch("jev_mcp.app.provider", provider):
+        res = _compact(confidence_threshold=0.3, goal_aware=False)
+    assert "goal_type" not in res
+    assert all("directly relevant" in p for p in prompts)
+
+
+def test_goal_aware_uses_the_typed_question_and_threshold():
+    provider, prompts = _goal_aware_provider("open_items", 0.36)
+    with patch("jev_mcp.app.provider", provider):
+        # 0.36 passes open_items' own threshold (0.35), which replaces the default 0.3.
+        res = _compact(confidence_threshold=0.3, goal_aware=True)
+    assert res["goal_type"] == "open_items"
+    assert res["kept_chunks"] == 2
+    assert all("unresolved" in p for p in prompts)
+
+
+def test_goal_aware_honours_an_explicit_threshold():
+    provider, _ = _goal_aware_provider("open_items", 0.36)
+    with patch("jev_mcp.app.provider", provider):
+        res = _compact(confidence_threshold=0.5, goal_aware=True)
+    assert res["kept_chunks"] == 0
+
+
+def test_goal_aware_falls_back_to_the_generic_question_for_other_goals():
+    provider, prompts = _goal_aware_provider("other", 0.31)
+    with patch("jev_mcp.app.provider", provider):
+        res = _compact(confidence_threshold=0.3, goal_aware=True)
+    assert res["goal_type"] == "other"
+    assert res["kept_chunks"] == 2
+    assert all("directly relevant" in p for p in prompts)
