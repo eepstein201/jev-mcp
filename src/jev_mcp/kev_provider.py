@@ -36,6 +36,8 @@ class KevProvider(JevProvider):
         self.current_model_id = UNKNOWN_MODEL
         self._served = ServedModelTracker(clock)
         self._last_reply_model: str | None = None
+        # The transport error that ended the last evaluate_batch, else None.
+        self.last_error: Exception | None = None
 
     def check_token_limit(self, state: Any) -> int:
         state_str = json.dumps(state) if not isinstance(state, str) else state
@@ -111,6 +113,7 @@ class KevProvider(JevProvider):
     def evaluate_batch(
         self, state: Any, questions: List[QuestionType]
     ) -> Dict[str, Dict[str, Any]]:
+        self.last_error = None
         self._follow_served_model()
         state_str = json.dumps(state) if not isinstance(state, str) else state
         state_str = sanitize_payload(state_str)
@@ -129,6 +132,7 @@ class KevProvider(JevProvider):
             res = post_json(self.base_url, payload, timeout=30)
 
         except Exception as e:
+            self.last_error = e
             logger.error(
                 f"Kev API call failed: {e}\nPLEASE ENSURE THE KEV DAEMON IS RUNNING! Run: ./jev_mac_manager.sh hybrid"
             )

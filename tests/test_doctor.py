@@ -503,3 +503,67 @@ def test_a_profile_error_is_a_problem_and_exit_one(daemons, monkeypatch, capsys)
     assert any("cannot be read" in p and "x!" in p for p in problems(report))
     assert main([]) == 1
     assert "profile error" in capsys.readouterr().out
+
+
+# --- a probe that times out is attempted once more -----------------------------------
+
+
+def _timeout_then(good_urlopen, failure, fail_times=1):
+    """A urlopen whose first `fail_times` probe POSTs to each engine raise `failure`;
+    /health and /props always answer. Returns (urlopen, every probe POST url)."""
+    posts = []
+
+    def _urlopen(request, timeout=None):
+        url = request.full_url
+        if request.data is not None and not url.endswith("/props"):
+            posts.append(url)
+            if posts.count(url) <= fail_times:
+                raise failure
+        return good_urlopen(request, timeout=timeout)
+
+    return _urlopen, posts
+
+
+@pytest.fixture
+def probe_urlopen(urlopen_ok):
+    """The healthy urlopen from the urlopen_ok fixture, to wrap with failures."""
+    import urllib.request as ur
+
+    return ur.urlopen
+
+
+def _probe_problems(urlopen):
+    with patch("urllib.request.urlopen", side_effect=urlopen):
+        return [p for p in problems(collect_report(env=os.environ)) if "probe" in p]
+
+
+TIMEOUTS = [TimeoutError("timed out"), urllib.error.URLError(TimeoutError("timed out"))]
+
+
+@pytest.mark.parametrize("failure", TIMEOUTS)
+def test_a_single_probe_timeout_is_retried_and_is_no_problem(probe_urlopen, failure):
+    urlopen, posts = _timeout_then(probe_urlopen, failure, fail_times=1)
+
+    assert _probe_problems(urlopen) == []
+    assert len(posts) == 4  # a failed and a good attempt per engine
+
+
+def test_two_probe_timeouts_are_reported_like_before(probe_urlopen):
+    urlopen, posts = _timeout_then(probe_urlopen, TimeoutError("timed out"), 99)
+
+    found = _probe_problems(urlopen)
+
+    assert any("smart engine" in p and "TimeoutError: timed out" in p for p in found)
+    assert any("fast engine" in p and "returned no answer" in p for p in found)
+    assert len(posts) == 4  # two attempts per engine
+
+
+def test_connection_refused_is_reported_after_one_attempt(probe_urlopen):
+    urlopen, posts = _timeout_then(
+        probe_urlopen, urllib.error.URLError("connection refused"), 99
+    )
+
+    found = _probe_problems(urlopen)
+
+    assert len(found) == 2
+    assert len(posts) == 2  # one attempt per engine
