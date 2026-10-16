@@ -34,18 +34,18 @@ THRESHOLDS = tuple(round(0.10 + 0.05 * step, 2) for step in range(13))
 MIN_RECALL = 0.95
 DEFAULT_THRESHOLD = 0.3
 
-# Two candidate wordings per goal type; the shipped one lives in jev_mcp.compaction.
+# Two candidate wordings per goal type; the one shipped in jev_mcp.compaction was picked on tune.
 CANDIDATES: Mapping[str, Mapping[str, str]] = {
     "open_items": {
-        "a": TYPED_QUESTIONS["open_items"],
+        "a": "Does this text describe something that is still unresolved, pending, blocked or not yet done (an open question, a remaining task or an unfinished item) relevant to: '{goal}'?",
         "b": "Is this snippet about work or questions that remain open and still need action, rather than something already finished or decided? Goal: '{goal}'",
     },
     "find_fact": {
-        "a": TYPED_QUESTIONS["find_fact"],
+        "a": "Does this text state a specific fact, value, name, number or decision that directly answers: '{goal}'?",
         "b": "Could the answer to '{goal}' be found in this snippet?",
     },
     "continue_work": {
-        "a": TYPED_QUESTIONS["continue_work"],
+        "a": "Would someone resuming the task '{goal}' need this text: its current state, decisions made, constraints or next steps?",
         "b": "Is this snippet about the same task as '{goal}' (its progress, files, decisions or next steps) rather than an unrelated topic?",
     },
 }

@@ -170,3 +170,8 @@ def test_main_prints_text_or_json(tmp_path, monkeypatch, capsys):
     assert "baseline" in capsys.readouterr().out
     assert ev.main(["--dataset", str(path), "--json"]) == 0
     assert "classifier" in json.loads(capsys.readouterr().out)
+
+
+def test_each_shipped_question_is_one_of_the_two_candidates():
+    for goal_type, shipped in TYPED_QUESTIONS.items():
+        assert shipped in ev.CANDIDATES[goal_type].values()

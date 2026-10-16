@@ -20,15 +20,15 @@ OTHER_GOAL = "other"
 # content a goal needs, never how a state key is named.
 TYPED_QUESTIONS = {
     "open_items": "Does this text describe something that is still unresolved, pending, blocked or not yet done (an open question, a remaining task or an unfinished item) relevant to: '{goal}'?",
-    "find_fact": "Does this text state a specific fact, value, name, number or decision that directly answers: '{goal}'?",
+    "find_fact": "Could the answer to '{goal}' be found in this snippet?",
     "continue_work": "Would someone resuming the task '{goal}' need this text: its current state, decisions made, constraints or next steps?",
 }
 
 # Per-type keep thresholds, chosen on the tune split as the highest compression at recall >= 0.95.
 TYPED_THRESHOLDS = {
-    "open_items": 0.3,
-    "find_fact": 0.3,
-    "continue_work": 0.3,
+    "open_items": 0.35,
+    "find_fact": 0.15,
+    "continue_work": 0.4,
 }
 
 GOAL_TYPE_QUESTION = (
