@@ -34,6 +34,8 @@ MIN_TARGET_MASS = 0.05
 MAX_CHOICE_LABELS = 26
 # A model probe must answer faster than an inference would; anything slower is a dead daemon.
 PROPS_TIMEOUT_SECONDS = 5.0
+# A /props body larger than this is not a llama-server answer; it is never read whole.
+PROPS_MAX_BYTES = 1 << 20
 # How long a model id read from /props is trusted before the daemon is asked again.
 SERVED_MODEL_TTL_SECONDS = 30.0
 # How long a failed /props read (a daemon that is down, loading, or has no /props) is
@@ -122,7 +124,14 @@ def fetch_served_model_path(base_url: str) -> str | None:
             f"{parts.scheme}://{parts.netloc}/props", method="GET"
         )
         with urllib.request.urlopen(request, timeout=PROPS_TIMEOUT_SECONDS) as response:
-            props = json.loads(response.read().decode())
+            body = response.read(PROPS_MAX_BYTES + 1)
+        if len(body) > PROPS_MAX_BYTES:
+            logger.info(
+                f"Ignoring /props at {base_url}: response larger than "
+                f"{PROPS_MAX_BYTES} bytes"
+            )
+            return None
+        props = json.loads(body.decode())
         if not isinstance(props, dict):
             return None
         reported = props.get("model_path")

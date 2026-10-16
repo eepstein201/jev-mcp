@@ -211,8 +211,10 @@ with `PYTHONPATH="$PWD/src"` prepended. Tests use `JEV_PROFILES_PYTHON` as their
 point. `JEV_ALLOW_EVAL_ONLY=1` adds `--allow-eval-only` to `resolve`, `plist` and
 `activate`.
 
-**Legacy:** `install` and `update` keep their hard-coded Kev-0.8B/Qwen2.5-7B
-paths. `start <0.5b|7b>` exits 2 and points to `make start PROFILE=…`.
+**Legacy:** `install` keeps its hard-coded Kev-0.8B/Qwen2.5-7B single-daemon path
+(`make install` runs `hybrid` right after, so the dual-daemon setup wins). `update`
+restarts both daemons through the profile flow, on the active profile (default without a
+marker). `start <0.5b|7b>` exits 2 and points to `make start PROFILE=…`.
 
 ## 7. Cross-lane invariants (P1-c)
 

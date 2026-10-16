@@ -1004,6 +1004,79 @@ def test_hybrid_end_to_end_real_cli_and_fake_daemons(hybrid):
 # --- Makefile -----------------------------------------------------------------------------
 
 
+# --- update: restarts the same dual-daemon pair as hybrid, not the legacy single daemon -----
+
+
+def prepare_update(hybrid):
+    """A work dir with a stand-in .venv and pip, so `update` runs offline (no .git: no pull)."""
+    hybrid.have_models()
+    venv_bin = hybrid.work / ".venv" / "bin"
+    venv_bin.mkdir(parents=True)
+    (venv_bin / "activate").write_text("")
+    for name in ("python", "python3"):
+        stub = venv_bin / name
+        stub.write_text(f'#!/bin/bash\necho "venv-{name} $*" >> "{hybrid.log}"\n')
+        stub.chmod(0o755)
+    hybrid._shim("pip", f'#!/bin/bash\necho "pip $*" >> "{hybrid.log}"\n')
+
+
+def test_update_restarts_the_profile_pair_and_never_the_legacy_single_daemon(hybrid):
+    # Arrange: hybrid mode is live (no legacy plist), both agents run on 8080 and 8081
+    prepare_update(hybrid)
+    legacy = hybrid.agents / "com.jev.mlx_server.plist"
+    (hybrid.agents / "com.jev.mlx_server_fast.plist").write_text(
+        PLIST.format(port=8080)
+    )
+    (hybrid.agents / "com.jev.mlx_server_smart.plist").write_text(
+        PLIST.format(port=8081)
+    )
+
+    # Act
+    result = hybrid.run("update", "0.5b", "--headless")
+
+    # Assert: the legacy plist is not resurrected or loaded; both tier agents are restarted
+    assert result.returncode == 0, result.stderr
+    assert not legacy.exists()
+    bootstraps = [c for c in hybrid.calls() if c.startswith("launchctl bootstrap")]
+    assert [Path(c.rsplit(" ", 1)[1]).name for c in bootstraps] == [
+        "com.jev.mlx_server_fast.plist",
+        "com.jev.mlx_server_smart.plist",
+    ]
+    killed = [c for c in hybrid.calls() if c.startswith("pkill")]
+    assert any("--port 8080" in c for c in killed) and any(
+        "--port 8081" in c for c in killed
+    )
+
+
+def test_update_uses_the_active_profile_through_the_hybrid_flow(hybrid):
+    # Arrange
+    prepare_update(hybrid)
+
+    # Act
+    result = hybrid.run("update", "0.5b", "--headless")
+
+    # Assert: no profile name is forwarded, so the resolver picks the active one (else default)
+    assert result.returncode == 0, result.stderr
+    (resolve,) = hybrid.py("resolve")
+    assert "--config" in resolve["args"] and "lean" not in resolve["args"]
+    assert hybrid.py("activate")[0]["args"][:1] == ["lean"]
+    assert [c for c in hybrid.calls() if c.startswith("pip ")] == [
+        "pip install -e .[engines]"
+    ]
+
+
+def test_update_fails_when_the_profile_does_not_become_active(hybrid):
+    # Arrange
+    prepare_update(hybrid)
+
+    # Act
+    result = hybrid.run("update", "--headless", FAKE_ACTIVATE_RC="1")
+
+    # Assert
+    assert result.returncode == 1
+    assert "did not become active" in result.stderr + result.stdout
+
+
 @pytest.fixture
 def make_dir(tmp_path):
     if shutil.which("make") is None:

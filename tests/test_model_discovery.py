@@ -12,7 +12,12 @@ from types import SimpleNamespace
 import pytest
 
 from jev_mcp import app, router_config, server
-from jev_mcp.daemon_provider import UNKNOWN_MODEL, DaemonProvider
+from jev_mcp.daemon_provider import (
+    PROPS_MAX_BYTES,
+    UNKNOWN_MODEL,
+    DaemonProvider,
+    fetch_served_model_path,
+)
 from tests.evals.usage import seed_home
 from tests.fake_llama_server import FakeLlamaServer, load_recorded
 
@@ -95,6 +100,52 @@ def test_discover_model_returns_none_when_the_daemon_is_unreachable():
 
     assert provider.discover_model() is None
     assert provider.current_model_id == UNKNOWN_MODEL
+
+
+class _BoundedBody:
+    """A /props response whose read(n) honours n and records every requested size."""
+
+    def __init__(self, body: bytes):
+        self._body = body
+        self.read_sizes: list[int | None] = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc_info):
+        return False
+
+    def read(self, size: int | None = None) -> bytes:
+        self.read_sizes.append(size)
+        return self._body if size is None else self._body[:size]
+
+
+def _padded_props(model: str, total_size: int) -> bytes:
+    body = json.dumps({"model_path": model}).encode()
+    return body[:-1] + b" " * (total_size - len(body)) + b"}"
+
+
+def test_fetch_served_model_path_parses_a_small_props_body(monkeypatch):
+    response = _BoundedBody(json.dumps({"model_path": "/m/a.gguf"}).encode())
+    monkeypatch.setattr("urllib.request.urlopen", lambda *a, **k: response)
+
+    assert fetch_served_model_path("http://127.0.0.1:1/v1") == "/m/a.gguf"
+
+
+def test_fetch_served_model_path_parses_a_body_exactly_at_the_cap(monkeypatch):
+    response = _BoundedBody(_padded_props("/m/a.gguf", PROPS_MAX_BYTES))
+    monkeypatch.setattr("urllib.request.urlopen", lambda *a, **k: response)
+
+    assert fetch_served_model_path("http://127.0.0.1:1/v1") == "/m/a.gguf"
+    assert response.read_sizes == [PROPS_MAX_BYTES + 1]
+
+
+def test_fetch_served_model_path_refuses_a_body_over_the_cap(monkeypatch):
+    response = _BoundedBody(_padded_props("/m/a.gguf", PROPS_MAX_BYTES + 1))
+    monkeypatch.setattr("urllib.request.urlopen", lambda *a, **k: response)
+
+    assert fetch_served_model_path("http://127.0.0.1:1/v1") is None
+    assert response.read_sizes == [PROPS_MAX_BYTES + 1]  # the read itself is bounded
 
 
 # --- reported_smart_model probes once before giving up --------------------------------
