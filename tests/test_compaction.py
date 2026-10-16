@@ -7,6 +7,11 @@ import pytest
 from jev_mcp.compaction import (
     CHUNK_MAX_CHARS,
     GENERIC_QUESTION,
+    GOAL_TYPES,
+    OTHER_GOAL,
+    TYPED_QUESTIONS,
+    TYPED_THRESHOLDS,
+    classify_goal,
     chunk_state,
     score_chunk,
 )
@@ -61,3 +66,44 @@ def test_score_chunk_raises_when_no_engine_answered():
     provider.fast_provider.evaluate_batch.return_value = {}
     with pytest.raises(EngineUnavailableError):
         score_chunk(provider, 0, "t", "Q?")
+
+
+def _choice_provider(reply):
+    provider = MagicMock()
+    provider.fast_provider.evaluate_batch.return_value = reply
+    return provider
+
+
+@pytest.mark.parametrize("goal_type", GOAL_TYPES)
+def test_classify_goal_returns_the_engines_choice(goal_type):
+    provider = _choice_provider({"goal_type": {"choice": goal_type}})
+    assert classify_goal(provider, "some goal") == goal_type
+    question = provider.fast_provider.evaluate_batch.call_args[0][1][0]
+    assert (
+        question.options == [*GOAL_TYPES, OTHER_GOAL] and "some goal" in question.prompt
+    )
+
+
+def test_classify_goal_maps_unknown_choices_and_gaps_to_other():
+    assert (
+        classify_goal(_choice_provider({"goal_type": {"choice": "poetry"}}), "g")
+        == OTHER_GOAL
+    )
+    assert classify_goal(_choice_provider({}), "g") == OTHER_GOAL
+
+
+def test_classify_goal_maps_any_failure_to_other():
+    provider = MagicMock()
+    provider.fast_provider.evaluate_batch.side_effect = RuntimeError("down")
+    assert classify_goal(provider, "g") == OTHER_GOAL
+
+
+def test_every_goal_type_has_a_question_and_a_threshold():
+    for goal_type in GOAL_TYPES:
+        assert "{goal}" in TYPED_QUESTIONS[goal_type]
+        assert 0.0 < TYPED_THRESHOLDS[goal_type] < 1.0
+
+
+def test_typed_questions_never_mention_key_name_prefixes():
+    for text in TYPED_QUESTIONS.values():
+        assert "done_" not in text and "open_" not in text

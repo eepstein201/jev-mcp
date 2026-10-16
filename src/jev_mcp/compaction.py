@@ -7,11 +7,36 @@ evaluation harness can reuse the exact chunking the tool applies.
 import json
 from typing import Any, List
 
-from jev_mcp.provider import EngineUnavailableError, NoulQuestion
+from jev_mcp.provider import ChoiceQuestion, EngineUnavailableError, NoulQuestion
 
 CHUNK_MAX_CHARS = 2000
 
 GENERIC_QUESTION = "Is the information in this text snippet directly relevant to achieving the goal: '{goal}'?"
+
+GOAL_TYPES = ("open_items", "find_fact", "continue_work")
+OTHER_GOAL = "other"
+
+# Wordings are chosen on the tune split of tests/evals/compaction_goals.jsonl. They describe the
+# content a goal needs, never how a state key is named.
+TYPED_QUESTIONS = {
+    "open_items": "Does this text describe something that is still unresolved, pending, blocked or not yet done (an open question, a remaining task or an unfinished item) relevant to: '{goal}'?",
+    "find_fact": "Does this text state a specific fact, value, name, number or decision that directly answers: '{goal}'?",
+    "continue_work": "Would someone resuming the task '{goal}' need this text: its current state, decisions made, constraints or next steps?",
+}
+
+# Per-type keep thresholds, chosen on the tune split as the highest compression at recall >= 0.95.
+TYPED_THRESHOLDS = {
+    "open_items": 0.3,
+    "find_fact": 0.3,
+    "continue_work": 0.3,
+}
+
+GOAL_TYPE_QUESTION = (
+    "What kind of request is this goal? open_items: it asks what is still open, unresolved, "
+    "pending or remaining. find_fact: it asks for one specific fact, value or decision. "
+    "continue_work: it asks to resume, continue or pick up a task. other: none of these. "
+    "Goal: '{goal}'"
+)
 
 
 def chunk_state(state: Any) -> List[str]:
@@ -56,3 +81,18 @@ def score_chunk(provider: Any, index: int, chunk: str, prompt: str) -> float:
         # The fast engine reports an outage as an empty result, not an exception.
         raise EngineUnavailableError(f"No engine answered {q.key}")
     return res[q.key].get("noul", 0.0)
+
+
+def classify_goal(provider: Any, goal: str) -> str:
+    """One of GOAL_TYPES, or OTHER_GOAL when the engine fails or is unsure."""
+    q = ChoiceQuestion(
+        key="goal_type",
+        prompt=GOAL_TYPE_QUESTION.format(goal=goal),
+        options=[*GOAL_TYPES, OTHER_GOAL],
+    )
+    try:
+        target = getattr(provider, "fast_provider", provider)
+        choice = target.evaluate_batch({"text": goal}, [q]).get(q.key, {}).get("choice")
+    except Exception:
+        return OTHER_GOAL
+    return choice if choice in GOAL_TYPES else OTHER_GOAL
