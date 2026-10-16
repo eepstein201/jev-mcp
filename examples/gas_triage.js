@@ -1,6 +1,12 @@
 const JEV_MCP_WEBHOOK_URL = 'TEMPLATE';
 const CONTEXT_ID = 'default_mailbox'; // Change this if you have multiple mailboxes
 
+// When the smart engine fails, the webhook answers 503 (with Retry-After) for the first
+// attempts and the unconfirmed result with 200 on the last. Keep this equal to the server's
+// MAX_DEGRADED_ATTEMPTS; the script sends its attempt number in the X-Triage-Attempt header.
+const MAX_DEGRADED_ATTEMPTS = 3;
+const RETRY_PAUSE_MS = 5000;
+
 // The webhook key is read from Script Properties (Project Settings > Script Properties,
 // property JEV_MCP_API_KEY), so it is not part of this source or its version history.
 function getApiKey_() {
@@ -55,14 +61,24 @@ function processUnreadEmails() {
     
     // Add authentication header if the Script Property is set
     const apiKey = getApiKey_();
+    const headers = {};
     if (apiKey.length > 0) {
-      options.headers = {
-        'Authorization': `Bearer ${apiKey}`
-      };
+      headers['Authorization'] = `Bearer ${apiKey}`;
     }
     
     try {
-      const response = UrlFetchApp.fetch(JEV_MCP_WEBHOOK_URL, options);
+      let response;
+      for (let attempt = 1; attempt <= MAX_DEGRADED_ATTEMPTS; attempt++) {
+        headers['X-Triage-Attempt'] = String(attempt);
+        options.headers = headers;
+        response = UrlFetchApp.fetch(JEV_MCP_WEBHOOK_URL, options);
+        // 503 is a degraded triage (or a stopped engine) worth retrying after a pause.
+        if (response.getResponseCode() !== 503 || attempt === MAX_DEGRADED_ATTEMPTS) {
+          break;
+        }
+        Logger.log(`Attempt ${attempt} answered 503; retrying.`);
+        Utilities.sleep(RETRY_PAUSE_MS);
+      }
       const responseCode = response.getResponseCode();
       const responseBody = response.getContentText();
       

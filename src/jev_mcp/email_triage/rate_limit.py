@@ -60,6 +60,16 @@ class SlidingWindowLimiter:
                 del self._allowed[next(iter(self._allowed))]
             return None
 
+    def refund(self, key: str) -> None:
+        """Gives back the newest count of `key`, for a request answered only to be retried."""
+        with self._lock:
+            times = self._allowed.get(key)
+            if times is None:
+                return
+            times.pop()
+            if not times:
+                del self._allowed[key]
+
     def tracked_keys(self) -> int:
         with self._lock:
             return len(self._allowed)

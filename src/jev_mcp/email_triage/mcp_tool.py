@@ -43,6 +43,21 @@ from jev_mcp.email_triage.core import (
 )
 
 
+def fail_toward_attention(decision: dict) -> dict:
+    """A decision from unconfirmed answers may only move up in attention.
+
+    Escalations and reviews stay; a silent archive becomes a review, since the
+    smart engine never confirmed the fast engine's low-confidence answer.
+    """
+    if decision["suggested_routing"] != "archive_and_label":
+        return decision
+    return {
+        "decision": "Review",
+        "suggested_routing": "hitl_slack_block",
+        "reason": "escalation_failed_unconfirmed",
+    }
+
+
 def evaluate_email_with_mlx(
     subject: str, sender: str, body: str, labels: list[str]
 ) -> dict:
@@ -99,6 +114,10 @@ def evaluate_email_with_mlx(
         config=load_mail_config(),
     )
 
+    failed = escalation_failures(results)
+    if failed:
+        decision = fail_toward_attention(decision)
+
     return mark_degraded(
         {
             "decision": decision["decision"],
@@ -109,7 +128,7 @@ def evaluate_email_with_mlx(
             "bucket": bucket,
             "bucket_confidence": bucket_confidence,
         },
-        escalation_failures(results),
+        failed,
     )
 
 
