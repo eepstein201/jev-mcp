@@ -25,7 +25,7 @@ make start [PROFILE=name]   # (re)start both daemons on a profile; downloads mis
                             # (SHA-256 verified), then activates: writes ~/.jev/active_profile
                             # only once both daemons serve the profile's models
 make stop                   # stop both daemons, keep the install
-make update                 # re-pull code, update packages, restart both daemons on the active profile
+make update                 # re-pull code, update packages, restart both daemons on the active profile; downloads missing model files
 make clean                  # uninstall: unload daemons, remove plists, the venv and ALL of ~/.jev
 ```
 
