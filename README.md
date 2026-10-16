@@ -173,10 +173,10 @@ The flow: resolve the profile (`python -m jev_mcp.engine_profiles resolve`), dow
 
 **To update your codebase and restart the daemon:**
 ```bash
-# Pulls latest code, reinstalls dependencies, and restarts the legacy single-model daemon
+# Pulls latest code, reinstalls dependencies, and restarts both daemons on the active profile
 make update
 ```
-`make update` keeps the legacy hard-coded paths, so run `make start` afterwards to bring the profile pair back.
+`make update` restarts through the same flow as `make start` (the active profile, `default` without a marker); it does not take a model alias.
 
 **To uninstall Jev MCP cleanly:**
 ```bash
@@ -779,7 +779,7 @@ Jev MCP provides multiple layers of command-line tools for users, advanced devel
 The easiest way to interact with Jev MCP locally. It wraps the core bash script.
 *   **`make install`**: Installs the environment (`install`), then runs the engine-profile flow for the `default` profile (`hybrid`): verified model downloads and both daemons.
 *   **`make start [PROFILE=x]`** / **`make hybrid [x]`**: Both run `jev_mac_manager.sh hybrid [x]` — the profile flow described under Installation: resolve the profile in `engine_profiles.toml`, download any missing model (SHA-256 verified), rewrite both launchd plists, restart both daemons, then activate the profile and write `~/.jev/active_profile`. Without `PROFILE`, the active marker's profile is used (`default` when there is none). A bad profile name exits `2`; a failed activation exits non-zero.
-*   **`make update`**: Re-pulls code, updates packages, and restarts the legacy single-model daemon; run `make start` afterwards to bring the profile pair back.
+*   **`make update`**: Re-pulls code, updates packages, and restarts both daemons on the active profile (the `make start` flow).
 *   **`make stop`**: Gracefully halts the background daemons without destroying your installation.
 *   **`make clean`**: Completely uninstalls artifacts and tears down the daemons (`uninstall --headless`).
 *   **`make format`**: Runs `ruff format src tests` inside `.venv`.
@@ -798,7 +798,7 @@ The easiest way to interact with Jev MCP locally. It wraps the core bash script.
 
 ### 2. The Core Engine Manager (`jev_mac_manager.sh`)
 The underlying bash script that handles hardware memory, virtual environments, and macOS `launchd` plist generation.
-*   **Commands:** `install [0.5b|7b]`, `hybrid [profile]`, `update`, `stop`, `uninstall`. `hybrid` runs the engine-profile flow for `[profile]` (the active profile when omitted). `install` and `update` keep the legacy hard-coded Kev-0.8B/Qwen2.5-7B download paths; `start` no longer takes a model alias — it exits `2` and points at `make start PROFILE=<name>`.
+*   **Commands:** `install [0.5b|7b]`, `hybrid [profile]`, `update`, `stop`, `uninstall`. `hybrid` runs the engine-profile flow for `[profile]` (the active profile when omitted), and so does `update`. `install` keeps the legacy hard-coded Kev-0.8B/Qwen2.5-7B download paths; `start` no longer takes a model alias — it exits `2` and points at `make start PROFILE=<name>`.
 *   **Flags:** 
     *   `--headless` (or `-h`): Automatically bypasses interactive `[y/N]` safety prompts. Essential for CI/CD pipelines, automated scripts, or LLM agents executing destructive commands (e.g., `./jev_mac_manager.sh uninstall --headless`).
 *   **The profiles CLI** (what `hybrid` runs; full contract in `docs/superpowers/specs/2026-10-14-engine-profiles-cli-contract.md`): `PYTHONPATH=src .venv/bin/python -m jev_mcp.engine_profiles <subcommand>`, where every subcommand takes `--config PATH` and `--models-dir PATH` (the manager always passes both):
@@ -857,7 +857,7 @@ llama-server -m <model> --host 127.0.0.1 --port <port> --alias <model name>
 ```
 `<n>` is the model's `parallel` (4 for fast models, 2 for smart ones) and the context is 16K tokens per slot; `--reasoning` appears only when the model's `reasoning` is not `auto`; `--log-verbosity 3` puts the model, KV and compute-buffer lines in the startup log. `JEV_BATCH_SIZE` is not used on this path.
 
-**Legacy single-daemon starts** (`install` / `update`) still write the plist in the manager itself, picking the launcher from the model path:
+**Legacy single-daemon starts** (`install`) still write the plist in the manager itself, picking the launcher from the model path:
 *   **`.gguf` models** (the default Kev and Qwen files): `llama-server -m <model> --port <port> --parallel <n> -c <n × 16384>`. `<n>` is `JEV_BATCH_SIZE` if set; otherwise it is chosen from RAM (≥64 GB: 16, ≥32 GB: 8, ≥16 GB: 4, less: 2) and halved for 7B models (minimum 1). The context is 16K tokens per parallel slot.
 *   **Paths containing `kev` that are not `.gguf`**: `python -m kev.serve --run <model> --port <port>`. This needs the `kev` extra (`pip install -e ".[kev]"`), which caps `torch<2.9` and so must live in its own environment, not the one with `engines`. The default GGUF setup does not use it.
 *   **Anything else**: `python -m mlx_lm.server --model <model> --port <port> --prompt-cache-size 20 --prompt-cache-bytes 12G --prefill-step-size 2048 --log-level WARNING`. The prompt-cache and prefill flags apply only to this MLX path, not to `llama-server`.
@@ -871,7 +871,7 @@ Ports come from `JEV_FAST_PORT` (default `8080`) and `JEV_SMART_PORT` (default `
 | `JEV_SMART_PORT` | `8081` | manager, `routing_provider.py`, `server.py` | Port of the smart engine (the active profile's smart model). |
 | `JEV_FAST_ENGINE` | `kev` | `routing_provider.py` | `kev` uses `KevProvider` (`/v1/systemone`) for the fast tier; any other value uses `DaemonProvider` (`/v1/chat/completions`) on the fast port. |
 | `JEV_DAEMON_PORT` | unset | `daemon_provider.py` | Optional override for a `DaemonProvider` built without an explicit URL; when unset it follows `JEV_SMART_PORT`. The router always passes explicit URLs built from `JEV_FAST_PORT` / `JEV_SMART_PORT`. |
-| `JEV_BATCH_SIZE` | RAM-based | manager | Number of `llama-server` parallel slots for the legacy single-daemon `install`/`update` plists. Profile starts (`make start`) take `parallel` from `engine_profiles.toml` instead. |
+| `JEV_BATCH_SIZE` | RAM-based | manager | Number of `llama-server` parallel slots for the legacy single-daemon `install` plist. Profile starts (`make start`) take `parallel` from `engine_profiles.toml` instead. |
 | `JEV_PROFILES_PYTHON` | `<repo>/.venv/bin/python` | manager | Python used to run `python -m jev_mcp.engine_profiles` during `make start`. The manager tests use it as their stand-in shim point. |
 | `JEV_ALLOW_EVAL_ONLY` | unset | manager | Set to `1` to pass `--allow-eval-only` to the profile resolver, plist and activate steps, so eval-only profiles (`accuracy`, `probe-*`) can be started. |
 | `JEV_MCP_API_KEY` | none | `email_triage/auth.py` | Bearer token accepted by the email-triage webhook. |
