@@ -137,3 +137,147 @@ def test_json_output_has_the_agreement_and_every_row(tmp_path, monkeypatch, caps
     payload = json.loads(capsys.readouterr().out)
     assert payload["agreement"] == {"runs": 1, "passes": 0, "rate": 0.0}
     assert payload["rows"][0]["got"] == "escalate_to_slack"
+
+
+def _binary_rows():
+    return [
+        {**ROW, "subject": "pay now", "label": "act"},
+        {**ROW, "subject": "invoice", "label": "act"},
+        {**ROW, "subject": "newsletter", "label": "skip"},
+        {**ROW, "subject": "promo", "label": "skip"},
+    ]
+
+
+def _fake_by_subject(scores: dict[str, tuple[float, str]]):
+    def evaluate(subject, sender, body, labels):
+        score, routing = scores[subject]
+        return {
+            "suggested_routing": routing,
+            "requires_action_score": score,
+            "is_important_score": 0.1,
+        }
+
+    return evaluate
+
+
+BINARY_SCORES = {
+    "pay now": (0.9, "escalate_to_slack"),
+    "invoice": (0.4, "archive_and_label"),
+    "newsletter": (0.6, "escalate_to_slack"),
+    "promo": (0.1, "archive_and_label"),
+}
+
+
+def test_binary_summary_reports_ranking_and_best_threshold():
+    labels = [True, True, False, False]
+    scores = [0.9, 0.4, 0.6, 0.1]
+    routed = [True, False, True, False]
+
+    summary = triage_eval.binary_summary(labels, scores, routed)
+
+    assert summary["n"] == 4
+    assert summary["positives"] == 2
+    assert summary["auc"] == pytest.approx(0.75)
+    assert summary["average_precision"] == pytest.approx(5 / 6)
+    assert summary["best_f1"]["threshold"] == 0.15
+    assert summary["routing"] == {"precision": 0.5, "recall": 0.5, "f1": 0.5}
+    assert len(summary["sweep"]) == 19
+
+
+def test_binary_summary_handles_a_single_class():
+    summary = triage_eval.binary_summary([True, True], [0.2, 0.9], [True, True])
+
+    assert summary["auc"] is None
+    assert summary["auc_ci"] is None
+    assert summary["average_precision"] == 1.0
+
+
+def test_binary_labels_are_matched_on_the_chosen_key_and_value():
+    rows = [{**ROW, "verdict": "yes"}, {**ROW, "verdict": "no"}]
+
+    assert triage_eval.binary_labels(rows, "verdict", "yes") == [True, False]
+
+
+def test_binary_labels_refuse_a_row_without_the_key():
+    with pytest.raises(ValueError, match="row 2.*verdict"):
+        triage_eval.binary_labels([{**ROW, "verdict": "yes"}, ROW], "verdict", "yes")
+
+
+def test_the_text_report_gains_binary_lines_with_the_flags(
+    tmp_path, monkeypatch, capsys
+):
+    monkeypatch.setattr(
+        triage_eval, "evaluate_email_with_mlx", _fake_by_subject(BINARY_SCORES)
+    )
+    path = _write(tmp_path / "rows.jsonl", _binary_rows())
+
+    triage_eval.main(
+        ["--dataset", str(path), "--binary-label-key", "label", "--positive", "act"]
+    )
+
+    output = capsys.readouterr().out
+    assert "binary  n=4  positives=2" in output
+    assert "auc  0.750  95% CI [" in output
+    assert "average_precision  0.833" in output
+    assert "best_f1  threshold=0.15" in output
+    assert "routing  precision=0.500  recall=0.500  f1=0.500" in output
+
+
+def test_the_text_report_shows_undefined_auc_for_one_class(
+    tmp_path, monkeypatch, capsys
+):
+    monkeypatch.setattr(
+        triage_eval, "evaluate_email_with_mlx", _fake_by_subject(BINARY_SCORES)
+    )
+    path = _write(tmp_path / "rows.jsonl", _binary_rows()[:2])
+
+    triage_eval.main(
+        ["--dataset", str(path), "--binary-label-key", "label", "--positive", "act"]
+    )
+
+    assert "auc  undefined" in capsys.readouterr().out
+
+
+def test_the_json_gains_a_binary_block_with_the_flags(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(
+        triage_eval, "evaluate_email_with_mlx", _fake_by_subject(BINARY_SCORES)
+    )
+    path = _write(tmp_path / "rows.jsonl", _binary_rows())
+
+    triage_eval.main(
+        [
+            "--dataset",
+            str(path),
+            "--json",
+            "--binary-label-key",
+            "label",
+            "--positive",
+            "act",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["binary"]["n"] == 4
+    assert payload["binary"]["auc"] == pytest.approx(0.75)
+    assert len(payload["binary"]["sweep"]) == 19
+    assert set(payload) == {"agreement", "rows", "binary"}
+
+
+def test_json_without_the_flags_has_no_binary_block(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(
+        triage_eval, "evaluate_email_with_mlx", _fake_by_subject(BINARY_SCORES)
+    )
+    path = _write(tmp_path / "rows.jsonl", [{**ROW, "subject": "pay now"}])
+
+    triage_eval.main(["--dataset", str(path), "--json"])
+
+    assert set(json.loads(capsys.readouterr().out)) == {"agreement", "rows"}
+
+
+def test_one_binary_flag_without_the_other_is_refused(tmp_path):
+    path = _write(tmp_path / "rows.jsonl", [ROW])
+
+    with pytest.raises(SystemExit):
+        triage_eval.main(["--dataset", str(path), "--binary-label-key", "label"])
+    with pytest.raises(SystemExit):
+        triage_eval.main(["--dataset", str(path), "--positive", "act"])
