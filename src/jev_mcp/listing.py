@@ -28,6 +28,7 @@ class _Walk:
     skipped: int = 0
     unreadable: int = 0
     truncated: bool = False
+    depth_limited: bool = False
 
 
 def clamp_limit(value: Any, name: str, cap: int) -> int:
@@ -78,8 +79,12 @@ def _walk_dir(fd: int, parent_name: str, prefix: str, depth: int, walk: _Walk) -
             return
         relative = f"{prefix}{entry.name}"
         walk.entries.append({"path": relative, "type": kind, "size": size})
-        if kind == "dir" and depth < walk.max_depth:
+        if kind != "dir":
+            continue
+        if depth < walk.max_depth:
             _descend(fd, entry.name, relative, depth + 1, walk)
+        else:
+            walk.depth_limited = True
 
 
 def _descend(parent_fd: int, name: str, relative: str, depth: int, walk: _Walk) -> None:
@@ -111,6 +116,7 @@ def list_directory(path: str, max_depth: int, max_entries: int) -> dict[str, Any
         "path": path,
         "entries": walk.entries,
         "truncated": walk.truncated,
+        "depth_limited": walk.depth_limited,
         "skipped": walk.skipped,
         "unreadable": walk.unreadable,
     }

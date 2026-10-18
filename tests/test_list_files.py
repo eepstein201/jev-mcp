@@ -408,3 +408,28 @@ def test_a_directory_that_cannot_be_scanned_is_counted_unreadable(
     res = _list(tmp_path)
     assert _names(res) == ["sub"]
     assert res["unreadable"] == 1
+
+
+def test_depth_limited_is_true_when_a_directory_sits_at_the_depth_limit(tmp_path):
+    pkg = _tree(tmp_path)
+    res = _list(pkg, max_depth=1)
+    assert res["depth_limited"] is True
+    assert _names(res) == ["a.py", "b.py", "sub"]
+
+
+def test_depth_limited_is_false_when_everything_was_shown(tmp_path):
+    pkg = _tree(tmp_path)
+    assert _list(pkg, max_depth=2)["depth_limited"] is False
+
+
+def test_depth_limited_is_false_when_only_max_entries_cut_the_listing(tmp_path):
+    for i in range(10):
+        (tmp_path / f"f{i}.txt").write_text("x")
+    res = _list(tmp_path, max_entries=4)
+    assert res["truncated"] is True
+    assert res["depth_limited"] is False
+
+
+def test_depth_limited_is_present_in_the_tool_json(tmp_path):
+    raw = json.loads(server.jev_list_files(str(tmp_path)))
+    assert raw["depth_limited"] is False

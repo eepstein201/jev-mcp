@@ -8,7 +8,7 @@ The tool-usage evaluation (`tests/evals/usage/`) needed 145 tool calls and 8 min
 
 - `tools/files.py` registers the tool (read-only, non-destructive, idempotent, not open-world, pinned in `tests/test_tool_surface.py`) and does the checks; `listing.py` does the walk.
 - Input: `path` (required), `max_depth` (default 2, cap 5; 1 lists the directory's own entries), `max_entries` (default 200, cap 1000). Values below 1 become 1, values over the cap are lowered to it, non-integers are an `ERROR`.
-- Output: `{"status": "SUCCESS", "path", "entries": [{"path": relative, "type": "file"|"dir"|"link"|"other", "size": bytes or null}], "truncated", "skipped", "unreadable"}`. Entries come in depth-first order, sorted by name within each directory, so the same tree always gives the same answer. `truncated` is true only when another entry existed beyond `max_entries`. Directories deeper than `max_depth` are not entered and not flagged.
+- Output: `{"status": "SUCCESS", "path", "entries": [{"path": relative, "type": "file"|"dir"|"link"|"other", "size": bytes or null}], "truncated", "depth_limited", "skipped", "unreadable"}`. Entries come in depth-first order, sorted by name within each directory, so the same tree always gives the same answer. `truncated` is true only when another entry existed beyond `max_entries`. `depth_limited` is true when at least one directory was listed but not entered because `max_depth` was reached; such a directory is not opened, so it may be empty.
 - Problems answer `{"status": "ERROR"|"BLOCKED", "message"}`; the tool never raises (`json_errors` is a backstop).
 
 ## Security rules

@@ -454,7 +454,7 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
 *   **Underlying Tool:** `jev_list_files` (no slash command)
 *   **What it does:** Lists the files and subdirectories under a directory (relative path, `file`/`dir`/`link`/`other` type, size in bytes) in one call, so a client can see what exists or count files without reading anything. It never opens a file and needs no engine.
 *   **Path Security:** The same `is_safe_path` check and allowed roots as `jev_read_file`. Symlinks are listed as `link` (no target) and never followed. Entries that match the credential rules (`.ssh`, `.aws`, `.env`, ...) are not named, only counted in `skipped`.
-*   **Arguments:** `path` *(string)*; `max_depth` *(integer, default 2, at most 5)*; `max_entries` *(integer, default 200, at most 1000)*. The answer carries `truncated` when `max_entries` cut the list short. Details: `docs/perf/list-files.md`.
+*   **Arguments:** `path` *(string)*; `max_depth` *(integer, default 2, at most 5)*; `max_entries` *(integer, default 200, at most 1000)*. The answer carries `truncated` when `max_entries` cut the list short and `depth_limited` when `max_depth` left a listed directory unentered. Details: `docs/perf/list-files.md`.
 
 #### ⚡ Scan Repository (AST Multi-File RAG)
 *   **Command:** `/jev-mcp:scan-repo`

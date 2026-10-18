@@ -425,7 +425,7 @@ def jev_scan_repo(
 @mcp.tool(
     name="jev_list_files",
     title="List the files in a directory",
-    description="Directory Lister: Lists the files and subdirectories under a directory (names, types and sizes only; it never reads file contents) so you can see what exists and count files in one call. Only inside the allowed roots; symlinks are listed as 'link' and never followed; credential locations (.ssh, .aws, .env and similar) are never named and are counted in 'skipped'. 'truncated' is true when max_entries cut the list short.",
+    description="Directory Lister: Lists the files and subdirectories under a directory (names, types and sizes only; it never reads file contents) so you can see what exists and count files in one call. Only inside the allowed roots; symlinks are listed as 'link' and never followed; credential locations (.ssh, .aws, .env and similar) are never named and are counted in 'skipped'. 'truncated' is true when max_entries cut the list short; 'depth_limited' is true when a listed directory was not entered because max_depth was reached, so its contents are not shown.",
     annotations=ToolAnnotations(
         read_only_hint=True,
         destructive_hint=False,
@@ -441,7 +441,7 @@ def jev_list_files(
     max_depth: Annotated[
         int,
         Field(
-            description=f"How many directory levels to list (1 = the directory's own entries). Default {listing.DEFAULT_MAX_DEPTH}, at most {listing.MAX_DEPTH_CAP}."
+            description=f"How many directory levels to list (1 = the directory's own entries); directories at the limit are listed but not entered, and the answer says so with depth_limited. Default {listing.DEFAULT_MAX_DEPTH}, at most {listing.MAX_DEPTH_CAP}."
         ),
     ] = listing.DEFAULT_MAX_DEPTH,
     max_entries: Annotated[
