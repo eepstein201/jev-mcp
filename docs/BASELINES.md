@@ -183,3 +183,72 @@ PYTHONPATH=src .venv/bin/python tests/run_evals.py --simulate SCORES.jsonl --jso
 PYTHONPATH=src .venv/bin/python -m tests.evals.triage_eval
 PYTHONPATH=src .venv/bin/python -m tests.evals.memory --json
 ```
+
+# Performance-phase baselines (2026-10-18)
+
+Measured 2026-10-18 on main `ab44e20` with the `default` profile engines, engines
+otherwise idle during each run. Tooling from PRs #60 (availability sampler), #61
+(accuracy metrics), #62 (latency harness); per-lane docs in `docs/perf/`.
+
+## Availability (jev_mcp.availability, first 53 min)
+
+Sampler at 60 s intervals, JSONL at `~/.jev/availability.jsonl`.
+
+| engine | uptime | probe success | p50 | p95 | outages |
+|---|---|---|---|---|---|
+| fast | 100% | 100% | 145 ms | 225 ms | 0 |
+| smart | 100% | 100% | 192 ms | 280 ms | 0 |
+
+## Triage accuracy (tests.evals.triage_eval, 40-row human slice)
+
+The phase-1 human slice (21 act / 19 not_act; join documented in `docs/perf/accuracy.md`),
+`--binary-label-key label --positive act`, act = routed to `escalate_to_slack`.
+
+| profile | ROC AUC (95% CI) | average precision | routing F1 | precision / recall |
+|---|---|---|---|---|
+| default | 0.945 (0.841–1.000) | 0.929 | 0.884 | 0.864 / 0.905 |
+| lean | 0.997 (0.985–1.000) | 0.998 | 0.952 | 0.952 / 0.952 |
+| balanced | 0.952 (0.877–1.000) | 0.956 | 0.933 | 0.875 / 1.000 |
+
+Same ranking as the phase-1 ad-hoc scoring; at n=40 the CI widths (~0.15) do not
+separate the three profiles.
+
+## Webhook latency (tests.evals.webhook_latency, 40 emails, ctx_test)
+
+Webhook on :8097 (`JEV_SKIP_MODEL_SYNC=1`, rate limit off; setup in
+`docs/perf/latency.md`). Healthy = 3 repeats, 120 requests.
+
+| variant | p50 | p95 | first request | notes |
+|---|---|---|---|---|
+| healthy | 2.20 s | 2.34 s | 3.24 s | 0 errors, 0 degraded; escalate ≈ +0.11 s over archive |
+| smart down, script retries | 10.83 s | 10.96 s | — | 100% degraded; 80 intermediate 503s; every final answer 200 DEGRADED |
+
+A smart-engine outage costs ≈ +8.7 s per message (~5×), dominated by the two 5 s
+retry pauses; fail-toward-attention held on all 40 messages.
+
+## Browser agent task completion (tests.evals.browser_eval, default profile)
+
+8 cases × 4 runs against a dedicated headless automation Chrome: **31/32**, 0 harness
+errors (D1–D4, T1, T2, S1 all 4/4; T3 3/4). Reproduces the phase-1 default result
+(31/32, 30/32) under the same case set.
+
+## Caveats
+
+- Accuracy n=40: CI widths ~0.15, so ~.05 AUC gaps are not distinguishable; the ~500-row
+  labelled set remains the way to settle default vs lean.
+- Latency used the synthetic ctx_test context, not real mail; the availability sampler
+  was paused during those runs and restarted after.
+- The browser run drove headless dedicated-profile Chrome (`BU_CDP_URL` pointing at
+  `--remote-debugging-port` Chrome with its own `--user-data-dir`), where phase 1
+  attached to the user's running desktop Chrome; the fixture pages are DOM-driven so
+  parity is expected, but keep the difference in mind against phase-1 numbers.
+
+## Reproducing
+
+```
+python -m jev_mcp.availability sample &      # later: python -m jev_mcp.availability summary
+python -m tests.evals.triage_eval --dataset SLICE.jsonl --json --binary-label-key label --positive act
+python -m tests.evals.webhook_latency --url http://127.0.0.1:8097 --dataset ROWS.jsonl --context-id ctx_test --repeats 3 --json
+python -m tests.evals.browser_eval           # needs a Chromium-family browser; run sandbox-off,
+                                             # with BU_CDP_URL=http://127.0.0.1:<port> for a dedicated one
+```
