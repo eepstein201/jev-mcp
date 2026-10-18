@@ -29,7 +29,8 @@ RENAMED_TOOLS = {
     "setup_gas_workflow": "jev_setup_gas_workflow",
 }
 OLD_TOOL_NAMES = frozenset(RENAMED_TOOLS)
-EXPECTED_TOOLS = frozenset(RENAMED_TOOLS.values())
+# jev_list_files is newer than the rename, so it has no old name.
+EXPECTED_TOOLS = frozenset(RENAMED_TOOLS.values()) | {"jev_list_files"}
 
 # Each tool's behaviour hints in the order read-only, destructive, idempotent, open-world.
 # A tool is read-only only if its code path has no config save, file write or process
@@ -38,6 +39,7 @@ EXPECTED_TOOLS = frozenset(RENAMED_TOOLS.values())
 ANNOTATIONS: dict[str, tuple[bool, bool, bool, bool]] = {
     "jev_read_file": (True, False, True, False),
     "jev_scan_repo": (True, False, True, False),
+    "jev_list_files": (True, False, True, False),
     "jev_compact_context": (True, False, True, False),
     "jev_evaluate_batch": (True, False, True, False),
     "jev_explain_decision": (True, False, True, False),
@@ -147,7 +149,7 @@ def _body_writes(name: str) -> bool:
     return False
 
 
-def test_the_server_registers_exactly_the_seventeen_renamed_tools():
+def test_the_server_registers_exactly_the_eighteen_tools():
     assert set(registered_tools()) == EXPECTED_TOOLS
 
 

@@ -21,6 +21,7 @@ EVAL_TOOLS = frozenset(
     {
         "jev_read_file",
         "jev_scan_repo",
+        "jev_list_files",
         "jev_compact_context",
         "jev_evaluate_batch",
         "jev_explain_decision",

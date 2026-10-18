@@ -31,6 +31,7 @@ EXPECTED_TOOLS = {
     "jev_read_file",
     "jev_compact_context",
     "jev_scan_repo",
+    "jev_list_files",
     # Registered since the tool modules moved ahead of the __main__ guard.
     "jev_run_browser_agent",
     "jev_triage_email",

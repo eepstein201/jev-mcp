@@ -85,6 +85,16 @@ def _is_env_file(name: str) -> bool:
     return name.startswith(".env.") and not name.endswith(ENV_FILE_TEMPLATE_SUFFIXES)
 
 
+def is_sensitive_entry(parent_name: str, name: str) -> bool:
+    """True when a directory entry called `name` inside `parent_name` matches the
+    credential rules _classify applies to path components, so a listing can leave it
+    out without having to resolve it."""
+    folded = name.casefold()
+    if folded in FORBIDDEN_NAMES or _is_env_file(folded):
+        return True
+    return parent_name.casefold() == "library" and folded in FORBIDDEN_LIBRARY_DIRS
+
+
 ALLOWED_ROOTS_ENV = "JEV_ALLOWED_ROOTS"
 JEV_HOME = "~/.jev"
 # jev_mac_manager.sh keeps the GGUF models under <repo>/models, which is where `jev_train_lora`

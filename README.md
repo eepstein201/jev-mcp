@@ -450,6 +450,12 @@ Jev detects the anomaly, mathematically suppresses the log-odds down to exactly 
     *   `filter_by_chunk` *(boolean, default: true)*: If true, slices the file and keeps only relevant chunks. If false, evaluates the file as a whole.
 
 
+#### ⚡ List Files (Read-Only Directory Listing)
+*   **Underlying Tool:** `jev_list_files` (no slash command)
+*   **What it does:** Lists the files and subdirectories under a directory (relative path, `file`/`dir`/`link`/`other` type, size in bytes) in one call, so a client can see what exists or count files without reading anything. It never opens a file and needs no engine.
+*   **Path Security:** The same `is_safe_path` check and allowed roots as `jev_read_file`. Symlinks are listed as `link` (no target) and never followed. Entries that match the credential rules (`.ssh`, `.aws`, `.env`, ...) are not named, only counted in `skipped`.
+*   **Arguments:** `path` *(string)*; `max_depth` *(integer, default 2, at most 5)*; `max_entries` *(integer, default 200, at most 1000)*. The answer carries `truncated` when `max_entries` cut the list short and `depth_limited` when `max_depth` left a listed directory unentered. Details: `docs/perf/list-files.md`.
+
 #### ⚡ Scan Repository (AST Multi-File RAG)
 *   **Command:** `/jev-mcp:scan-repo`
 *   **Underlying Tool:** `jev_scan_repo`
@@ -530,6 +536,7 @@ Every tool carries a human-readable `title` and MCP `annotations` (behaviour hin
 |---|---|---|---|---|---|
 | `jev_read_file` | Read a file, filtered for relevance | yes | no | yes | no |
 | `jev_scan_repo` | Scan a repository for relevant code | yes | no | yes | no |
+| `jev_list_files` | List the files in a directory | yes | no | yes | no |
 | `jev_compact_context` | Compact context to what is relevant | yes | no | yes | no |
 | `jev_evaluate_batch` | Score questions against a state | yes | no | yes | no |
 | `jev_explain_decision` | Explain a scored decision | yes | no | yes | no |
@@ -881,7 +888,7 @@ Ports come from `JEV_FAST_PORT` (default `8080`) and `JEV_SMART_PORT` (default `
 | `JEV_MCP_RATE_LIMIT_PER_MINUTE` | `60` | `email_triage/rate_limit.py` | Authenticated webhook requests allowed per client address in any 60 seconds; more get `429` with `Retry-After`. A whole number; `0` disables the limit; anything else is ignored with a logged warning. Read when the webhook starts. Keyed on the address the server reports: a local proxy setting `X-Forwarded-For` already yields the real addresses; a proxy on another host, or one without that header, means one shared address (see uvicorn's `FORWARDED_ALLOW_IPS`). |
 | `JEV_TRIAGE_ACTION_THRESHOLD` | `0.8` | `email_triage/core.py` | `requires_action` score above which an email is an `Action` (escalated). A number from 0 to 1; anything else is ignored with a logged warning. |
 | `JEV_TRIAGE_IMPORTANT_THRESHOLD` | `0.8` | `email_triage/core.py` | `is_important` score above which an email that is not an `Action` goes to `Review` instead of being archived. Same format. Raise it if Review fills with mail you would have filed; lower it if important mail is being archived. |
-| `JEV_ALLOWED_ROOTS` | none | `security.py` | Extra directories `jev_read_file`, `jev_scan_repo` and `jev_train_lora` may touch, separated by `:`. The server's working directory, `~/.jev` and the temp directory are always allowed; credential locations stay blocked inside every root; `/` is ignored. The working directory is **not** a root when it is your home directory or above it, because a server started there would expose all of home: start the server in a project, or list your projects here. The repo's `models/` directory is always allowed, so `jev_train_lora` targets work wherever the server starts. |
+| `JEV_ALLOWED_ROOTS` | none | `security.py` | Extra directories `jev_read_file`, `jev_scan_repo`, `jev_list_files` and `jev_train_lora` may touch, separated by `:`. The server's working directory, `~/.jev` and the temp directory are always allowed; credential locations stay blocked inside every root; `/` is ignored. The working directory is **not** a root when it is your home directory or above it, because a server started there would expose all of home: start the server in a project, or list your projects here. The repo's `models/` directory is always allowed, so `jev_train_lora` targets work wherever the server starts. |
 | `JEV_ULTRAFAST_PATH` | `<repo>/jev-ultrafast` | `browser_agent.py` | Location of the `jev-ultrafast` checkout used by `jev_run_browser_agent`. |
 | `JEV_LLAMA_CPP_SRC` | `~/.jev/llama.cpp-src` | `lora_training.py` | Your own llama.cpp checkout for `jev_train_lora`'s GGUF conversion. When set, the tool never downloads into it; when unset, it fetches the converter for the commit of the running `llama-server`. |
 | `JEV_SKIP_MODEL_SYNC` | unset | `app.py` | Set to any non-empty value to skip the daily `models.dev` catalog fetch at start-up. |
@@ -958,6 +965,7 @@ You have access to the following FastMCP tools via the `jev-mcp` server:
 - **`jev_optimize_prompt`**: Features a recursive internal linter utilizing constrained decoding. Automatically fixes prompts that fail calibration.
 - **`jev_evaluate_batch`** & **`jev_explain_decision`**: For manual testing and extracting post-hoc rationales.
 - **`jev_scan_repo`**, **`jev_read_file`**, & **`jev_compact_context`**: Protected by Context Armor. Use these to dynamically evaluate massive codebases or summarize state.
+- **`jev_list_files`**: Read-only directory listing (names, types, sizes) inside the allowed roots. Use it to see what exists or count files before reading anything.
 
 ### 2. Context Armor & Data Handling
 If you call `jev_scan_repo` or `jev_read_file` and receive a message containing `[TRUNCATED TO PROTECT CONTEXT WINDOW]`, **DO NOT** attempt to call the exact same tool again. The output was intentionally truncated to prevent your client from crashing. Instead, react by:

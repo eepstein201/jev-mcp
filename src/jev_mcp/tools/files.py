@@ -1,13 +1,13 @@
-"""The jev_read_file, jev_compact_context, and jev_scan_repo tools."""
+"""The jev_read_file, jev_compact_context, jev_scan_repo and jev_list_files tools."""
 
 import json
 import os
-from typing import Any, Dict, List, Optional
+from typing import Annotated, Any, Dict, List, Optional
 
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
-from jev_mcp import app
+from jev_mcp import app, listing
 from jev_mcp.compaction import GENERIC_QUESTION, chunk_state, score_chunk
 from jev_mcp.app import json_errors, logger, mcp
 from jev_mcp.provider import (
@@ -420,3 +420,66 @@ def jev_scan_repo(
             failed_escalations,
         )
     )
+
+
+@mcp.tool(
+    name="jev_list_files",
+    title="List the files in a directory",
+    description="Directory Lister: Lists the files and subdirectories under a directory (names, types and sizes only; it never reads file contents) so you can see what exists and count files in one call. Only inside the allowed roots; symlinks are listed as 'link' and never followed; credential locations (.ssh, .aws, .env and similar) are never named and are counted in 'skipped'. 'truncated' is true when max_entries cut the list short; 'depth_limited' is true when a listed directory was not entered because max_depth was reached, so its contents are not shown.",
+    annotations=ToolAnnotations(
+        read_only_hint=True,
+        destructive_hint=False,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+)
+@json_errors
+def jev_list_files(
+    path: Annotated[
+        str, Field(description="The absolute path of the directory to list.")
+    ],
+    max_depth: Annotated[
+        int,
+        Field(
+            description=f"How many directory levels to list (1 = the directory's own entries); directories at the limit are listed but not entered, and the answer says so with depth_limited. Default {listing.DEFAULT_MAX_DEPTH}, at most {listing.MAX_DEPTH_CAP}."
+        ),
+    ] = listing.DEFAULT_MAX_DEPTH,
+    max_entries: Annotated[
+        int,
+        Field(
+            description=f"The most entries to return. Default {listing.DEFAULT_MAX_ENTRIES}, at most {listing.MAX_ENTRIES_CAP}."
+        ),
+    ] = listing.DEFAULT_MAX_ENTRIES,
+) -> str:
+    from jev_mcp.security import denial_message, is_safe_path
+
+    if not isinstance(path, str) or not path.strip():
+        return json.dumps(
+            {"status": "ERROR", "message": "path must be a non-empty string."}
+        )
+    try:
+        depth = listing.clamp_limit(max_depth, "max_depth", listing.MAX_DEPTH_CAP)
+        entries = listing.clamp_limit(
+            max_entries, "max_entries", listing.MAX_ENTRIES_CAP
+        )
+    except ValueError as e:
+        return json.dumps({"status": "ERROR", "message": str(e)})
+
+    if not is_safe_path(path):
+        return json.dumps({"status": "BLOCKED", "message": denial_message(path)})
+
+    path = os.path.expanduser(path)
+    if not os.path.exists(path):
+        return json.dumps(
+            {"status": "ERROR", "message": f"Directory not found: {path}"}
+        )
+    if not os.path.isdir(path):
+        return json.dumps({"status": "ERROR", "message": f"Not a directory: {path}"})
+
+    try:
+        result = listing.list_directory(path, depth, entries)
+    except OSError as e:
+        return json.dumps(
+            {"status": "ERROR", "message": f"Cannot list {path}: {e.strerror or e}"}
+        )
+    return json.dumps(result)
