@@ -1,10 +1,16 @@
 """Triage every email in a labelled dataset and report how often the routing matches.
 
     python -m tests.evals.triage_eval --dataset PATH [--json]
+        [--binary-label-key KEY --positive VALUE]
 
 Each dataset line is a JSON object with `subject`, `sender`, `body` and `expected_routing`; any
 other key is ignored, except that `label` is carried into the `--json` rows. Both daemons must be
 running. It measures; it does not gate.
+
+With `--binary-label-key KEY --positive VALUE`, a row counts as a positive when `row[KEY] ==
+VALUE`, and the report adds ranking metrics for `requires_action` (ROC-AUC with a bootstrap
+interval, average precision, the best-F1 threshold) plus precision/recall/F1 of the routing
+itself, where `escalate_to_slack` is the positive prediction.
 """
 
 import argparse
@@ -16,11 +22,20 @@ from typing import Any
 
 from jev_mcp.email_triage.core import CategoryConfig
 from jev_mcp.email_triage.mcp_tool import evaluate_email_with_mlx
+from tests.evals.metrics import (
+    average_precision,
+    best_f1,
+    bootstrap_auc_ci,
+    precision_recall_f1_from_predictions,
+    roc_auc,
+    threshold_sweep,
+)
 from tests.evals.rates import PassRate
 
 REQUIRED_KEYS = ("subject", "sender", "body", "expected_routing")
 ROUTINGS = ("escalate_to_slack", "hitl_slack_block", "archive_and_label")
 SUBJECT_WIDTH = 50
+POSITIVE_ROUTING = "escalate_to_slack"
 
 
 def load_dataset(path: Path) -> list[dict[str, Any]]:
@@ -94,22 +109,92 @@ def format_report(scored: Sequence[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def binary_labels(
+    rows: Sequence[dict[str, Any]], key: str, positive: str
+) -> list[bool]:
+    """True where `row[key] == positive`; a row without the key is an error."""
+    for number, row in enumerate(rows, start=1):
+        if key not in row:
+            raise ValueError(f"row {number} has no {key!r} key for --binary-label-key")
+    return [row[key] == positive for row in rows]
+
+
+def binary_summary(
+    labels: Sequence[bool], scores: Sequence[float], routed: Sequence[bool]
+) -> dict[str, Any]:
+    """Ranking metrics for the scores, plus precision/recall/F1 of the routing decision."""
+    sweep = threshold_sweep(labels, scores)
+    interval = bootstrap_auc_ci(labels, scores)
+    return {
+        "n": len(labels),
+        "positives": sum(labels),
+        "auc": roc_auc(labels, scores),
+        "auc_ci": list(interval) if interval else None,
+        "average_precision": average_precision(labels, scores),
+        "best_f1": best_f1(sweep),
+        "sweep": sweep,
+        "routing": precision_recall_f1_from_predictions(labels, routed),
+    }
+
+
+def format_binary(summary: dict[str, Any]) -> str:
+    if summary["auc"] is None:
+        auc_line = "auc  undefined (needs both classes)"
+    else:
+        low, high = summary["auc_ci"]
+        auc_line = f"auc  {summary['auc']:.3f}  95% CI [{low:.3f}, {high:.3f}]"
+    ap = summary["average_precision"]
+    best = summary["best_f1"]
+    routing = summary["routing"]
+    return "\n".join(
+        [
+            f"binary  n={summary['n']}  positives={summary['positives']}",
+            auc_line,
+            "average_precision  " + ("undefined" if ap is None else f"{ap:.3f}"),
+            f"best_f1  threshold={best['threshold']:.2f}  "
+            f"precision={best['precision']:.3f}  recall={best['recall']:.3f}  "
+            f"f1={best['f1']:.3f}",
+            f"routing  precision={routing['precision']:.3f}  "
+            f"recall={routing['recall']:.3f}  f1={routing['f1']:.3f}",
+        ]
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--dataset", type=Path, required=True)
     parser.add_argument(
         "--json", action="store_true", help="print one JSON object with every row"
     )
+    parser.add_argument(
+        "--binary-label-key", help="dataset key holding the binary label (e.g. label)"
+    )
+    parser.add_argument(
+        "--positive", help="value of that key that counts as the positive class"
+    )
     args = parser.parse_args(argv)
+    if (args.binary_label_key is None) != (args.positive is None):
+        parser.error("--binary-label-key and --positive must be given together")
 
     labels = CategoryConfig().categories
-    scored = [score_row(row, labels) for row in load_dataset(args.dataset)]
+    rows = load_dataset(args.dataset)
+    scored = [score_row(row, labels) for row in rows]
+    binary = None
+    if args.binary_label_key is not None:
+        binary = binary_summary(
+            binary_labels(rows, args.binary_label_key, args.positive),
+            [row["requires_action"] for row in scored],
+            [row["got"] == POSITIVE_ROUTING for row in scored],
+        )
     if args.json:
         rate = agreement(scored)
         summary = {"runs": rate.runs, "passes": rate.passes, "rate": rate.rate}
-        print(json.dumps({"agreement": summary, "rows": scored}))
+        payload = {"agreement": summary, "rows": scored}
+        print(json.dumps({**payload, "binary": binary} if binary else payload))
     else:
         print(format_report(scored))
+        if binary:
+            print(format_binary(binary))
     return 0
 
 
