@@ -28,7 +28,12 @@ from jev_mcp.tools.router import (
     jev_manage_router_config,
 )
 from jev_mcp.tools.training import jev_train_lora
-from jev_mcp.tools.files import jev_compact_context, jev_read_file, jev_scan_repo
+from jev_mcp.tools.files import (
+    jev_compact_context,
+    jev_list_files,
+    jev_read_file,
+    jev_scan_repo,
+)
 from jev_mcp.tools.evaluate import (
     jev_evaluate_batch,
     jev_explain_decision,

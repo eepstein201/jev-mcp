@@ -27,7 +27,7 @@ test of the descriptions.
   1. answers **every** tool call in a turn (the runner's own loop answers only the first, so any
      parallel call is an API 400),
   2. sends MCP content blocks back as their text (the runner's JSON step cannot serialise them), and
-  3. offers the model only the 9 read-only tools plus `jev_manage_router_config` and
+  3. offers the model only the 10 read-only tools plus `jev_manage_router_config` and
      `jev_manage_temperature` (the questions need their read actions; against the seeded home they
      can only write there). A model is never offered a tool that launches a process, drives a
      browser or swaps model files. `tests/test_usage_eval_loop.py` keeps the list in step with the
