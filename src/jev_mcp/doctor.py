@@ -212,6 +212,24 @@ def _probe(port: int) -> dict[str, Any]:
     return {"ok": True, "first_token": token, "target_mass": mass, "detail": "ok"}
 
 
+def check_engine(name: str, env: Mapping[str, str] = os.environ) -> dict[str, Any]:
+    """Health status and (when up) the usability probe for one engine, as doctor does.
+
+    Returns {"port", "status", "probe"}; probe is None unless status is "up"."""
+    for engine, port_env, default_port in ENGINES:
+        if engine == name:
+            break
+    else:
+        raise ValueError(f"unknown engine {name!r}")
+    port = _port(env.get(port_env, default_port), default_port)
+    status = _health_status(port)
+    if status != "up":
+        return {"port": port, "status": status, "probe": None}
+    fast_is_kev = name == "fast" and env.get("JEV_FAST_ENGINE", "kev") == "kev"
+    probe = _probe_fast(port) if fast_is_kev else _probe(port)
+    return {"port": port, "status": status, "probe": probe}
+
+
 def _engine_report(
     name: str,
     port_env: str,
