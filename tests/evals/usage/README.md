@@ -50,3 +50,4 @@ test of the descriptions.
 |---|---|---|---|---|
 | 2026-10-13 | claude-sonnet-5-5 | 10/10 | 161 | all tools offered; one question took 145 calls |
 | 2026-10-13 | claude-sonnet-5-5 | 10/10 | 19 | read-only tools only; descriptions say content can be withheld |
+| 2026-10-18 | claude-sonnet-5-5 | 10/10 | 22 | main `1841b80` (post #56-#63); avg 19.0 s/task; model recovered from one BLOCKED read via `filter_by_chunk: false`; first model-driven use of `jev_list_files` |
