@@ -75,10 +75,10 @@ eval-usage:
 	@test -n "$$ANTHROPIC_API_KEY" || { echo "Set ANTHROPIC_API_KEY: the runner calls the Anthropic API"; exit 1; }
 	@echo "Asking $(USAGE_EVAL_MODEL) the 10 usage questions against a seeded home (daemons must be running; calls the Anthropic API)..."
 	.venv/bin/python tests/evals/usage/seed_home.py
-	$(USAGE_EVAL_PYTHON) tests/evals/usage/run_eval.py $(USAGE_EVAL_RUNNER) -t stdio -m $(USAGE_EVAL_MODEL) \
+	$(USAGE_EVAL_PYTHON) tests/evals/usage/run_eval.py $(USAGE_EVAL_RUNNER) tests/evals/usage/evaluation.xml \
+		-t stdio -m $(USAGE_EVAL_MODEL) \
 		-c $(CURDIR)/.venv/bin/jev-mcp \
-		-e HOME=$(USAGE_EVAL_HOME) JEV_ALLOWED_ROOTS=$(USAGE_EVAL_HOME)/fixture PYTHONPATH=$(CURDIR)/src \
-		tests/evals/usage/evaluation.xml
+		-e HOME=$(USAGE_EVAL_HOME) JEV_ALLOWED_ROOTS=$(USAGE_EVAL_HOME)/fixture PYTHONPATH=$(CURDIR)/src
 
 clean:
 	@echo "Completely uninstalling Jev MCP artifacts..."
