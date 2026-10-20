@@ -213,6 +213,31 @@ The phase-1 human slice (21 act / 19 not_act; join documented in `docs/perf/accu
 Same ranking as the phase-1 ad-hoc scoring; at n=40 the CI widths (~0.15) do not
 separate the three profiles.
 
+## Triage accuracy (tests.evals.triage_eval, synthetic-500)
+
+Measured 2026-10-20 on the synthetic-500 set: n=500, 250 act / 250 not_act, seed 20261018,
+generator `scratchpad/gen_synthetic_500.py`. The user's 40-row spot-check agreed 40/40
+(mislabel rate < ~7.5% at 95% by the rule of three). Same flags as the 40-row slice
+(`--binary-label-key label --positive act`); availability sampler paused, engines otherwise
+idle; one run per profile, started with `make start PROFILE=<name>` and restored to
+`default` afterwards.
+
+| profile | ROC AUC (95% CI) | average precision | routing F1 | precision / recall |
+|---|---|---|---|---|
+| default | 0.952 (0.935–0.967) | 0.947 | 0.902 @ 0.85 | 0.888 / 0.916 |
+| lean | 0.986 (0.978–0.993) | 0.987 | 0.942 @ 0.80 | 0.944 / 0.940 |
+| balanced | 0.958 (0.941–0.974) | 0.949 | 0.921 @ 0.85 | 0.888 / 0.956 |
+
+At n=500 the intervals (~0.02 half-width) separate what n=40 could not: lean's lower bound
+(0.978) clears both default's and balanced's upper bounds (0.967, 0.974), while balanced and
+default overlap each other. This is the same ranking as the 40-row human slice
+(lean .997 > balanced .952 > default .945): lean leads on every labelled set so far, and it
+is also the smallest footprint (−24% idle vs default, phase-1 table). The remaining gate
+before recommending a profile switch is real-mail validation — the labels here are
+generator kernel-truth, so real-mail generalization is unproven. Caveats: marginal
+bootstrap CIs over the same rows, not a paired test (non-overlap is the conservative side);
+one run per profile.
+
 ## Webhook latency (tests.evals.webhook_latency, 40 emails, ctx_test)
 
 Webhook on :8097 (`JEV_SKIP_MODEL_SYNC=1`, rate limit off; setup in
