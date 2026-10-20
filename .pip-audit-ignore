@@ -1,6 +1,19 @@
 # Advisories pip-audit may report without failing the build (scripts/pip_audit.sh).
 # One ID per line; everything after the ID is a comment. A NEW advisory fails the audit.
 #
-# Empty on purpose. Add an ID only with the reason it is not exploitable here and what would
+# Add an ID only with the reason it is not exploitable here and what would
 # let you remove it again, as the eight torch 2.8.0 entries did until torch was raised to
 # >=2.14.1 (they arrived through kev, which caps torch<2.9, so kev is now its own extra).
+
+# pillow 12.3.0 (fixed in 13.0.0), accepted 2026-10-20. browser-harness 0.1.13 pins pillow==12.3.0
+# and is the only user (jev_mcp never imports PIL). It opens only PNG screenshots that Chrome
+# encodes via CDP Page.captureScreenshot, never image files taken from web pages. Remove these
+# once a browser-harness release allows pillow>=13.0.0.
+CVE-2026-112395 pillow 12.3.0, see above
+CVE-2026-112397 pillow 12.3.0, see above
+CVE-2026-112400 pillow 12.3.0, see above
+CVE-2026-112404 pillow 12.3.0, see above
+CVE-2026-112895 pillow 12.3.0, see above
+CVE-2026-112896 pillow 12.3.0, see above
+CVE-2026-112897 pillow 12.3.0, see above
+CVE-2026-112899 pillow 12.3.0, see above
