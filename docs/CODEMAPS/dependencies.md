@@ -1,4 +1,4 @@
-<!-- Generated: 2026-10-10, re-checked 2026-10-14 | Files scanned: pyproject.toml, Makefile, ci.yml, jev_mac_manager.sh, engine_profiles.toml (as of 43fb0dd) | Token estimate: ~550 -->
+<!-- Generated: 2026-10-10, re-checked 2026-10-20 | Files scanned: pyproject.toml, Makefile, ci.yml, jev_mac_manager.sh, engine_profiles.toml (as of 70de32f) | Token estimate: ~550 -->
 # Dependencies
 
 ## Python (pyproject.toml, py>=3.12)

@@ -1,10 +1,11 @@
-<!-- Generated: 2026-10-11, refreshed 2026-10-14 | server.py split into app.py + tools/ (see git history) | Token estimate: ~1100 | As of: 43fb0dd -->
+<!-- Generated: 2026-10-11, refreshed 2026-10-20 | server.py split into app.py + tools/ (see git history) | Token estimate: ~1150 | As of: 70de32f -->
 # Backend (MCP tools)
 
 ## Layout
 server.py (~200 lines) — entry point: `python -m jev_mcp.server` → main() (`setup-gas` / `serve-webhook` / `doctor` / stdio; only the stdio path runs `start_model_sync`), 13 `@mcp.prompt` definitions, re-exports of every tool name.
 doctor.py (~420 lines) — `jev-mcp doctor [--json]`; prints only from its own main(); reads engine `/health` (2 s timeout), the active profile's expected vs `/props`-served model per engine, router config, `security` roots, auth variable NAMES, triage thresholds, versions.
 engine_profiles.py (~700 lines) — profile table + resolver CLI (`python -m jev_mcp.engine_profiles resolve|plist|activate`; contract: docs/superpowers/specs/2026-10-14-engine-profiles-cli-contract.md §5); reads tracked engine_profiles.toml, validates every field against allow-lists; `active_profile()` never raises (None + WARNING). Stdlib only.
+availability.py (~330 lines) — engine availability sampler: `python -m jev_mcp.availability sample|summary`; probes both engines via doctor.check_engine on an interval, appends one JSON line per engine per sample to ~/.jev/availability.jsonl (baselines: docs/perf/availability.md).
 app.py (~360 lines) — shared state: `mcp` (MCPServer), `provider` (RoutingProvider), `linter`, `logger`, `_clean_json`/`_safe_truncate`/`_chat_completion(_json)`, `call_fast_autofixer`, `get_temp_notice`/`get_model_notice`, `start_model_sync`/`_sync_models`, `active_engine_profile`/`engine_identity` ({profile, fast, smart} spread into evaluation and routing results). Tool modules reference `app.X` AT CALL TIME (never import `jev_mcp.server`). MCPServer carries `client_defaults.SeedingMiddleware` (handshake-time per-client bucket seeding; config provenance `buckets_source`/`detected_client`).
 
 ## Tools (tools/) → impl
@@ -20,7 +21,7 @@ jev_determine_best_model       → tools/router.py
 jev_agent_handoff              → tools/router.py
 jev_train_lora                 → tools/training.py (engine mlx|llama.cpp, fuse, target_gguf_path, action train|restore; steps in lora_training.py; ensure_converter syncs ~/.jev/llama.cpp-src to the llama-server commit)
 jev_read_file                  → tools/files.py (path-secured, chunked)
-jev_compact_context            → tools/files.py (confidence_threshold default 0.2)
+jev_compact_context            → tools/files.py (confidence_threshold default 0.2; chunking + scoring in compaction.py, shared with tests/evals/compaction_eval.py)
 jev_scan_repo                  → tools/files.py
 jev_list_files                 → tools/files.py → listing.py (read-only; is_safe_path, security.is_sensitive_entry, no symlink follow, caps depth 5 / entries 1000; docs/perf/list-files.md)
 jev_run_browser_agent          → tools/browser.py → browser_agent.run_browser_agent (jev-ultrafast Agent loop; choose → ultrafast_adapter.local_choose, field text → smart daemon; http/https only, max_steps)

@@ -1,4 +1,4 @@
-<!-- Generated: 2026-10-10, refreshed 2026-10-14 | Files scanned: 9 | Token estimate: ~500 | As of: 43fb0dd -->
+<!-- Generated: 2026-10-10, refreshed 2026-10-20 | Files scanned: 19 | Token estimate: ~550 | As of: 70de32f -->
 # Data & State (no database)
 
 | Path | Owner | Contents |
@@ -9,6 +9,7 @@
 | ~/.jev/router_config.json | router_config.py | buckets b1-b4 → model names, rules[], temperatures{} (per smart model; legacy global fitted_temperature applies to qwen2.5-7b only), auto_update, buckets_source ("detected"/"user"), detected_client |
 | ~/.jev/model_catalog.json | model_catalog.py | reduced models.dev catalog (id, family, release date, price), refreshed daily at start-up |
 | ~/.jev/jev.log | server logging | runtime log |
+| ~/.jev/availability.jsonl | availability.py | append-only probe log: one JSON line per engine per sample (uptime, probe latency, outages) |
 | ~/.jev/adapters/{run_id} | jev_train_lora | LoRA adapters |
 | ~/.jev/training | jev_train_lora | training data/artifacts |
 | ~/.jev/llama.cpp-src | lora_training.py | llama.cpp converter fetched for the running `llama-server` commit (unless JEV_LLAMA_CPP_SRC names your own) |
@@ -20,6 +21,7 @@
 | ~/.jev-mcp/client_secrets.json | email_triage/gas_setup.py | Google OAuth client (user-supplied, read only) |
 | tests/golden_dataset.json | tests/run_evals.py | calibration/eval set |
 | tests/evals/triage_synthetic.jsonl | tests/evals/triage_eval.py | 30 labelled synthetic emails with expected routing |
+| tests/evals/compaction_goals.jsonl | tests/evals/compaction_eval.py | 36 goal-labelled states (tune/hold splits) behind the 0.2 compaction threshold |
 
 ## Models (pydantic)
 provider.py: NoulQuestion{prompt,key} · ChoiceQuestion{prompt,options,key} · ScoreQuestion{prompt,labels,key} · QuestionType=Union
