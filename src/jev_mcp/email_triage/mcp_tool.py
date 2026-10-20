@@ -61,7 +61,7 @@ def fail_toward_attention(decision: dict) -> dict:
 def evaluate_email_with_mlx(
     subject: str, sender: str, body: str, labels: list[str]
 ) -> dict:
-    from jev_mcp.routing_provider import RoutingProvider
+    from jev_mcp.routing_provider import SERVED_BY_FAST, RoutingProvider
 
     eval_questions = build_triage_questions(labels)
 
@@ -118,6 +118,14 @@ def evaluate_email_with_mlx(
     if failed:
         decision = fail_toward_attention(decision)
 
+    # The router stamps served_by on every answer. Surfacing it lets a caller tell a
+    # fast-path answer from an escalated one; fast_path is the headline form: true only
+    # when the fast engine answered every question.
+    engines = {
+        key: results.get(key, {}).get("served_by")
+        for key in ("requires_action", "is_important", "bucket")
+    }
+
     return mark_degraded(
         {
             "decision": decision["decision"],
@@ -127,6 +135,8 @@ def evaluate_email_with_mlx(
             "is_important_score": is_important_score,
             "bucket": bucket,
             "bucket_confidence": bucket_confidence,
+            "engines": engines,
+            "fast_path": all(engine == SERVED_BY_FAST for engine in engines.values()),
         },
         failed,
     )

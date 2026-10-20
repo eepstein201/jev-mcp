@@ -398,3 +398,65 @@ def test_the_triage_result_includes_the_reason(tmp_path, monkeypatch):
     response = _triage_with_scores(tmp_path, monkeypatch, action=0.05, important=0.93)
 
     assert response["reason"] == "important_no_action"
+
+
+def _triage_with_engines(tmp_path, monkeypatch, requires_action, is_important, bucket):
+    """Like _triage_with_scores, but the mock router stamps served_by on every answer."""
+    from unittest.mock import MagicMock
+
+    monkeypatch.setattr(
+        "jev_mcp.email_triage.mcp_tool.get_config_path",
+        lambda: tmp_path / "triage_configs.json",
+    )
+    configure_triage_labels("engines@mailbox.com", ["Notifications", "Receipts"])
+    provider = MagicMock()
+    provider.evaluate_batch.return_value = {
+        "requires_action": {
+            "probabilities": {"true": 0.05},
+            "served_by": requires_action,
+        },
+        "is_important": {"probabilities": {"true": 0.93}, "served_by": is_important},
+        "bucket": {
+            "probabilities": {"Notifications": 0.9, "Receipts": 0.1},
+            "served_by": bucket,
+        },
+    }
+    monkeypatch.setattr("jev_mcp.routing_provider.RoutingProvider", lambda: provider)
+    return json.loads(
+        triage_email_content("engines@mailbox.com", "FYI", "ceo@test.com", "For you.")
+    )
+
+
+def test_the_triage_result_exposes_which_engine_answered_each_question(
+    tmp_path, monkeypatch
+):
+    """An escalated question is visible in the result: engines maps each question to
+    the engine whose answer it carries, and fast_path summarizes the split."""
+    response = _triage_with_engines(
+        tmp_path,
+        monkeypatch,
+        requires_action="smart",
+        is_important="fast",
+        bucket="fast",
+    )
+
+    assert response["engines"] == {
+        "requires_action": "smart",
+        "is_important": "fast",
+        "bucket": "fast",
+    }
+    assert response["fast_path"] is False
+
+
+def test_a_result_answered_entirely_by_the_fast_engine_is_marked_fast_path(
+    tmp_path, monkeypatch
+):
+    response = _triage_with_engines(
+        tmp_path,
+        monkeypatch,
+        requires_action="fast",
+        is_important="fast",
+        bucket="fast",
+    )
+
+    assert response["fast_path"] is True
