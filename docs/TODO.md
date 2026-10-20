@@ -108,6 +108,7 @@ Found during the 2026-10-10 documentation and benchmark review. Each item lists 
 - [x] CI: `actions/checkout@v4` and `actions/setup-python@v5` trigger a Node 20 deprecation warning. *(fixed: both on v7; the warning is gone from the main run)*
 - [x] Some tests reached a real daemon when one was running (two `compact` tests, and two linter tests whose auto-fixer made a real generation call, taking 9-13 s with model-dependent results). *(fixed: an autouse fixture in `tests/conftest.py` makes unmocked daemon calls fail as in CI; the suite runs in about 6 s instead of 35 s)*
 - [ ] Golden dataset: 80 of 88 rows were written in one pass by an LLM and frontier models score 100%; add real, hard cases.
+- [ ] **Waiting on upstream: pillow advisories (accepted 2026-10-20, #68).** `browser-harness` 0.1.13 pins `pillow==12.3.0`, which has 8 CVEs fixed in 13.0.0, so they sit in `.pip-audit-ignore` (only browser-harness uses PIL, and only on PNG screenshots Chrome encodes). Nothing to do by hand: when a browser-harness release allows pillow>=13, Dependabot's weekly PR picks it up and `scripts/pip_audit.sh` fails it with "CVE-… is no longer reported; remove it from .pip-audit-ignore". Delete the eight entries in that PR, then tick this.
 
 ## Review follow-ups: 2026-10-11 security and Python review
 
