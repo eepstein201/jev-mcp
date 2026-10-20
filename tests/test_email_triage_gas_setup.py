@@ -103,6 +103,13 @@ def test_gas_setup_file_not_found(mock_flow, mock_exists, mock_build, mock_input
     assert "https://test.ngrok.app" in _uploaded_source(mock_service)
 
 
+@patch("jev_mcp.email_triage.gas_setup.Path.exists", return_value=False)
+@patch("jev_mcp.email_triage.gas_setup.InstalledAppFlow")
+def test_missing_client_secrets_names_where_to_put_the_file(mock_flow, mock_exists):
+    with pytest.raises(FileNotFoundError, match="client_secrets.json"):
+        setup_gas_workflow(webhook_url="https://test.ngrok.app")
+
+
 @patch("jev_mcp.email_triage.gas_setup.build")
 @patch("jev_mcp.email_triage.gas_setup.Path.exists", return_value=True)
 @patch("jev_mcp.email_triage.gas_setup.InstalledAppFlow")

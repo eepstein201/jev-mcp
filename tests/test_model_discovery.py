@@ -192,6 +192,17 @@ def test_reported_smart_model_tolerates_a_discovery_that_raises():
     assert app.reported_smart_model(smart) == ("", None)
 
 
+def test_reported_smart_model_tolerates_a_restart_check_that_raises():
+    def blow_up():
+        raise RuntimeError("props unreachable")
+
+    smart = SimpleNamespace(
+        current_model_id="qwen2.5-7b-instruct", refresh_if_restarted=blow_up
+    )
+
+    assert app.reported_smart_model(smart) == ("qwen2.5-7b-instruct", None)
+
+
 # --- the temperature tools in a fresh process -----------------------------------------
 
 

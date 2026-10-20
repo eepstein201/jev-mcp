@@ -325,3 +325,21 @@ def test_retried_degraded_attempts_do_not_use_up_the_rate_limit(monkeypatch):
     assert _post("3").status_code == 200
     assert _post("3").status_code == 200
     assert _post("3").status_code == 429
+
+
+def test_body_limit_middleware_passes_non_http_scopes_through():
+    import asyncio
+
+    from jev_mcp.email_triage.api import BodySizeLimitMiddleware
+
+    seen = {}
+
+    async def passthrough(scope, receive, send):
+        seen["scope"] = scope
+
+    middleware = BodySizeLimitMiddleware(passthrough, max_bytes=1)
+    scope = {"type": "lifespan"}
+
+    asyncio.run(middleware(scope, object(), object()))
+
+    assert seen["scope"] is scope

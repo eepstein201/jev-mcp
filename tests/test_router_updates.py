@@ -296,3 +296,12 @@ def test_main_starts_the_model_sync_before_serving(monkeypatch):
         server.main()
 
     sync.assert_called_once()
+
+
+def test_get_model_notice_returns_none_when_the_config_cannot_be_read(monkeypatch):
+    def unreadable():
+        raise OSError("disk error")
+
+    monkeypatch.setattr(app, "load_router_config", unreadable)
+
+    assert app.get_model_notice() is None
